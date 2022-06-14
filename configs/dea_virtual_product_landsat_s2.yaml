@@ -1,0 +1,239 @@
+about: Catalog of virtual products loading, normalising and cloud masking Landsat products
+products:
+
+    # Loads a subset of data from Landsat 8, including spectral bands 
+    # (blue, green, red, nir, swir1, swir2), a cloud masking band (fmask) 
+    # and a contiguity band (contiguity).
+    ls8_nbart:
+        recipe:
+            &ls8_nbart
+            product: ga_ls8c_ard_3
+            measurements: [nbart_blue, nbart_green, nbart_red, nbart_nir, 
+                           nbart_swir_1, nbart_swir_2, 
+                           oa_nbart_contiguity, oa_fmask]
+            gqa_iterative_mean_xy: [0, 1]
+            group_by: solar_day
+    
+    # Loads Landsat 7 data based on bands included in the `ls8_nbart` product
+    ls7_nbart:
+         recipe:
+            &ls7_nbart
+             <<: *ls8_nbart
+             product: ga_ls7e_ard_3
+    
+    # Loads Landsat 5 data based on bands included in the `ls8_nbart` product
+    ls5_nbart:
+         recipe:
+            &ls5_nbart
+             <<: *ls8_nbart
+             product: ga_ls5t_ard_3
+    
+    # Loads data from Landsat 5, 7 and 8, and combines this into a virtual 
+    # product containing spectral bands (blue, green, red, nir, swir1, swir2),
+    # a cloud masking band (fmask) and a contiguity band (contiguity).
+    ls_nbart:
+         recipe:
+             &ls_nbart
+             transform: expressions
+             input:
+                 collate:
+                     - *ls5_nbart
+                     - *ls7_nbart
+                     - *ls8_nbart
+             output:
+                 blue:
+                     formula: nbart_blue
+                     dtype: float32
+                 green:
+                     formula: nbart_green
+                     dtype: float32
+                 red: 
+                     formula: nbart_red
+                     dtype: float32
+                 nir: 
+                     formula: nbart_nir
+                     dtype: float32
+                 swir1: 
+                     formula: nbart_swir_1
+                     dtype: float32
+                 swir2: 
+                     formula: nbart_swir_2
+                     dtype: float32
+                 cloud_mask: oa_fmask
+                 contiguity: oa_nbart_contiguity
+    
+    # Takes the `ls_nbart` product containing Landsat 5, 7 and 8 data, 
+    # and normalises spectral band values so they are between 0 and 1.0. 
+    # (compared to the default of 0 to 10,000).
+    ls_nbart_norm:
+         recipe:
+             &ls_nbart_norm
+             transform: expressions
+             input: *ls_nbart
+             output:
+                 blue:
+                     formula: blue * 0.0001
+                     dtype: float32
+                 green:
+                     formula: green * 0.0001
+                     dtype: float32
+                 red: 
+                     formula: red * 0.0001
+                     dtype: float32
+                 nir: 
+                     formula: nir * 0.0001
+                     dtype: float32
+                 swir1: 
+                     formula: swir1 * 0.0001
+                     dtype: float32
+                 swir2: 
+                     formula: swir2 * 0.0001
+                     dtype: float32
+                 cloud_mask: cloud_mask
+                 contiguity: contiguity
+    
+    # Takes the `ls_nbart_norm` product containing normalised Landsat 5, 
+    # 7 and 8 data, and applies a mask to remove cloud, cloud shadow and
+    # other invalid pixels (using fmask), and any pixels that are missing
+    # data in any spectral band (using contiguity).
+    ls_nbart_masked:
+            recipe:
+                &ls_nbart_masked
+                transform: apply_mask
+                mask_measurement_name: cloud_mask
+                input:
+                    transform: expressions
+                    input: *ls_nbart_norm
+                    output:
+                        red: red
+                        green: green
+                        blue: blue
+                        nir: nir
+                        swir1: swir1
+                        swir2: swir2
+                        cloud_mask:
+                            formula: ((cloud_mask == 1) | (cloud_mask == 4) | (cloud_mask == 5)) & (contiguity == 1)
+                            
+    ls_nbart_ndwi:
+         recipe:
+             transform: expressions
+             input: *ls_nbart_norm    
+             output:
+                 cloud_mask: cloud_mask
+                 contiguity: contiguity
+                 ndwi:
+                    formula: (green - nir) / (green + nir)
+
+    # Loads a subset of data from Sentinel-2A, including spectral bands, 
+    # a cloud masking band (fmask) and a contiguity band (contiguity).
+    s2a_nbart:
+        recipe:
+            &s2a_nbart
+            product: ga_s2am_ard_3
+            measurements: [nbart_blue, nbart_green, nbart_red, nbart_nir_1, 
+                           nbart_nir_2, nbart_swir_2, nbart_swir_3, 
+                           oa_nbart_contiguity, oa_s2cloudless_mask]
+            gqa_iterative_mean_xy: [0, 1]
+            group_by: solar_day
+    
+    # Loads S2B data based on bands included in the `s2a_nbart` product
+    s2b_nbart:
+         recipe:
+            &s2b_nbart
+             <<: *s2a_nbart
+             product: ga_s2bm_ard_3
+
+    # Combines S2A and S2B data into a virtual product containing 
+    # spectral bands, a cloud masking band (fmask) and a contiguity 
+    # band (contiguity).
+    s2_nbart:
+         recipe:
+             &s2_nbart
+             transform: expressions
+             input:
+                 collate:
+                     - *s2a_nbart
+                     - *s2b_nbart
+             output:
+                 blue:
+                     formula: nbart_blue
+                     dtype: float32
+                 green:
+                     formula: nbart_green
+                     dtype: float32
+                 red: 
+                     formula: nbart_red
+                     dtype: float32
+                 nir: 
+                     formula: nbart_nir_1
+                     dtype: float32
+                 swir1: 
+                     formula: nbart_swir_2
+                     dtype: float32
+                 swir2: 
+                     formula: nbart_swir_2
+                     dtype: float32
+                 cloud_mask: oa_s2cloudless_mask
+                 contiguity: oa_nbart_contiguity
+                 
+    # Takes the `s2_nbart` product containing Sentinel-2A and 2B data, 
+    # and normalises spectral band values so they are between 0 and 1.0. 
+    # (compared to the default of 0 to 10,000).
+    s2_nbart_norm:
+         recipe:
+             &s2_nbart_norm
+             transform: expressions
+             input: *s2_nbart
+             output:
+                 blue:
+                     formula: blue * 0.0001
+                     dtype: float32
+                 green:
+                     formula: green * 0.0001
+                     dtype: float32
+                 red: 
+                     formula: red * 0.0001
+                     dtype: float32
+                 nir: 
+                     formula: nir * 0.0001
+                     dtype: float32
+                 swir1: 
+                     formula: swir1 * 0.0001
+                     dtype: float32
+                 swir2: 
+                     formula: swir2 * 0.0001
+                     dtype: float32
+                 cloud_mask: cloud_mask
+                 contiguity: contiguity
+                 
+    # Takes the `s2_nbart_norm` product containing normalised S2A and S2B data, 
+    # and applies a mask to remove cloud, cloud shadow and other invalid pixels 
+    # (using s2cloudless), and any pixels that are missing data in any spectral 
+    # band (using contiguity).
+    s2_nbart_masked:
+            recipe:
+                &s2_nbart_masked
+                transform: apply_mask
+                mask_measurement_name: cloud_mask
+                input:
+                    transform: expressions
+                    input: *s2_nbart_norm
+                    output:
+                        red: red
+                        green: green
+                        blue: blue
+                        nir: nir
+                        swir1: swir1
+                        swir2: swir2
+                        cloud_mask:
+                            formula: (cloud_mask == 1) & (contiguity == 1)
+                            
+    s2_nbart_ndwi:
+         recipe:
+             transform: expressions
+             input: *s2_nbart_norm    
+             output:
+                 cloud_mask: cloud_mask
+                 contiguity: contiguity
+                 ndwi:
+                    formula: (green - nir) / (green + nir)
