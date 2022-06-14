@@ -10,7 +10,7 @@
 **Contact:** For assistance with any of the Python code or Jupyter Notebooks in this repository, please post a [Github issue](https://github.com/GeoscienceAustralia/dea-intertidal/issues). For questions or more information about this workflow, email Robbi.BishopTaylor@ga.gov.au.
 
 **To cite:** 
-> Bishop-Taylor, R., Sagar, S., Lymburner, L., Beaman, R.L., 2019. Between the tides: modelling the elevation of Australia's exposed intertidal zone at continental scale. Estuarine, Coast and Shelf Science. https://doi.org/10.1016/j.ecss.2019.03.006
+> Bishop-Taylor, R., Sagar, S., Lymburner, L., Beaman, R.L., 2019. Between the tides: modelling the elevation of Australia's exposed intertidal zone at continental scale. Estuarine, Coastal and Shelf Science. https://doi.org/10.1016/j.ecss.2019.03.006
 
 > Sagar, S., Roberts, D., Bala, B., Lymburner, L., 2017. Extracting the intertidal extent and topography of the Australian coastline from a 28 year time series of Landsat observations. Remote Sensing of Environment 195, 153-169. https://doi.org/10.1016/j.rse.2017.04.009
 

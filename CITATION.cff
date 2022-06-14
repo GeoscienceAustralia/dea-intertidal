@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite Bishop-Taylor et al. 2019."
+authors:
+  - given-names: Robbi
+    family-names: Bishop-Taylor
+    affiliation: Geoscience Australia
+    orcid: 'https://orcid.org/0000-0002-1533-2599'
+  - given-names: Stephen
+    family-names: Sagar
+    affiliation: Geoscience Australia
+  - given-names: Leo
+    family-names: Lymburner
+    affiliation: Geoscience Australia
+title: "Digital Earth Australia Intertidal"
+doi: 10.1016/j.ecss.2019.03.006
+url: "https://github.com/GeoscienceAustralia/dea-intertidal"
+preferred-citation:
+  type: article
+  authors:
+  - given-names: Robbi
+    family-names: Bishop-Taylor
+    affiliation: Geoscience Australia
+    orcid: 'https://orcid.org/0000-0002-1533-2599'
+  - given-names: Stephen
+    family-names: Sagar
+    affiliation: Geoscience Australia
+  - given-names: Leo
+    family-names: Lymburner
+    affiliation: Geoscience Australia
+  - given-names: Robin J.
+    family-names: Beaman
+    affiliation: James Cook University
+  doi: "10.1016/j.ecss.2019.03.006"
+  journal: "Estuarine, Coastal and Shelf Science"
+  title: "Between the tides: Modelling the elevation of Australia's exposed intertidal zone at continental scale"
+  volume: 223
+  year: 2019
+keywords:
+  - Intertidal
+  - Landsat
+  - Earth Observation
+  - Digital Earth Australia
+license: Apache-2.0
