@@ -81,7 +81,8 @@ def map_raster(
     """
     Plot raster data over an interactive map.
     """
-    
+    import odc.geo.xr
+
     if backend == "folium":
 
         # Create folium map
@@ -94,15 +95,32 @@ def map_raster(
         # Create ipyleaflet map
         import ipyleaflet
 
-        m = ipyleaflet.Map()
+        m = ipyleaflet.Map(name='map')
+        lc = ipyleaflet.LayersControl(position='topright')
+        m.add_control(lc)
 
-    # Reproject data to epsg:3857 and add to map
-    ds.odc.reproject("epsg:3857", dst_nodata=np.nan).odc.add_to(
-        m, opacity=1.0, vmin=vmin, vmax=vmax
-    )
+    # If ds is a list, loop through all datasets and add to map
+    if isinstance(ds, list):
+
+        for i, ds_i in enumerate(ds):
+
+            # Reproject data to epsg:3857 and add to map
+            ds_i.odc.reproject("epsg:3857", dst_nodata=np.nan).odc.add_to(
+                m, opacity=1.0, name=f"layer {i + 1}", vmin=vmin, vmax=vmax
+            )
+            bounds = ds_i.odc.map_bounds()
+    
+    # Else add single layer to the map
+    else:
+        
+        # Reproject data to epsg:3857 and add to map
+        ds.odc.reproject("epsg:3857", dst_nodata=np.nan).odc.add_to(
+            m, opacity=1.0, name='layer 1', vmin=vmin, vmax=vmax
+        )
+        bounds = ds.odc.map_bounds()
 
     # Snap map to data bounds
-    m.fit_bounds(ds.odc.map_bounds())
+    m.fit_bounds(bounds)
 
     # Return map if requested
     if return_map:
