@@ -11,6 +11,7 @@ def eval_metrics(x, y, round=3, all_regress=False):
         - Root Mean Squared Error
         - Mean Absolute Error
         - R-squared
+        - Bias
         - Linear regression parameters (slope,
           p-value, intercept, standard error)
 
@@ -52,6 +53,7 @@ def eval_metrics(x, y, round=3, all_regress=False):
         "RMSE": sqrt(mean_squared_error(xy_df.x, xy_df.y)),
         "MAE": mean_absolute_error(xy_df.x, xy_df.y),
         "R-squared": r2_score(xy_df.x, xy_df.y),
+        "Bias": (xy_df.y - xy_df.x).mean(),
         "Regression slope": lin_reg.slope,
     }
 
