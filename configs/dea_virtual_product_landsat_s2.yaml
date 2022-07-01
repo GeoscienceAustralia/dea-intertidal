@@ -13,6 +13,7 @@ products:
                            oa_nbart_contiguity, oa_fmask]
             gqa_iterative_mean_xy: [0, 1]
             group_by: solar_day
+            cloud_cover: [0, 90]
     
     # Loads Landsat 7 data based on bands included in the `ls8_nbart` product
     ls7_nbart:
@@ -135,6 +136,7 @@ products:
                            oa_nbart_contiguity, oa_s2cloudless_mask]
             gqa_iterative_mean_xy: [0, 1]
             group_by: solar_day
+            s2cloudless_cloud: [0, 90]
     
     # Loads S2B data based on bands included in the `s2a_nbart` product
     s2b_nbart:
