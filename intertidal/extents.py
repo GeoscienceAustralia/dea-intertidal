@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from odc.algo import mask_cleanup
+import odc.geo.xr
+
+from coastlines.raster import model_tides
 
 
 def load_data(dc, geom, time_range=("2019", "2021"), resolution=10, crs="epsg:32753"):
@@ -86,7 +89,7 @@ def pixel_tide_sort(ds, tide_var="tide_height", ndwi_var="ndwi", tide_dim="tide_
 
 
 def item(ds, tide_dim="tide_n", intervals=10):
-    
+
     # Bin tide heights into 9 tidal intervals from low (1) to high tide (9)
     tide_intervals = pd.cut(
         ds[tide_dim],
@@ -105,13 +108,13 @@ def item(ds, tide_dim="tide_n", intervals=10):
         .median(dim=tide_dim)
         .compute()
     )
-    
+
     # For each interval, compute the median water index and tide height value
     ds_confidence = (
         ds[["tide_interval", "ndwi"]]
         .groupby("tide_interval")
         .std(dim=tide_dim)
-        .mean(dim='tide_interval')
+        .mean(dim="tide_interval")
         .compute()
     )
 
@@ -167,3 +170,100 @@ def nidem(item_da, ds_intervals, intervals, clean=[("opening", 20), ("dilation",
         intertidal_dem_clean = intertidal_dem_clean.where(to_keep)
 
     return intertidal_dem_clean
+
+
+def parallel_apply(ds, dim, func):
+    """
+    Applies a custom function along the dimension of an xarray.Dataset,
+    then combines the output to match the original dataset.
+    Parameters:
+    -----------
+    ds : xarray.Dataset
+        A dataset with a dimension `dim` to apply the custom function
+        along.
+    dim : string
+        The dimension along which the custom function will be applied.
+    func : function
+        The function that will be applied in parallel to each array
+        along dimension `dim`. To specify custom parameters, use
+        `functools.partial`.
+    Returns:
+    --------
+    xarray.Dataset
+        A concatenated dataset containing an output for each array
+        along the input `dim` dimension.
+    """
+
+    from concurrent.futures import ProcessPoolExecutor
+    from tqdm import tqdm
+
+    with ProcessPoolExecutor() as executor:
+
+        # Apply func in parallel
+        to_iterate = [group for (i, group) in ds.groupby(dim)]
+        out_list = tqdm(executor.map(func, to_iterate), total=len(to_iterate))
+
+    # Combine to match the original dataset
+    return xr.concat(out_list, dim=ds[dim])
+
+
+def pixel_tides(
+    ds,
+    resample_func,
+    times=None,
+    aggregate_min_max=False,
+    zoom_out=500,
+    buffered=12000,
+    model="FES2014",
+    directory="~/tide_models",
+):
+
+    # Create a new reduced resolution (5km) tide modelling grid after
+    # first buffering the grid by 12km (i.e. at least two 5km pixels)
+    print("Rescaling and flattening tide modelling array")
+    rescaled_geobox = ds.odc.geobox.buffered(buffered).zoom_out(zoom_out)
+    rescaled_ds = odc.geo.xr.xr_zeros(rescaled_geobox)
+
+    # Flatten grid to 1D, then add time dimension. If custom times are 
+    # provided use these, otherwise use times from `ds`
+    time_coords = ds.coords["time"] if times is None else times
+    flattened_ds = rescaled_ds.stack(z=("x", "y"))
+    flattened_ds = flattened_ds.expand_dims(dim={"time": time_coords.values})
+
+    # Model tides for each timestep and x/y grid cell
+    print("Modelling tides")
+    tide_df = model_tides(
+        x=flattened_ds.x,
+        y=flattened_ds.y,
+        time=flattened_ds.time,
+        model=model,
+        directory=directory,
+        epsg=ds.odc.geobox.crs.epsg,
+    )
+
+    # Insert modelled tide values back into flattened array, then unstack
+    # back to 3D (x, y, time)
+    print("Unstacking tide modelling array")
+    tides_ds = (
+        tide_df.set_index(["x", "y"], append=True)
+        .to_xarray()
+        .tide_m.reindex_like(rescaled_ds)
+        .T.astype(np.float32)
+    )
+
+    # Optionally calculate and return only min and max tide across timeseries
+    if aggregate_min_max:
+
+        print("Computing min and max tides")
+        tides_ds = tides_ds.quantile(q=[0, 1], dim="time")
+        tides_ds = tides_ds.odc.assign_crs(ds.odc.crs)
+        reproject_dim = "quantile"
+
+    else:
+        reproject_dim = "time"
+
+    # Reproject each timestep
+    print("Reprojecting tides into original array")
+    tides_m = parallel_apply(tides_ds, dim=reproject_dim, func=resample_func)
+
+    return tides_m

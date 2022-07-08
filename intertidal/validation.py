@@ -97,8 +97,8 @@ def map_raster(
         # Create ipyleaflet map
         import ipyleaflet
 
-        m = ipyleaflet.Map(name='map')
-        lc = ipyleaflet.LayersControl(position='topright')
+        m = ipyleaflet.Map(name="map")
+        lc = ipyleaflet.LayersControl(position="topright")
         m.add_control(lc)
 
     # If ds is a list, loop through all datasets and add to map
@@ -111,13 +111,13 @@ def map_raster(
                 m, opacity=1.0, name=f"layer {i + 1}", vmin=vmin, vmax=vmax
             )
             bounds = ds_i.odc.map_bounds()
-    
+
     # Else add single layer to the map
     else:
-        
+
         # Reproject data to epsg:3857 and add to map
         ds.odc.reproject("epsg:3857", dst_nodata=np.nan).odc.add_to(
-            m, opacity=1.0, name='layer 1', vmin=vmin, vmax=vmax
+            m, opacity=1.0, name="layer 1", vmin=vmin, vmax=vmax
         )
         bounds = ds.odc.map_bounds()
 
@@ -131,3 +131,26 @@ def map_raster(
     # Display map if requested
     if display_map:
         display(m)
+
+
+def preprocess_validation(modelled_ds, validation_ds, clean_validation=None):
+
+    # Reproject to match array
+    validation_ds = validation_ds.odc.reproject(
+        modelled_ds.odc.geobox, resampling="nearest", dst_nodata=np.nan
+    )
+
+    # Analyse only pixels that contain valid data in both
+    modelled_nodata = modelled_ds.isnull()
+    validation_nodata = validation_ds.isnull()
+    
+    # Optionally clean validation dataset using mask_filters (e.g. `[('dilation', 1)]`)
+    if clean_validation is not None:
+        validation_nodata = mask_cleanup(validation_nodata, mask_filters=clean_validation)
+        
+    # Export 1D modelled and validation data for valid data area
+    invalid_data = modelled_nodata | validation_nodata
+    validation_z = validation_ds.values[~invalid_data.values]
+    modelled_z = modelled_ds.values[~invalid_data.values]
+
+    return validation_z, modelled_z
