@@ -240,7 +240,7 @@ def pixel_tides(
     resample_func=None,
     times=None,
     calculate_quantiles=None,
-    zoom_out=500,
+    resolution=5000,
     buffer=12000,
     model="FES2014",
     directory="~/tide_models_clipped",
@@ -267,23 +267,24 @@ def pixel_tides(
         to model tides for a custom set of times instead, for example:
         `times=pd.date_range(start="2000", end="2020", freq="30min")`
     calculate_quantiles : list or np.array, optional
-        Rather than returning all individual tides, low-res tides can
-        be first aggregated using a quantile calculation by passing in a 
-        list or array of quantiles to compute. For example, this could be 
-        used to calculate the min/max tide across all times:
+        Rather than returning all individual tides, low-resolution tides
+        can be first aggregated using a quantile calculation by passing in
+        a list or array of quantiles to compute. For example, this could
+        be used to calculate the min/max tide across all times:
         `calculate_quantiles=[0.0, 1.0]`.
-    zoom_out : int, optional
-        The amount by which to "zoom out" from the original high resolution
-        grid cell size when creating a new lower resolution grid. The default 
-        is 500x, which will produce a 5000 m cell size low resolution grid if 
-        `ds` was a 10 m resolution (10 m * 500 = 5000).
+    resolution: int, optional
+        The desired resolution of the low-resolution grid used for tide 
+        modelling. Defaults to 5000 for a 5,000 m grid (assuming `ds`'s 
+        CRS uses project/metre units).
     buffer : int, optional
         The amount by which to buffer the higher resolution grid extent
         when creating the new low resolution grid. This buffering is 
         important as it ensures that ensure pixel-based tides are seamless 
         across dataset boundaries. This buffer will eventually be clipped 
         away when the low-resolution data is re-projected back to the 
-        resolution and extent of the higher resolution dataset.
+        resolution and extent of the higher resolution dataset. Defaults
+        to 12,000 m to ensure that at least two 5,000 m pixels occur
+        outside of the dataset bounds.
     model : string, optional
         The tide model used to model tides. Options include:
         - FES2014
@@ -321,11 +322,16 @@ def pixel_tides(
             or tide height quantiles for every quantile provided by 
             `calculate_quantiles`.          
     """
+    
+    from odc.geo.geobox import GeoBox
 
     # Create a new reduced resolution (5km) tide modelling grid after
     # first buffering the grid by 12km (i.e. at least two 5km pixels)
-    print("Rescaling and flattening tide modelling array")
-    rescaled_geobox = ds.odc.geobox.buffered(buffer).zoom_out(zoom_out)
+    print("Creating reduced resolution tide modelling array")
+    buffered_geobox = ds.odc.geobox.buffered(buffer)
+    rescaled_geobox = GeoBox.from_bbox(
+        bbox=buffered_geobox.boundingbox, resolution=resolution
+    )
     rescaled_ds = odc.geo.xr.xr_zeros(rescaled_geobox)
 
     # Flatten grid to 1D, then add time dimension. If custom times are
@@ -335,7 +341,7 @@ def pixel_tides(
     flattened_ds = flattened_ds.expand_dims(dim={"time": time_coords.values})
 
     # Model tides for each timestep and x/y grid cell
-    print("Modelling tides")
+    print(f"Modelling tides using {model} tide model")
     tide_df = model_tides(
         x=flattened_ds.x,
         y=flattened_ds.y,
@@ -347,7 +353,6 @@ def pixel_tides(
 
     # Insert modelled tide values back into flattened array, then unstack
     # back to 3D (x, y, time)
-    print("Unstacking tide modelling array")
     tides_lowres = (
         tide_df.set_index(["x", "y"], append=True)
         .to_xarray()
@@ -380,7 +385,7 @@ def pixel_tides(
         return tides_highres, tides_lowres
 
     else:
-
+        print("Returning low resolution tide array")
         return tides_lowres
 
 
