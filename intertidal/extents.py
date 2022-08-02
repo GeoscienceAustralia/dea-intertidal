@@ -389,7 +389,7 @@ def pixel_tides(
         return tides_lowres
 
 
-def ds_to_flat(ds, ndwi_thresh=0.1, min_freq=0.01, max_freq=0.99, min_correlation=0.2):
+def ds_to_flat(ds, ndwi_thresh=0.1, index='ndwi', min_freq=0.01, max_freq=0.99, min_correlation=0.2):
 
     """
     Converts a three dimensional (x, y, time) array to a two
@@ -404,7 +404,7 @@ def ds_to_flat(ds, ndwi_thresh=0.1, min_freq=0.01, max_freq=0.99, min_correlatio
 
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
-    freq = (ds.ndwi > ndwi_thresh).where(~ds.ndwi.isnull()).mean(dim="time")
+    freq = (ds[index] > ndwi_thresh).where(~ds[index].isnull()).mean(dim="time")
     good_mask = (freq >= min_freq) & (freq <= max_freq)
 
     # Flatten to 1D
@@ -412,7 +412,7 @@ def ds_to_flat(ds, ndwi_thresh=0.1, min_freq=0.01, max_freq=0.99, min_correlatio
 
     # Calculate correlations, and keep only pixels with positive
     # correlations between water observations and tide height
-    correlations = xr.corr(ds_flat.ndwi > ndwi_thresh, ds_flat.tide_m, dim="time")
+    correlations = xr.corr(ds_flat[index] > ndwi_thresh, ds_flat.tide_m, dim="time")
     ds_flat = ds_flat.where(correlations > min_correlation, drop=True)
 
     print(

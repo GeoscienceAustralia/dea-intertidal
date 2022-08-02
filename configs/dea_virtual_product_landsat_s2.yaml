@@ -124,6 +124,8 @@ products:
                  contiguity: contiguity
                  ndwi:
                     formula: (green - nir) / (green + nir)
+                 mndwi:
+                    formula: (green - swir1) / (green + swir1)
 
     # Loads a subset of data from Sentinel-2A, including spectral bands, 
     # a cloud masking band (fmask) and a contiguity band (contiguity).
@@ -239,3 +241,5 @@ products:
                  contiguity: contiguity
                  ndwi:
                     formula: (green - nir) / (green + nir)
+                 mndwi:
+                    formula: (green - swir1) / (green + swir1)
