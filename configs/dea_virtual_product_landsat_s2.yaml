@@ -22,12 +22,13 @@ products:
              <<: *ls8_nbart
              product: ga_ls7e_ard_3
     
-    # Loads Landsat 5 data based on bands included in the `ls8_nbart` product
-    ls5_nbart:
-         recipe:
-            &ls5_nbart
-             <<: *ls8_nbart
-             product: ga_ls5t_ard_3
+    # # Loads Landsat 5 data based on bands included in the `ls8_nbart` product
+    ## 20/02/2023 temporarily disabled by CP to manually handle errors thrown by odc-core scripts during Sandbox upgrade (pip to Conda)
+    # ls5_nbart:
+    #      recipe:
+    #         &ls5_nbart
+    #          <<: *ls8_nbart
+    #          product: ga_ls5t_ard_3
     
     # Loads data from Landsat 5, 7 and 8, and combines this into a virtual 
     # product containing spectral bands (blue, green, red, nir, swir1, swir2),
@@ -38,7 +39,7 @@ products:
              transform: expressions
              input:
                  collate:
-                     - *ls5_nbart
+                     # - *ls5_nbart
                      - *ls7_nbart
                      - *ls8_nbart
              output:
