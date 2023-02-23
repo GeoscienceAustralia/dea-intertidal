@@ -15,18 +15,20 @@ def pixel_exp(dem,
     dem_tide_m = dem.copy(deep=True)
     ## Create a dataset from NIDEM to preserve the shape of the data
     dem = dem.to_dataset()
-    ## Drop the NIDEM tide heights
-    dem = dem.drop('tide_m')
-    ## Add a time array to enable the pixel_tides func
-    dem['time'] = timerange
+    # Drop the NIDEM tide heights and unneccessary coords
+    dem=dem.drop(['quantile', 'variable', 'tide_m'])
+    # Add a time array to enable the pixel_tides func
+    dem = dem.assign_coords(time=timerange)
+    #reorder the coords 
+    dem1=dem1[['time','y','x','spatial_ref']]
     
     ## Create the tide-height percentiles from which to calculate exposure statistics
     pc_range = np.linspace(0,1,1001)
     ## Run the pixel_tides function with the calculate_quantiles option. For each pixel, an array of tideheights is returned, corresponding to the percentiles from pc_range of the timerange-tide model that each tideheight appears in the model.
-    dem['tide_cq'], dem['lowres_tide_cq'] = pixel_tides(dem, 
-                                             resample=True, 
-                                             directory=directory,
-                                             calculate_quantiles = pc_range) 
+    dem['tide_cq'], _ = pixel_tides(dem, 
+                                     resample=True, 
+                                     directory=directory,
+                                     calculate_quantiles = pc_range) 
     ## Replace the pixel-based NIDEM values
     dem['tide_m'] = dem_tide_m
     
