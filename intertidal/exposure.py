@@ -20,7 +20,7 @@ def pixel_exp(dem,
     # Add a time array to enable the pixel_tides func
     dem = dem.assign_coords(time=timerange)
     #reorder the coords 
-    dem1=dem1[['time','y','x','spatial_ref']]
+    dem=dem[['time','y','x','spatial_ref']]
     
     ## Create the tide-height percentiles from which to calculate exposure statistics
     pc_range = np.linspace(0,1,1001)
