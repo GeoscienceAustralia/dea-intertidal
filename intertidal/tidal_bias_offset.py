@@ -51,9 +51,14 @@ def bias_offset(
         ht_offset = ht_offset.astype(set_dtype)
         lt_offset = lt_offset.astype(set_dtype)
     
-    # Mask out non-intertidal pixels
-    spread = spread.where(dem.tide_m > -9999)
-    ht_offset = ht_offset.where(dem.tide_m > -9999)
-    lt_offset = lt_offset.where(dem.tide_m > -9999)
+    # # Mask out non-intertidal pixels using NIDEM extents
+    # spread = spread.where(dem.tide_m > -9999)
+    # ht_offset = ht_offset.where(dem.tide_m > -9999)
+    # lt_offset = lt_offset.where(dem.tide_m > -9999)
+    
+        # TEMP Mask out non-intertidal pixels using ds extents
+    spread = spread.where(ds.tide_m.min(dim='time') > -9999)
+    ht_offset = ht_offset.where(ds.tide_m.min(dim='time') > -9999)
+    lt_offset = lt_offset.where(ds.tide_m.min(dim='time')> -9999)
     
     return spread, ht_offset, lt_offset
