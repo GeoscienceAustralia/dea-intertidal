@@ -81,4 +81,4 @@ def bias_offset(
     ds['ht_offset'] = ht_offset.where(ds.tide_m.min(dim='time') > -9999)
     ds['lt_offset'] = lt_offset.where(ds.tide_m.min(dim='time')> -9999)
     
-    return ds
+    return ds#, spread, min_mod
