@@ -19,6 +19,7 @@ def load_data(
     s2_prod="s2_nbart_ndwi",
     ls_prod="ls_nbart_ndwi",
     config_path="configs/dea_virtual_product_landsat_s2.yaml",
+    filter_gqa=True,
 ):
 
     from datacube.virtual import catalog_from_file
@@ -42,6 +43,11 @@ def load_data(
             "oa_s2cloudless_mask": "nearest",
         },
     }
+    
+    # Optionally add GQA 
+    # TODO: Remove once Sentinel-2 GQA issue is resolved
+    if filter_gqa:
+        query_params["gqa_iterative_mean_xy"] =  (0, 1)
 
     # Output list
     data_list = []
