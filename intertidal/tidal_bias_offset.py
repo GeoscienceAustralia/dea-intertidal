@@ -3,7 +3,9 @@ import xarray as xr
 def bias_offset(
                 ds,
                 dem,
-                set_dtype = None
+                set_dtype = None,
+                LAT_HAT=True,
+                LOT_HOT=False
                 ):
     '''
     
@@ -23,6 +25,8 @@ def bias_offset(
     from the minimum modelled tide.
     set_dtype: default = None. Set a dtype other than float e.g. int. Note that changing the 
     dtype may result in loss of data/resolution in your results
+    LAT/HAT are the lowest/highest astronomical tides. This work considers the modelled tides to be equivalent to the astronomical tides.
+    LOT/HOT are the lowest/highest sensor-observed tides
     
     '''
     
@@ -51,9 +55,30 @@ def bias_offset(
         ht_offset = ht_offset.astype(set_dtype)
         lt_offset = lt_offset.astype(set_dtype)
     
-    # Mask out non-intertidal pixels
-    spread = spread.where(dem.tide_m > -9999)
-    ht_offset = ht_offset.where(dem.tide_m > -9999)
-    lt_offset = lt_offset.where(dem.tide_m > -9999)
+#     # # Mask out non-intertidal pixels using NIDEM extents
+#     # spread = spread.where(dem.tide_m > -9999)
+#     # ht_offset = ht_offset.where(dem.tide_m > -9999)
+#     # lt_offset = lt_offset.where(dem.tide_m > -9999)
     
-    return spread, ht_offset, lt_offset
+#         # TEMP Mask out non-intertidal pixels using ds extents
+#     spread = spread.where(ds.tide_m.min(dim='time') > -9999)
+#     ht_offset = ht_offset.where(ds.tide_m.min(dim='time') > -9999)
+#     lt_offset = lt_offset.where(ds.tide_m.min(dim='time')> -9999)
+    
+    
+#     return spread, ht_offset, lt_offset
+
+    if LAT_HAT is True:
+        ds['LAT'] = min_mod.where(ds.tide_m.min(dim='time')> -9999)
+        ds['HAT'] = max_mod.where(ds.tide_m.min(dim='time')> -9999)
+        
+    if LOT_HOT is True:
+        ds['LOT'] = min_obs.where(ds.tide_m.min(dim='time')> -9999)
+        ds['HOT'] = max_obs.where(ds.tide_m.min(dim='time')> -9999)
+        
+        # Mask out non-intertidal pixels using ds extents
+    ds['spread'] = spread.where(ds.tide_m.min(dim='time') > -9999)
+    ds['ht_offset'] = ht_offset.where(ds.tide_m.min(dim='time') > -9999)
+    ds['lt_offset'] = lt_offset.where(ds.tide_m.min(dim='time')> -9999)
+    
+    return ds#, spread, min_mod
