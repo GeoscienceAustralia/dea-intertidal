@@ -43,7 +43,21 @@ def points_on_line(gdf, index, distance=30):
 
 def tidal_offset_tidelines (ds):
     '''
-    
+    This function extracts high and low tidelines from a `xarray.Dataset`,
+    calculates the tidal offsets at each point on the lines, and returns
+    the offset values in separate `geopandas.GeoDataFrame` objects.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        A `xarray.Dataset` containing 'ht_offset' and 'lt_offset' DataArrays
+        and an 'Extents' DataArray containing binary shoreline information.
+
+    Returns
+    -------
+    tuple
+        A tuple of two `geopandas.GeoDataFrame` objects containing the
+        high and low tidelines with their respective tidal offsets.    
     '''
     ## High/Low tideline extraction
     tidelines_gdf = subpixel_contours(da=ds['Extents'], z_values=[0.5,1.5])
