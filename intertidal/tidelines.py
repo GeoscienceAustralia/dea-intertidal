@@ -1,6 +1,11 @@
-from dea_tools.spatial import subpixel_contours #xr_vectorize
+import numpy as np
+import xarray as xr
+import geopandas as gpd
+from dea_tools.spatial import subpixel_contours
 
-## From https://github.com/GeoscienceAustralia/dea-coastlines/blob/stable/coastlines/vector.py#L707-L748
+## From https://github.com/GeoscienceAustralia/dea-coastlines/blob/stable/coastlines/vector.py#L707-## L748. The points_on_line func can be removed once a PR to have it added to dea_tools.spatial is
+## approved and added to the master branch of dea_notebooks. CP 17/03/2023
+
 def points_on_line(gdf, index, distance=30):
     """
     Generates evenly-spaced point features along a specific line feature
