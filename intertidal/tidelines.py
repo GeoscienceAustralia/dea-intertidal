@@ -66,10 +66,10 @@ def tidal_offset_tidelines (ds, distance = 10):
     -------
     tuple
         A tuple of two `geopandas.GeoDataFrame` objects containing the
-        high and low tidelines with their respective tidal offsets.    
+        high and low tidelines with their respective tidal offsets and
+        a `geopandas.GeoDataFrame` containing the multilinestring tidelines.   
     '''
-    ## Extract the high/low tide boundary as multilinestrings between the wet and intertidal extents,
-    ## and the intertidal and dry extents
+    ## Extract the high/low tide boundaries
     tidelines_gdf = subpixel_contours(da=ds['Extents'], z_values=[0.5,1.5])
     
     ## Translate the high/Low tidelines into point data at regular intervals
