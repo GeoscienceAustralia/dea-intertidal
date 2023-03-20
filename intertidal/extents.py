@@ -1,16 +1,33 @@
-
+import xarray as xr
 
 def extents(freq,
             dem,
             ds
            ):
     '''
-    This extents code requires the 'freq' output from the 'ds_to_flat' func and the final 'dem'.
+    Generate always/sometimes/never_wet layers from the NDWI frequency layer and intertidal DEM extents.
+    
+    Parameters
+    ----------
+    freq : xr.DataArray
+        NDWI frequency layer generated to summarise the frequency of wetness per pixel for any given time-series 
+        of the analysis area of interest.
+    dem : xr.DataArray
+        The final intertidal DEM.
+    ds : xr.Dataset
+        Master xr.Dataset for storing intertidal outputs.
+
+    Returns
+    -------
+    xr.Dataset
+        Master xr.Dataset with the Extents layer added.
+
+    Notes
+    -----
     The always/sometimes/never_wet layers are built from the NDWI frequency layer ('freq'), 
     generated to summarise the frequency of wetness per pixel for any given time-series of the 
     analysis area of interest.
     The always/sometimes/never_wet layers are calculated from the extents of the intertidal dem.
-    ds is master xr.Dataset for storing intertidal outputs
     Always_wet areas are classified as 0.
     Sometimes_wet areas are classified as 1.
     Never_wet areas are classified as 2.
@@ -20,9 +37,9 @@ def extents(freq,
     int_ext = freq.where(dem.notnull()==True)
 
     ## Find the non-intertidal extents by masking `freq` with the null areas in the dem.
+    wet_dry_ext = freq.where(dem.isnull()==True)
     ## Create a bool for the always wet and always dry areas by separating the NDWI frequency
     ## values through the middle. (There's probably a nicer way to do this step).
-    wet_dry_ext = freq.where(dem.isnull()==True)
     wet_dry_ext = wet_dry_ext >= 0.5
 
     ## Find the always_wet extent by masking the non-intertidal area for freq values greater than 0.5
