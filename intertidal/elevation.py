@@ -9,9 +9,11 @@ import odc.geo.xr
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 from itertools import repeat
-import datacube
 
-from intertidal.utils import load_config
+import datacube
+from datacube.utils.geometry import Geometry
+
+from intertidal.utils import load_config, configure_logging
 
 # from dea_tools.coastal import model_tides
 from dea_tools.coastal import pixel_tides
@@ -346,7 +348,6 @@ def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
 
 
 def elevation(study_area,
-              fname='testing',
               start_year=2020,
               end_year=2022,
               resolution=10,
@@ -355,7 +356,11 @@ def elevation(study_area,
               include_s2=True,
               include_ls=True,
               filter_gqa=False,
-              config_path='configs/dea_intertidal_config.yaml'):  
+              config_path='configs/dea_intertidal_config.yaml',
+              log=None):
+    
+    if log is None:
+        log = configure_logging()
     
     # Create local dask cluster to improve data load time
     client = create_local_dask_cluster(return_client=True)
@@ -367,7 +372,7 @@ def elevation(study_area,
     config = load_config(config_path)
     
     # Load study area from tile grid if passed a string
-    if isinstance(study_area, str):
+    if isinstance(study_area, int):
         
         # Load study area
         gridcell_gdf = (
@@ -378,12 +383,18 @@ def elevation(study_area,
 
         # Create geom as input for dc.load
         geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs='EPSG:4326')
+        fname = f"{study_area}_{start_year}-{end_year}"
+        log.info(f"Study area {study_area}: Loaded study area grid")
     
     # Otherwise, use supplied geom
     else:        
         geom = study_area
+        study_area = 'testing'
+        fname = f"{study_area}_{start_year}-{end_year}"
+        log.info(f"Study area {study_area}: Loaded custom study area")
     
     # Load data
+    log.info(f"Study area {study_area}: Loading satellite data")
     ds = load_data(dc=dc, 
                geom=geom, 
                time_range=(str(start_year), str(end_year)), 
@@ -393,29 +404,36 @@ def elevation(study_area,
                ls_prod="ls_nbart_ndwi" if include_ls else None,
                config_path=config['Virtual product']['virtual_product_path'],
                filter_gqa=filter_gqa)[['ndwi']]
-    
-    # Load into memory
     ds.load()
     
     # Model tides into every pixel in the three-dimensional (x by y by time) satellite dataset
+    log.info(f"Study area {study_area}: Modelling tide heights for each pixel")
     ds["tide_m"], _ = pixel_tides(ds, resample=True)
 
     # Set tide array pixels to nodata if the satellite data array pixels contain
     # nodata. This ensures that we ignore any tide observations where we don't
     # have matching satellite imagery 
+    log.info(f"Study area {study_area}: Masking nodata and adding tide heights to satellite data array")
     ds["tide_m"] = ds["tide_m"].where(~ds.to_array().isel(variable=0).isnull())
 
     # Flatten array from 3D to 2D and drop pixels with no correlation with tide
+    log.info(f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels")
     ds_flat, freq, good_mask = ds_to_flat(
         ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2)
     
-    # Pixel-wise rolling median
+    # Per-pixel rolling median
+    log.info(f"Study area {study_area}: Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
     ds_flat, windows_n=100, window_prop_tide=0.15, max_workers=64)
     
     # Model intertidal elevation and confidence
+    log.info(f"Study area {study_area}: Modelling intertidal elevation and confidence")
     dem_ds = pixel_dem(interval_ds, ds, ndwi_thresh, fname)
     
+    # Close dask client
+    client.close()
+    
+    log.info(f"Study area {study_area}: Successfully completed intertidal elevation modelling")    
     return dem_ds
 
     
