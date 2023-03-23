@@ -4,19 +4,20 @@ import fsspec
 from pathlib import Path
 
 
-def configure_logging(name: str = "Coastlines") -> logging.Logger:
+def configure_logging(name: str = "DEA Intertidal") -> logging.Logger:
     """
     Configure logging for the application.
     """
     logger = logging.getLogger(name)
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        )
 
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
     return logger
 
