@@ -1,7 +1,7 @@
 about: Catalog of virtual products loading, normalising and cloud masking Landsat products
 products:
 
-    # Loads a subset of data from Landsat 9, including spectral bands 
+    # Loads a subset of data from Landsat 8, including spectral bands 
     # (blue, green, red, nir, swir1, swir2), a cloud masking band (fmask) 
     # and a contiguity band (contiguity).
     ls8_nbart:
