@@ -1,21 +1,16 @@
 import xarray as xr
 
-def extents(freq,
-            dem,
-            ds
-           ):
+def extents(ds):
     '''
     Generate always/sometimes/never_wet layers from the NDWI frequency layer and intertidal DEM extents.
     
     Parameters
     ----------
-    freq : xr.DataArray
-        NDWI frequency layer generated to summarise the frequency of wetness per pixel for any given time-series 
-        of the analysis area of interest.
-    dem : xr.DataArray
-        The final intertidal DEM.
     ds : xr.Dataset
-        Master xr.Dataset for storing intertidal outputs.
+        Master xr.Dataset for storing intertidal outputs with arrays including:
+            freq - an NDWI frequency layer generated to summarise the frequency of wetness per pixel for any given time-series and
+            dem, the final intertidal DEM.
+
 
     Returns
     -------
@@ -34,10 +29,10 @@ def extents(freq,
     '''
 
     ## Find the intertidal extent by masking `freq` with the non-null areas in the dem
-    int_ext = freq.where(dem.notnull()==True)
+    int_ext = ds.freq.where(ds.dem.notnull()==True)
 
     ## Find the non-intertidal extents by masking `freq` with the null areas in the dem.
-    wet_dry_ext = freq.where(dem.isnull()==True)
+    wet_dry_ext = ds.freq.where(ds.dem.isnull()==True)
     ## Create a bool for the always wet and always dry areas by separating the NDWI frequency
     ## values through the middle. (There's probably a nicer way to do this step).
     wet_dry_ext = wet_dry_ext >= 0.5
@@ -58,6 +53,6 @@ def extents(freq,
     int_ext = int_ext.combine_first(dry_ext)
 
     ## Add to master dataset
-    ds['Extents'] = int_ext
+    ds['extents'] = int_ext
     
     return ds
