@@ -166,7 +166,7 @@ def ds_to_flat(
     print(
         f"Reducing analysed pixels from {freq.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / freq.count().item():.2f}%)"
     )
-    return ds_flat, freq, good_mask
+    return ds_flat, freq, good_mask, correlations
 
 
 def rolling_tide_window(
@@ -418,7 +418,7 @@ def elevation(study_area,
 
     # Flatten array from 3D to 2D and drop pixels with no correlation with tide
     log.info(f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels")
-    ds_flat, freq, good_mask = ds_to_flat(
+    ds_flat, freq, good_mask, correlations = ds_to_flat(
         ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2)
     
     # Per-pixel rolling median
@@ -434,7 +434,7 @@ def elevation(study_area,
     client.close()
     
     log.info(f"Study area {study_area}: Successfully completed intertidal elevation modelling")    
-    return dem_ds
+    return dem_ds, freq, ds, correlations
 
     
     
