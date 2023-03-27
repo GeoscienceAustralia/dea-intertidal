@@ -1,4 +1,5 @@
 import xarray as xr
+import numpy as np
 
 def extents(ds):
     '''
@@ -15,7 +16,7 @@ def extents(ds):
     Returns
     -------
     xr.Dataset
-        Master xr.Dataset with the Extents layer added.
+        Master xr.Dataset with the extents layer added as int dtype
 
     Notes
     -----
@@ -53,6 +54,6 @@ def extents(ds):
     int_ext = int_ext.combine_first(dry_ext)
 
     ## Add to master dataset
-    ds['extents'] = int_ext
+    ds['extents'] = int_ext.astype(np.int16)
     
     return ds
