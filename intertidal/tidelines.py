@@ -70,7 +70,7 @@ def tidal_offset_tidelines (ds, distance = 10):
         a `geopandas.GeoDataFrame` containing the multilinestring tidelines.   
     '''
     ## Extract the high/low tide boundaries
-    tidelines_gdf = subpixel_contours(da=ds['Extents'], z_values=[0.5,1.5])
+    tidelines_gdf = subpixel_contours(da=ds['extents'], z_values=[0.5,1.5])
     
     ## Translate the high/Low tidelines into point data at regular intervals
     lowtideline = points_on_line(tidelines_gdf, 0, distance=distance)
