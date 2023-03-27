@@ -58,7 +58,8 @@ setup_kwargs = {
     "license": "Apache License 2.0",
     "entry_points": {
         "console_scripts": [
-            "intertidal = intertidal.elevation:intertidal_cli",
+            "dea-intertidal = intertidal.elevation:intertidal_cli",
+            "dea-intertidal-hltc = intertidal.hltc:hltc_cli",
         ]
     },
 }
