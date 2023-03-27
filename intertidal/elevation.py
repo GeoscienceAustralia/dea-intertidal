@@ -1,17 +1,20 @@
+import sys
 import numpy as np
 import pandas as pd
 import xarray as xr
 import geopandas as gpd
 from glob import glob
 import matplotlib.pyplot as plt
-from odc.algo import mask_cleanup
-import odc.geo.xr
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 from itertools import repeat
+import click
 
 import datacube
+import odc.geo.xr
+from odc.algo import mask_cleanup
 from datacube.utils.geometry import Geometry
+from datacube.utils.aws import configure_s3_access
 
 from intertidal.utils import load_config, configure_logging
 
@@ -291,22 +294,18 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
 
 
 def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
-    
     # Use standard deviation as measure of confidence
     confidence = interval_ds.ndwi_std
 
     # Smooth using a rolling mean
-    smoothed_ds = interval_ds.rolling(
-        interval=20, center=False, min_periods=1
-    ).mean()
+    smoothed_ds = interval_ds.rolling(interval=20, center=False, min_periods=1).mean()
 
     # Outputs
     output_list = []
 
     # Export DEM for rolling median and half a standard deviation either side
     for q in [-0.5, 0, 0.5]:
-        
-        suffix = {-0.5: "dem_low", 0: "dem", 0.5: "dem_high"}[q]        
+        suffix = {-0.5: "dem_low", 0: "dem", 0.5: "dem_high"}[q]
         print(f"Processing {suffix}")
 
         # Identify the max tide per pixel where NDWI == land
@@ -316,25 +315,25 @@ def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
         tide_thresh = tide_dry.max(dim="interval")
         tide_max = smoothed_ds.tide_m.max(dim="interval")
 
-        # Remove any pixel where tides max out (i.e. always land), and 
+        # Remove any pixel where tides max out (i.e. always land), and
         # unstack back to 3D (x, y, time) array
         always_dry = tide_thresh >= tide_max
         dem = tide_thresh.where(~always_dry)
         dem = dem.unstack("z").reindex_like(ds).transpose("y", "x")
 
         # Add name and add outputs to list
-        dem = dem.rename(suffix)        
+        dem = dem.rename(suffix)
         output_list.append(dem)
-        
+
     # Merge into a single xarray.Dataset
-    dem_ds = xr.merge(output_list).drop('variable')
-    
+    dem_ds = xr.merge(output_list).drop("variable")
+
     # Subtract low from high DEM to get a single confidence layer
     # Note: This may produce unexpected results at the top and bottom
-    # of the intertidal zone, as the low and high DEMs may not be 
+    # of the intertidal zone, as the low and high DEMs may not be
     # currently be properly masked to remove always wet/dry terrain
-    dem_ds['confidence'] = (dem_ds.dem_high - dem_ds.dem_low)
-    
+    dem_ds["confidence"] = dem_ds.dem_high - dem_ds.dem_low
+
     # Export as GeoTIFFs
     if export_geotiff:
         print(f"\nExporting GeoTIFF files to 'data/interim/pixel_{fname}_....tif'")
@@ -342,26 +341,27 @@ def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
             lambda x: x.odc.write_cog(
                 fname=f"data/interim/pixel_{fname}_{x.name}.tif", overwrite=True
             )
-        )    
-    
+        )
+
     return dem_ds
 
 
-def elevation(study_area,
-              start_year=2020,
-              end_year=2022,
-              resolution=10,
-              crs="EPSG:3577",
-              ndwi_thresh=0.1,
-              include_s2=True,
-              include_ls=True,
-              filter_gqa=False,
-              config_path='configs/dea_intertidal_config.yaml',
-              log=None):
-    
+def elevation(
+    study_area,
+    start_year=2020,
+    end_year=2022,
+    resolution=10,
+    crs="EPSG:3577",
+    ndwi_thresh=0.1,
+    include_s2=True,
+    include_ls=True,
+    filter_gqa=False,
+    config_path="configs/dea_intertidal_config.yaml",
+    log=None,
+):
     if log is None:
         log = configure_logging()
-    
+
     # Create local dask cluster to improve data load time
     client = create_local_dask_cluster(return_client=True)
 
@@ -370,80 +370,188 @@ def elevation(study_area,
 
     # Load analysis params from config file
     config = load_config(config_path)
-    
+
     # Load study area from tile grid if passed a string
-    if isinstance(study_area, int):
-        
+    if isinstance(study_area, (int, str)):
         # Load study area
         gridcell_gdf = (
-            gpd.read_file(config['Input files']['grid_path']).to_crs(
-                epsg=4326).set_index('id'))
+            gpd.read_file(config["Input files"]["grid_path"])
+            .to_crs(epsg=4326)
+            .set_index("id")
+        )
         gridcell_gdf.index = gridcell_gdf.index.astype(int).astype(str)
         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
         # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs='EPSG:4326')
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs="EPSG:4326")
         fname = f"{study_area}_{start_year}-{end_year}"
         log.info(f"Study area {study_area}: Loaded study area grid")
-    
+
     # Otherwise, use supplied geom
-    else:        
+    else:
         geom = study_area
-        study_area = 'testing'
+        study_area = "testing"
         fname = f"{study_area}_{start_year}-{end_year}"
         log.info(f"Study area {study_area}: Loaded custom study area")
-    
+
     # Load data
     log.info(f"Study area {study_area}: Loading satellite data")
-    ds = load_data(dc=dc, 
-               geom=geom, 
-               time_range=(str(start_year), str(end_year)), 
-               resolution=resolution, 
-               crs=crs,
-               s2_prod="s2_nbart_ndwi" if include_s2 else None,
-               ls_prod="ls_nbart_ndwi" if include_ls else None,
-               config_path=config['Virtual product']['virtual_product_path'],
-               filter_gqa=filter_gqa)[['ndwi']]
+    ds = load_data(
+        dc=dc,
+        geom=geom,
+        time_range=(str(start_year), str(end_year)),
+        resolution=resolution,
+        crs=crs,
+        s2_prod="s2_nbart_ndwi" if include_s2 else None,
+        ls_prod="ls_nbart_ndwi" if include_ls else None,
+        config_path=config["Virtual product"]["virtual_product_path"],
+        filter_gqa=filter_gqa,
+    )[["ndwi"]]
     ds.load()
-    
+
     # Model tides into every pixel in the three-dimensional (x by y by time) satellite dataset
     log.info(f"Study area {study_area}: Modelling tide heights for each pixel")
     ds["tide_m"], _ = pixel_tides(ds, resample=True)
 
     # Set tide array pixels to nodata if the satellite data array pixels contain
     # nodata. This ensures that we ignore any tide observations where we don't
-    # have matching satellite imagery 
-    log.info(f"Study area {study_area}: Masking nodata and adding tide heights to satellite data array")
+    # have matching satellite imagery
+    log.info(
+        f"Study area {study_area}: Masking nodata and adding tide heights to satellite data array"
+    )
     ds["tide_m"] = ds["tide_m"].where(~ds.to_array().isel(variable=0).isnull())
 
     # Flatten array from 3D to 2D and drop pixels with no correlation with tide
-    log.info(f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels")
+    log.info(
+        f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels"
+    )
     ds_flat, freq, good_mask = ds_to_flat(
-        ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2)
-    
+        ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
+    )
+
     # Per-pixel rolling median
     log.info(f"Study area {study_area}: Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
-    ds_flat, windows_n=100, window_prop_tide=0.15, max_workers=64)
-    
+        ds_flat, windows_n=100, window_prop_tide=0.15, max_workers=64
+    )
+
     # Model intertidal elevation and confidence
     log.info(f"Study area {study_area}: Modelling intertidal elevation and confidence")
     dem_ds = pixel_dem(interval_ds, ds, ndwi_thresh, fname)
-    
+
     # Close dask client
     client.close()
-    
-    log.info(f"Study area {study_area}: Successfully completed intertidal elevation modelling")    
+
+    log.info(
+        f"Study area {study_area}: Successfully completed intertidal elevation modelling"
+    )
     return dem_ds
 
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+# Dummy funcs
+def extents(x):
+    print('Generating extents')
+    return x
+
+def exposure(x):
+    print('Generating exposure')
+    return x
+
+def tidal_bias_offset(x):
+    print('Generating tidal biases and offsets')
+    return x
+
+
+@click.command()
+@click.option(
+    "--config_path",
+    type=str,
+    required=True,
+    help="Path to the YAML config file defining inputs to "
+    "use for this analysis. These are typically located in "
+    "the `dea-intertidal/configs/` directory.",
+)
+@click.option(
+    "--study_area",
+    type=str,
+    required=True,
+    help="A string providing a unique ID of an analysis "
+    "gridcell that will be used to run the analysis. This "
+    'should match a row in the "id" column of the provided '
+    "analysis gridcell vector file.",
+)
+@click.option(
+    "--start_date",
+    type=int,
+    default=2020,
+    help="",
+)
+@click.option(
+    "--end_date",
+    type=int,
+    default=2022,
+    help="",
+)
+@click.option(
+    "--resolution",
+    type=float,
+    default=10,
+    help="",
+)
+@click.option(
+    "--aws_unsigned/--no-aws_unsigned",
+    type=bool,
+    default=True,
+    help="Whether to use sign AWS requests for S3 access",
+)
+def intertidal_cli(
+    config_path,
+    study_area,
+    start_date,
+    end_date,
+    resolution,
+    aws_unsigned,
+):
+    log = configure_logging(f"Intertidal processing for study area {study_area}")
+
+    # Configure S3
+    configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
+
+    try:
+        # Calculate elevation
+        ds = elevation(
+            study_area,
+            start_year=start_date,
+            end_year=end_date,
+            resolution=resolution,
+            crs="EPSG:3577",
+            ndwi_thresh=0.1,
+            include_s2=True,
+            include_ls=True,
+            filter_gqa=False,
+            config_path=config_path,
+            log=log,
+        )
+        
+        # Calculate extents
+        a = extents(ds)
+
+        # Calculate exposure
+        b = exposure(ds)
+
+        # Calculate tidal biases, offsets, HAT/LAT/LOT/HOT
+        c = tidal_bias_offset(ds)       
+
+    except Exception as e:
+        log.exception(f"Study area {study_area}: Failed to run process with error {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    intertidal_cli()
+
+
 # def pixel_tide_sort(ds, tide_var="tide_height", ndwi_var="ndwi", tide_dim="tide_n"):
 
 #     # NOT CURRENTLY USED
