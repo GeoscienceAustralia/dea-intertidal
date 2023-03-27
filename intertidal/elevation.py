@@ -163,9 +163,13 @@ def ds_to_flat(
     correlations = xr.corr(ds_flat[index] > ndwi_thresh, ds_flat.tide_m, dim="time")
     ds_flat = ds_flat.where(correlations > min_correlation, drop=True)
     
-    ## Preparation for extents workflow
-    correlations3D = correlations.unstack("z").reindex_like(ds).transpose("y", "x")
-    ds['freq_corr'] = freq.where(correlations3D > min_freq, drop=True)
+#     ## Preparation for extents workflow
+#     correlations3D = correlations.unstack("z").reindex_like(ds).transpose("y", "x")
+#     ds['freq_corr'] = freq.where(correlations3D > min_freq, drop=True)
+    
+#         ## Testing
+#     ds['correlations3D'] = correlations3D
+    ds['freq'] = freq
 
     print(
         f"Reducing analysed pixels from {freq.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / freq.count().item():.2f}%)"
