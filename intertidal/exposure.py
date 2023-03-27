@@ -23,7 +23,7 @@ def pixel_exp(ds,
     Returns
     -------
     xarray.Dataset
-        Dataset containing a nea array 'idxmin' representing exposure percentage time for each pixel.
+        Dataset containing a new int 16 array 'exposure' representing exposure percentage time for each pixel.
 
     Notes
     -----
@@ -46,10 +46,15 @@ def pixel_exp(ds,
                                      times=timerange) 
     
     ## Calculate the tide-height difference between the NIDEM value and each percentile value per pixel
-    ds['diff'] = abs(ds.tide_cq - ds.dem)
+    diff = abs(ds.tide_cq - ds.dem)
 
     ## Take the percentile of the smallest tide-height difference as the exposure % per pixel
-    ds['idxmin'] = ds['diff'].idxmin(dim='quantile')
+    idxmin = diff.idxmin(dim='quantile')
+    
+    ## convert to percentage then int and add to master ds
+    idxmin = (idxmin * 100).astype(np.int16)
+    
+    ds['exposure'] = idxmin
     
     return ds
 
