@@ -33,7 +33,7 @@ def extents(ds):
     int_ext = ds.freq.where(ds.dem.notnull())
 
     ## Find the non-intertidal extents by masking `freq` with the null areas in the dem.
-    wet_dry_ext = ds.freq.where(ds.dem.isnull()==True)
+    wet_dry_ext = ds.freq.where(ds.dem.isnull())
     ## Create a bool for the always wet and always dry areas by separating the NDWI frequency
     ## values through the middle. (There's probably a nicer way to do this step).
     wet_dry_ext = wet_dry_ext >= 0.5
