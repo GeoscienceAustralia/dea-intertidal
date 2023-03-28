@@ -30,7 +30,7 @@ def extents(ds):
     '''
 
     ## Find the intertidal extent by masking `freq` with the non-null areas in the dem
-    int_ext = ds.freq.where(ds.dem.notnull()==True)
+    int_ext = ds.freq.where(ds.dem.notnull())
 
     ## Find the non-intertidal extents by masking `freq` with the null areas in the dem.
     wet_dry_ext = ds.freq.where(ds.dem.isnull()==True)
