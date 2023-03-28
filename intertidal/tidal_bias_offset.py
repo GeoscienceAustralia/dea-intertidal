@@ -72,7 +72,7 @@ def bias_offset(
     
     ## Add the lowest and highest astronomical tides
     ## TODO: mask using intertidal extent layer instead
-    if LAT_HAT is True:
+    if LAT_HAT:
         # ds['LAT'] = min_mod.where(ds.tide_m.min(dim='time')> -9999)
         # ds['HAT'] = max_mod.where(ds.tide_m.min(dim='time')> -9999)
         ds['LAT'] = min_mod.where(ds.extents == 1)
