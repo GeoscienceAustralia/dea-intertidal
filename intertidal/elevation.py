@@ -419,13 +419,13 @@ def elevation(study_area,
     
     # Model tides into every pixel in the three-dimensional (x by y by time) satellite dataset
     log.info(f"Study area {study_area}: Modelling tide heights for each pixel")
-    ds["tide_m"], _ = pixel_tides(ds, resample=True)
+    tide_m, _ = pixel_tides(ds, resample=True)
 
     # Set tide array pixels to nodata if the satellite data array pixels contain
     # nodata. This ensures that we ignore any tide observations where we don't
     # have matching satellite imagery 
     log.info(f"Study area {study_area}: Masking nodata and adding tide heights to satellite data array")
-    ds["tide_m"] = ds["tide_m"].where(~ds.to_array().isel(variable=0).isnull())
+    tide_m = tide_m.where(~ds.to_array().isel(variable=0).isnull())
 
     # Flatten array from 3D to 2D and drop pixels with no correlation with tide
     log.info(f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels")
@@ -445,7 +445,7 @@ def elevation(study_area,
     client.close()
     
     log.info(f"Study area {study_area}: Successfully completed intertidal elevation modelling")    
-    return ds
+    return ds, tide_m, freq
 
     
     
