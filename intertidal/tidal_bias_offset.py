@@ -1,9 +1,10 @@
 import xarray as xr
 import numpy as np
 
-def bias_offset(tide_m = ds.tide_m,
-                tide_cq = tide_cq,
-                extents = ds.extents,
+def bias_offset(
+                tide_m,
+                tide_cq,
+                extents,
                 lat_hat=True,
                 lot_hot=None
                 ):
@@ -66,18 +67,18 @@ def bias_offset(tide_m = ds.tide_m,
         
     ## Add the lowest and highest astronomical tides
     if lat_hat:
-        lat = min_mod.where(ds.extents != 2)
-        hat = max_mod.where(ds.extents != 2)
+        lat = min_mod.where(extents != 2)
+        hat = max_mod.where(extents != 2)
     
     ## Add the lowest and highest sensor-observed tides
     if lot_hot:
-        lot = min_obs.where(ds.extents != 2)
-        hot = max_obs.where(ds.extents != 2)
+        lot = min_obs.where(extents != 2)
+        hot = max_obs.where(extents != 2)
         
     # Mask out non-intertidal pixels using ds extents
-    spread = spread.where(ds.extents != 2)
-    ht_offset = ht_offset.where(ds.extents != 2)
-    lt_offset = lt_offset.where(ds.extents != 2)
+    spread = spread.where(extents != 2)
+    ht_offset = ht_offset.where(extents != 2)
+    lt_offset = lt_offset.where(extents != 2)
     
     ## Convert floats to ints
     spread = spread.astype(np.int16)
