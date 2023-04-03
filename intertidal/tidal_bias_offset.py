@@ -2,7 +2,7 @@ import xarray as xr
 import numpy as np
 
 def bias_offset(tide_m = ds.tide_m,
-                tide_cq = ds.tide_cq,
+                tide_cq = tide_cq,
                 extents = ds.extents,
                 lat_hat=True,
                 lot_hot=None
