@@ -46,9 +46,9 @@ def points_on_line(gdf, index, distance=30):
 
     return points_gdf
 
-def tidal_offset_tidelines (extents = ds.extents, 
-                            ht_offset = ds.ht_offset,
-                            lt_offset = ds.lt_offset,
+def tidal_offset_tidelines (extents, 
+                            ht_offset,
+                            lt_offset,
                             distance = 10):
     '''
     This function extracts high and low tidelines from a rasterised 
