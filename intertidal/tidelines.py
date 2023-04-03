@@ -46,17 +46,27 @@ def points_on_line(gdf, index, distance=30):
 
     return points_gdf
 
-def tidal_offset_tidelines (ds, distance = 10):
+def tidal_offset_tidelines (extents = ds.extents, 
+                            ht_offset = ds.ht_offset,
+                            lt_offset = ds.lt_offset,
+                            distance = 10):
     '''
-    This function extracts high and low tidelines from a `xarray.Dataset`,
+    This function extracts high and low tidelines from a rasterised 
+    'sometimes wet' layer in the extents input xr.DataArray,
     calculates the tidal offsets at each point on the lines, and returns
     the offset values in separate `geopandas.GeoDataFrame` objects.
 
     Parameters
     ----------
-    ds : xarray.Dataset
-        A `xarray.Dataset` containing 'ht_offset' and 'lt_offset' DataArrays
-        and an 'Extents' DataArray containing binary shoreline information.
+    extents : xarray.DataArray
+        An xarray.DataArray containing binary shoreline information,
+        depicting always, sometimes and never wet pixels.
+    ht_offset: xarray.DataArray
+        An xarray.DataArray containing the percentage high-tide offset of the 
+        satellite observed tide heights from the modelled heights.
+    lt_offset: xarray.DataArray
+        An xarray.DataArray containing the percentage low-tide offset of the 
+        satellite observed tide heights from the modelled heights.
     distance : integer or float, optional
         A number giving the interval at which to generate points along
         the line feature. Defaults to 10, which will generate a point
@@ -70,7 +80,7 @@ def tidal_offset_tidelines (ds, distance = 10):
         a `geopandas.GeoDataFrame` containing the multilinestring tidelines.   
     '''
     ## Extract the high/low tide boundaries
-    tidelines_gdf = subpixel_contours(da=ds['extents'], z_values=[0.5,1.5])
+    tidelines_gdf = subpixel_contours(da=extents, z_values=[0.5,1.5])
     
     ## Translate the high/Low tidelines into point data at regular intervals
     lowtideline = points_on_line(tidelines_gdf, 0, distance=distance)
@@ -86,8 +96,8 @@ def tidal_offset_tidelines (ds, distance = 10):
 
     ## Extract the high or low tide offset at each point in the high and low tidelines respectively
     ## From https://stackoverflow.com/questions/67425567/extract-values-from-xarray-dataset-using-geopandas-multilinestring
-    highlineoffset = ds.ht_offset.sel(x=x_indexer_high, y=y_indexer_high, method='nearest')
-    lowlineoffset = ds.lt_offset.sel(x=x_indexer_low, y=y_indexer_low, method='nearest')
+    highlineoffset = ht_offset.sel(x=x_indexer_high, y=y_indexer_high, method='nearest')
+    lowlineoffset = lt_offset.sel(x=x_indexer_low, y=y_indexer_low, method='nearest')
 
     ## Replace the offset values per point into the master dataframes
     hightideline['ht_offset'] = highlineoffset
