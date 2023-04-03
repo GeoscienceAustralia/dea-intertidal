@@ -14,15 +14,15 @@ def bias_offset(tide_m = ds.tide_m,
 
     Parameters
     ----------
-    ds : xarray.Dataset
-        An xarray of including sensor-observed tide-heights (ds.tide_m).
-    dem : xarray.Array
-        An xarray of `ds` containing modelled tide heights, separated by quantiles of the full modelled tide range
-        (tide_cq) as well as the NIDEM elevations (dem.tide_m). Note that this version of dem is an 
-        output of the pixel_exp function in exposure.py.
-    set_dtype : dtype or None, optional
-        Default is None. Set a dtype other than float, e.g., int. Note that changing the dtype may
-        result in loss of data/resolution in your results.
+    tide_m : xr.DataArray
+        Xarray DataArray representing sensor observed tide heights for each pixel. Should have 'time', 
+        'x' and 'y' in its dimensions.
+    tide_cq : xr.DataArray
+        Xarray DataArray representing modelled tidal heights for each pixel. Should have 'quantile', 
+        'x' and 'y' in its dimensions.
+    extents : xr.DataArray
+        Xarray DataArray representing the always, sometimes and never wet extents of the intertidal 
+        zone. Should have the same dimensions as `tide_m` and `tide_cq`.
     lat_hat : bool, optional
         Default is True. Lowest/highest astronomical tides. This work considers the modelled tides
         to be equivalent to the astronomical tides.
@@ -31,18 +31,18 @@ def bias_offset(tide_m = ds.tide_m,
 
     Returns
     -------
-    xarray.Dataset
-        The output dataset containing arrays of the spread, ht_offset, lt_offset and optionally,
-        the highest and lowest astronomical tides and the highest and lowest sensor-observed tides.
-    
-    Notes
-    -----
-    Spread measures the sensor observed range of tide heights as a percentage of the full
-    modelled tidal range.
-    The high-tide offset, ht_offset, measures the offset of the sensor-observed highest tide 
-    from the maximum modelled tide.
-    The low-tide offset, lt_offset, measures the offset of the sensor-observed lowest tide 
-    from the minimum modelled tide.   
+    Depending on the values of `lat_hat` and `lot_hot`, returns a tuple with some or all of the 
+    following as xarray.DataArrays:
+        * `lat`: The lowest astronomical tide.
+        * `hat`: The highest astronomical tide.
+        * `lot`: The lowest sensor-observed tide.
+        * `hot`: The highest sensor-observed tide.
+        * `spread`: The spread of the observed tide heights as a percentage of the
+          modelled tide heights.
+        * `lt_offset`: The low tide offset measures the offset of the sensor-observed lowest 
+          tide from the minimum modelled tide.
+        * `ht_offset`: The high tide measures the offset of the sensor-observed highest tide
+          from the maximum modelled tide.         
     """
     
     # Set the maximum and minimum values per pixel for the observed and modelled datasets
