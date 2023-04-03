@@ -1,9 +1,9 @@
 import xarray as xr
 import numpy as np
 
-def bias_offset(
-                ds,
-                # set_dtype = None,
+def bias_offset(tide_m = ds.tide_m,
+                tide_cq = ds.tide_cq,
+                extents = ds.extents,
                 lat_hat=True,
                 lot_hot=None
                 ):
@@ -46,10 +46,10 @@ def bias_offset(
     """
     
     # Set the maximum and minimum values per pixel for the observed and modelled datasets
-    max_obs = ds.tide_m.max(dim='time')
-    min_obs = ds.tide_m.min(dim='time')
-    max_mod = ds.tide_cq.max(dim='quantile')
-    min_mod = ds.tide_cq.min(dim='quantile')
+    max_obs = tide_m.max(dim='time')
+    min_obs = tide_m.min(dim='time')
+    max_mod = tide_cq.max(dim='quantile')
+    min_mod = tide_cq.min(dim='quantile')
     
     # Set the maximum range in the modelled and observed tide heights
     mod_range = max_mod - min_mod
@@ -63,41 +63,33 @@ def bias_offset(
     # of the modelled highest and lowest tides.
     ht_offset = (abs(max_mod - max_obs))/mod_range * 100
     lt_offset = (abs(min_mod - min_obs))/mod_range * 100
-    
-    # # Change the dtype of the output arrays
-    # if set_dtype is not None:
-    #     spread = spread.astype(set_dtype)
-    #     ht_offset = ht_offset.astype(set_dtype)
-    #     lt_offset = lt_offset.astype(set_dtype)
-    
+        
     ## Add the lowest and highest astronomical tides
-    ## TODO: mask using intertidal extent layer instead
     if lat_hat:
-        # ds['lat'] = min_mod.where(ds.tide_m.min(dim='time')> -9999)
-        # ds['hat'] = max_mod.where(ds.tide_m.min(dim='time')> -9999)
-        ds['lat'] = min_mod.where(ds.extents != 2)
-        ds['hat'] = max_mod.where(ds.extents != 2)
+        lat = min_mod.where(ds.extents != 2)
+        hat = max_mod.where(ds.extents != 2)
     
     ## Add the lowest and highest sensor-observed tides
-    ## TODO: mask using intertidal extent layer instead
     if lot_hot:
-        # ds['lot'] = min_obs.where(ds.tide_m.min(dim='time')> -9999)
-        # ds['hot'] = max_obs.where(ds.tide_m.min(dim='time')> -9999)
-        ds['lot'] = min_obs.where(ds.extents != 2)
-        ds['hot'] = max_obs.where(ds.extents != 2)
+        lot = min_obs.where(ds.extents != 2)
+        hot = max_obs.where(ds.extents != 2)
         
     # Mask out non-intertidal pixels using ds extents
-    ## TODO: mask using intertidal extent layer instead
-    # ds['spread'] = spread.where(ds.tide_m.min(dim='time') > -9999)
-    # ds['ht_offset'] = ht_offset.where(ds.tide_m.min(dim='time') > -9999)
-    # ds['lt_offset'] = lt_offset.where(ds.tide_m.min(dim='time')> -9999)
-    ds['spread'] = spread.where(ds.extents != 2)
-    ds['ht_offset'] = ht_offset.where(ds.extents != 2)
-    ds['lt_offset'] = lt_offset.where(ds.extents != 2)
+    spread = spread.where(ds.extents != 2)
+    ht_offset = ht_offset.where(ds.extents != 2)
+    lt_offset = lt_offset.where(ds.extents != 2)
     
     ## Convert floats to ints
-    ds['spread'] = ds['spread'].astype(np.int16)
-    ds['ht_offset'] = ds['ht_offset'].astype(np.int16)
-    ds['lt_offset'] = ds['lt_offset'].astype(np.int16)
+    spread = spread.astype(np.int16)
+    ht_offset = ht_offset.astype(np.int16)
+    lt_offset = lt_offset.astype(np.int16)
     
-    return ds
+    if lat_hat:
+        if lot_hot:
+            return lat, hat, lot, hot, spread, lt_offset, ht_offset
+        else:
+            return lat, hat, spread, lt_offset, ht_offset
+    elif lot_hot:
+        return lot, hot, spread, lt_offset, ht_offset
+    else:
+        return spread, lt_offset, ht_offset
