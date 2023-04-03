@@ -1,22 +1,27 @@
 import xarray as xr
 import numpy as np
 
-def extents(ds):
+def extents(freq,
+            dem
+            ):
     '''
-    Generate always/sometimes/never_wet layers from the NDWI frequency layer and intertidal DEM extents.
+    Generate binary always/sometimes/never_wet layers from the NDWI frequency layer and intertidal 
+    DEM extents.
     
     Parameters
     ----------
-    ds : xr.Dataset
-        Master xr.Dataset for storing intertidal outputs with arrays including:
-            freq - an NDWI frequency layer generated to summarise the frequency of wetness per pixel for any given time-series and
-            dem, the final intertidal DEM.
-
+    freq : xarray.DataArray
+        An xarray.DataArray of the NDWI frequency layer summarising the frequency of wetness per 
+        pixel for any given time-series, generated during the intertidal.elevation workflow
+    dem : xarray.DataArray
+        An xarray.DataArray of the final intertidal DEM, generated during the intertidal.elevation
+        workflow
 
     Returns
     -------
-    xr.Dataset
-        Master xr.Dataset with the extents layer added as int dtype
+    extents : xarray.DataArray
+        A binary xarray.DataArray depicting always/sometimes/never wet intertidal extents as int16 
+        dtype.
 
     Notes
     -----
@@ -30,10 +35,10 @@ def extents(ds):
     '''
 
     ## Find the intertidal extent by masking `freq` with the non-null areas in the dem
-    int_ext = ds.freq.where(ds.dem.notnull())
+    int_ext = freq.where(dem.notnull())
 
     ## Find the non-intertidal extents by masking `freq` with the null areas in the dem.
-    wet_dry_ext = ds.freq.where(ds.dem.isnull())
+    wet_dry_ext = freq.where(dem.isnull())
     ## Create a bool for the always wet and always dry areas by separating the NDWI frequency
     ## values through the middle. (There's probably a nicer way to do this step).
     wet_dry_ext = wet_dry_ext >= 0.5
@@ -54,6 +59,6 @@ def extents(ds):
     int_ext = int_ext.combine_first(dry_ext)
 
     ## Add to master dataset
-    ds['extents'] = int_ext.astype(np.int16)
+    extents = int_ext.astype(np.int16)
     
-    return ds
+    return extents
