@@ -4,7 +4,8 @@ import numpy as np
 from dea_tools.coastal import pixel_tides
 
 
-def pixel_exp(dem,
+def pixel_exp(ds,
+              dem,
               timerange, 
               ):
     """
@@ -13,6 +14,7 @@ def pixel_exp(dem,
 
     Parameters
     ----------
+    ds : xarray.Dataset
     dem : xarray.DataArray
         xarray.DataArray containing Digital Elevation Model (DEM) data and coordinates and 
         attributes metadata.
@@ -39,7 +41,7 @@ def pixel_exp(dem,
     """
     
     ## Create a Dataset to run pixel_tides on
-    ds_exposure = xr.Dataset(coords=dem.coords, attrs=dem.attrs)
+    ds_exposure = xr.Dataset(coords=ds.coords, attrs=ds.attrs)
     
     ## Create the tide-height percentiles from which to calculate exposure statistics
     pc_range = np.linspace(0,1,101)
@@ -47,7 +49,6 @@ def pixel_exp(dem,
     ## Run the pixel_tides function with the calculate_quantiles option. For each pixel, an array of tideheights is returned, corresponding to the percentiles from pc_range of the timerange-tide model that each tideheight appears in the model.
     tide_cq, _ = pixel_tides(ds_exposure, 
                                      resample=True, 
-                                     directory=directory,
                                      calculate_quantiles = pc_range,
                                      times=timerange) 
     
