@@ -32,8 +32,10 @@ def pixel_exp(dem,
     Notes
     -----
     - The tide-height percentiles range from 0 to 100, divided into 101 equally spaced values.
-    - The 'diff' variable is calculated as the absolute difference between tide model percentile value and the DEM value at each pixel.
-    - The 'idxmin' variable is the index of the smallest tide-height difference (i.e., maximum similarity) per pixel and is equivalent to the exposure percent.
+    - The 'diff' variable is calculated as the absolute difference between tide model percentile 
+    value and the DEM value at each pixel.
+    - The 'idxmin' variable is the index of the smallest tide-height difference (i.e., maximum 
+    similarity) per pixel and is equivalent to the exposure percent.
     """
     
     ## Create a Dataset to run pixel_tides on
