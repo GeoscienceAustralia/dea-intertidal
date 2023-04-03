@@ -6,7 +6,6 @@ from dea_tools.coastal import pixel_tides
 
 def pixel_exp(ds,
               timerange, 
-              directory='~/dev_intexp/dea-notebooks/tide_models_clipped'
               ):
     """
     Calculate exposure percentage for each pixel based on tide-height differences between the NIDEM value and percentile values of the tide model for a given time range.
