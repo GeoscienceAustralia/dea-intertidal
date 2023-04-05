@@ -485,19 +485,23 @@ def tidal_bias_offset(x):
     "--start_date",
     type=int,
     default=2020,
-    help="",
+    help="The start date of satellite data to load from the "
+    "datacube. This can be any date format accepted by datacube. ",
 )
 @click.option(
     "--end_date",
     type=int,
     default=2022,
-    help="",
+    help="The end date of satellite data to load from the "
+    "datacube. This can be any date format accepted by datacube. ",
 )
 @click.option(
     "--resolution",
     type=float,
     default=10,
-    help="",
+    help="The spatial resolution in metres used to load satellite "
+    "data and produce intertidal outputs. Defaults to 10 metre "
+    "Sentinel-2 resolution.",
 )
 @click.option(
     "--aws_unsigned/--no-aws_unsigned",
