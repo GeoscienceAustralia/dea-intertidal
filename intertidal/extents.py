@@ -1,8 +1,8 @@
 import xarray as xr
 import numpy as np
 
-def extents(freq,
-            dem
+def extents(dem,
+            freq,
             ):
     '''
     Generate binary always/sometimes/never_wet layers from the NDWI frequency layer and intertidal 
@@ -10,12 +10,12 @@ def extents(freq,
     
     Parameters
     ----------
-    freq : xarray.DataArray
-        An xarray.DataArray of the NDWI frequency layer summarising the frequency of wetness per 
-        pixel for any given time-series, generated during the intertidal.elevation workflow
     dem : xarray.DataArray
         An xarray.DataArray of the final intertidal DEM, generated during the intertidal.elevation
         workflow
+    freq : xarray.DataArray
+        An xarray.DataArray of the NDWI frequency layer summarising the frequency of wetness per 
+        pixel for any given time-series, generated during the intertidal.elevation workflow
 
     Returns
     -------
@@ -29,9 +29,9 @@ def extents(freq,
     generated to summarise the frequency of wetness per pixel for any given time-series of the 
     analysis area of interest.
     The always/sometimes/never_wet layers are calculated from the extents of the intertidal dem.
-    Always_wet areas are classified as 0.
-    Sometimes_wet areas are classified as 1.
-    Never_wet areas are classified as 2.
+        - Always_wet areas are classified as 0.
+        - Sometimes_wet areas are classified as 1.
+        - Never_wet areas are classified as 2.
     '''
 
     ## Find the intertidal extent by masking `freq` with the non-null areas in the dem
@@ -39,12 +39,13 @@ def extents(freq,
 
     ## Find the non-intertidal extents by masking `freq` with the null areas in the dem.
     wet_dry_ext = freq.where(dem.isnull())
+    
     ## Create a bool for the always wet and always dry areas by separating the NDWI frequency
-    ## values through the middle. (There's probably a nicer way to do this step).
+    ## values through the middle.
     wet_dry_ext = wet_dry_ext >= 0.5
 
     ## Find the always_wet extent by masking the non-intertidal area for freq values greater than 0.5
-    wet_ext = wet_dry_ext.where(wet_dry_ext == True, drop=True) ## If issues in the merge, try dropping the 'drop=True')
+    wet_ext = wet_dry_ext.where(wet_dry_ext == True, drop=True)
 
     ## Find the always_dry extent by masking the non-intertidal area for freq values lower than 0.5
     dry_ext = wet_dry_ext.where(wet_dry_ext == False, drop=True)
