@@ -23,6 +23,7 @@ from intertidal.utils import load_config, configure_logging
 from intertidal.extents import extents
 from intertidal.exposure import pixel_exp
 from intertidal.tidal_bias_offset import bias_offset
+from intertidal.tidelines import tidal_offset_tidelines
 
 
 def load_data(
@@ -668,11 +669,21 @@ def elevation(
     "'end_date'.",
 )
 @click.option(
+    "--tideline_offset_distance",
+    type=int,
+    default=500,
+    help="The distance along each high and low tideline "
+    "at which the respective high or low tide satellite "
+    "offset will be calculated. By default, the distance "
+    "is set to 500m.",
+)
+@click.option(
     "--aws_unsigned/--no-aws_unsigned",
     type=bool,
     default=True,
     help="Whether to use sign AWS requests for S3 access",
 )
+
 def intertidal_cli(
     config_path,
     study_area,
@@ -681,6 +692,7 @@ def intertidal_cli(
     resolution,
     ndwi_thresh,
     modelled_freq,
+    tideline_offset_distance,
     aws_unsigned,
 ):
     log = configure_logging(f"Intertidal processing for study area {study_area}")
@@ -737,6 +749,17 @@ def intertidal_cli(
             lot_hot=True,
             lat_hat=True,
         )
+        
+        # Calculate tidelines
+        log.info(f"Study area {study_area}: Calculating high and low tidelines and associated satellite offsets")
+        (hightideline, 
+         lowtideline, 
+         tidelines_gdf) 
+        = tidal_offset_tidelines(
+         extents=ds.extents,
+         ht_offset=ds.ht_offset,
+         lt_offset=ds.lt_offset,
+         distance=tideline_offset_distance)
 
         # Export layers as GeoTIFFs
         log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
@@ -748,6 +771,11 @@ def intertidal_cli(
         )
         log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
 
+        # Export high and low tidelines and the offset data
+        hightideline.to_crs('EPSG:4326').to_file(f'data/interim/{fname}_{start_year}_{end_year}_hightideoffset.geojson')
+        lowtideline.to_crs('EPSG:4326').to_file(f'data/interim/{fname}_{start_year}_{end_year}_lowtideoffset.geojson')
+        tidelines_gdf.to_crs('EPSG:4326').to_file(f'data/interim/{fname}_{start_year}_{end_year}_high_low_tidelines.geojson')
+        
     except Exception as e:
         log.exception(f"Study area {study_area}: Failed to run process with error {e}")
         sys.exit(1)
