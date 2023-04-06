@@ -16,10 +16,13 @@ from odc.algo import mask_cleanup
 from datacube.utils.geometry import Geometry
 from datacube.utils.aws import configure_s3_access
 
-from intertidal.utils import load_config, configure_logging
-
 from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
+
+from intertidal.utils import load_config, configure_logging
+from intertidal.extents import extents
+from intertidal.exposure import pixel_exp
+from intertidal.tidal_bias_offset import bias_offset
 
 
 def load_data(
@@ -306,7 +309,6 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
 
 
 def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
-
     # Use standard deviation as measure of confidence
     confidence = interval_ds.ndwi_std
 
@@ -378,7 +380,6 @@ def elevation(
 
     # Load study area from tile grid if passed a string
     if isinstance(study_area, (int, str)):
-
         # Load study area
         gridcell_gdf = (
             gpd.read_file(config["Input files"]["grid_path"])
@@ -413,7 +414,7 @@ def elevation(
         config_path=config["Virtual product"]["virtual_product_path"],
         filter_gqa=filter_gqa,
     )[["ndwi"]]
-    
+
     # Load data and close dask client
     satellite_ds.load()
     client.close()
@@ -457,21 +458,6 @@ def elevation(
     return ds, freq, tide_m
 
 
-
-# Dummy funcs
-def extents(x):
-    print('Generating extents')
-    return x
-
-def exposure(x):
-    print('Generating exposure')
-    return x
-
-def tidal_bias_offset(x):
-    print('Generating tidal biases and offsets')
-    return x
-
-
 @click.command()
 @click.option(
     "--config_path",
@@ -513,6 +499,25 @@ def tidal_bias_offset(x):
     "Sentinel-2 resolution.",
 )
 @click.option(
+    "--ndwi_thresh",
+    type=float,
+    default=0.1,
+    help="NDWI threshold used to identify the transition from dry to "
+    "wet in the intertidal elevation calculation. Defaults to 0.1, "
+    "which appears to more reliably capture this transition than 0.0.",
+)
+@click.option(
+    "--modelled_freq",
+    type=str,
+    default="30min",
+    help="The frequency at which to model tides across the entire "
+    "analysis period as inputs to the exposure, LAT (lowest "
+    "astronomical tide), HAT (highest astronomical tide), and "
+    "spread/offset calculations. Defaults to '30min' which will "
+    "generate a timestep every 30 minutes between 'start_date' and "
+    "'end_date'.",
+)
+@click.option(
     "--aws_unsigned/--no-aws_unsigned",
     type=bool,
     default=True,
@@ -524,6 +529,8 @@ def intertidal_cli(
     start_date,
     end_date,
     resolution,
+    ndwi_thresh,
+    modelled_freq,
     aws_unsigned,
 ):
     log = configure_logging(f"Intertidal processing for study area {study_area}")
@@ -533,28 +540,63 @@ def intertidal_cli(
 
     try:
         # Calculate elevation
-        ds = elevation(
+        ds, freq, tide_m = elevation(
             study_area,
             start_year=start_date,
             end_year=end_date,
             resolution=resolution,
             crs="EPSG:3577",
-            ndwi_thresh=0.1,
+            ndwi_thresh=ndwi_thresh,
             include_s2=True,
             include_ls=True,
             filter_gqa=False,
             config_path=config_path,
             log=log,
         )
-        
+
         # Calculate extents
-        a = extents(ds)
+        log.info(f"Study area {study_area}: Calculating Extents layer")
+        ds["extents"] = extents(ds.dem, freq)
 
         # Calculate exposure
-        b = exposure(ds)
+        log.info(f"Study area {study_area}: Calculating Exposure layer")
+        all_timerange = pd.date_range(
+            start=f"{start_date}-01-01 00:00:00",
+            end=f"{end_date}-12-31 00:00:00",
+            freq=modelled_freq,
+        )
+        ds["exposure"], tide_cq = pixel_exp(ds.dem, all_timerange)
 
-        # Calculate tidal biases, offsets, HAT/LAT/LOT/HOT
-        c = tidal_bias_offset(ds)       
+        # Calculate spread, offsets and HAT/LAT/LOT/HOT
+        log.info(
+            f"Study area {study_area}: Calculating spread, offset "
+            "and HAT/LAT/LOT/HOT layers"
+        )
+        (
+            ds["lat"],
+            ds["hat"],
+            ds["lot"],
+            ds["hot"],
+            ds["spread"],
+            ds["lt_offset"],
+            ds["ht_offset"],
+        ) = bias_offset(
+            tide_m=tide_m,
+            tide_cq=tide_cq,
+            extents=ds.extents,
+            lot_hot=True,
+            lat_hat=True,
+        )
+
+        # Export layers as GeoTIFFs
+        log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
+        ds.map(
+            lambda x: x.odc.write_cog(
+                fname=f"data/interim/{study_area}_{start_date}_{start_date}_{x.name}.tif",
+                overwrite=True,
+            )
+        )
+        log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
 
     except Exception as e:
         log.exception(f"Study area {study_area}: Failed to run process with error {e}")
