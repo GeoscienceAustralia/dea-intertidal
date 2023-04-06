@@ -3,7 +3,7 @@ aiohttp
 botocore
 click==8.1.3
 datacube[s3,performance]==1.8.12
-dea-tools==0.2.8.dev45
+dea-tools==0.2.8.dev60
 geopandas==0.12.2
 matplotlib==3.7.0
 numpy==1.23.5
