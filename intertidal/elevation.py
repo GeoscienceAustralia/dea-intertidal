@@ -751,15 +751,20 @@ def intertidal_cli(
         )
         
         # Calculate tidelines
-        log.info(f"Study area {study_area}: Calculating high and low tidelines and associated satellite offsets")
-        (hightideline, 
-         lowtideline, 
-         tidelines_gdf) 
-        = tidal_offset_tidelines(
-         extents=ds.extents,
-         ht_offset=ds.ht_offset,
-         lt_offset=ds.lt_offset,
-         distance=tideline_offset_distance)
+        log.info(
+            f"Study area {study_area}: Calculating high and low tidelines "
+            "and associated satellite offsets"
+        )
+        (
+            hightideline, 
+            lowtideline, 
+            tidelines_gdf
+        ) = tidal_offset_tidelines(
+            extents=ds.extents,
+            ht_offset=ds.ht_offset,
+            lt_offset=ds.lt_offset,
+            distance=tideline_offset_distance
+        )
 
         # Export layers as GeoTIFFs
         log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
