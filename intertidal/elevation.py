@@ -309,6 +309,7 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
 
 
 def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
+    
     # Use standard deviation as measure of confidence
     confidence = interval_ds.ndwi_std
 
@@ -319,9 +320,8 @@ def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
     output_list = []
 
     # Export DEM for rolling median and half a standard deviation either side
-    # TODO: rename outputs to "elevation" instead of "dem" (elevation, extents, exposure!)
     for q in [-0.5, 0, 0.5]:
-        suffix = {-0.5: "dem_low", 0: "dem", 0.5: "dem_high"}[q]
+        suffix = {-0.5: "elevation_low", 0: "elevation", 0.5: "elevation_high"}[q]
         print(f"Processing {suffix}")
 
         # Identify the max tide per pixel where NDWI == land
@@ -342,15 +342,15 @@ def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
         output_list.append(dem)
 
     # Merge into a single xarray.Dataset
-    dem_ds = xr.merge(output_list).drop("variable")
+    ds = xr.merge(output_list).drop("variable")
 
     # Subtract low from high DEM to get a single confidence layer
     # Note: This may produce unexpected results at the top and bottom
     # of the intertidal zone, as the low and high DEMs may not be
     # currently be properly masked to remove always wet/dry terrain
-    dem_ds["confidence"] = dem_ds.dem_high - dem_ds.dem_low
+    ds["elevation_confidence"] = ds.elevation_high - ds.elevation_low
 
-    return dem_ds
+    return ds
 
 
 def elevation(
@@ -556,7 +556,7 @@ def intertidal_cli(
 
         # Calculate extents
         log.info(f"Study area {study_area}: Calculating Extents layer")
-        ds["extents"] = extents(ds.dem, freq)
+        ds["extents"] = extents(ds.elevation, freq)
 
         # Calculate exposure
         log.info(f"Study area {study_area}: Calculating Exposure layer")
@@ -565,7 +565,7 @@ def intertidal_cli(
             end=f"{end_date}-12-31 00:00:00",
             freq=modelled_freq,
         )
-        ds["exposure"], tide_cq = pixel_exp(ds.dem, all_timerange)
+        ds["exposure"], tide_cq = pixel_exp(ds.elevation, all_timerange)
 
         # Calculate spread, offsets and HAT/LAT/LOT/HOT
         log.info(
