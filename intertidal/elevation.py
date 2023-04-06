@@ -18,7 +18,6 @@ from datacube.utils.aws import configure_s3_access
 
 from intertidal.utils import load_config, configure_logging
 
-# from dea_tools.coastal import model_tides
 from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
@@ -103,16 +102,21 @@ def load_data(
         data_list.append(ls_ds_masked)
 
     # Combine into a single ds, sort and drop no longer needed bands
-    ds = (
+    satellite_ds = (
         xr.concat(data_list, dim="time")
         .sortby("time")
         .drop(["cloud_mask", "contiguity"])
     )
-    return ds
+    return satellite_ds
 
 
 def ds_to_flat(
-    ds, ndwi_thresh=0.1, index="ndwi", min_freq=0.01, max_freq=0.99, min_correlation=0.2
+    satellite_ds,
+    ndwi_thresh=0.1,
+    index="ndwi",
+    min_freq=0.01,
+    max_freq=0.99,
+    min_correlation=0.2,
 ):
     """
     Flattens a three-dimensional array (x, y, time) to a two-dimensional
@@ -124,7 +128,7 @@ def ds_to_flat(
 
     Parameters
     ----------
-    ds : xr.Dataset
+    satellite_ds : xr.Dataset
         Three-dimensional (x, y, time) xarray dataset with variable
         "tide_m" and a water index variable as provided by `index`.
     ndwi_thresh : float, optional
@@ -155,11 +159,17 @@ def ds_to_flat(
 
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
-    freq = (ds[index] > ndwi_thresh).where(~ds[index].isnull()).mean(dim="time")
+    freq = (
+        (satellite_ds[index] > ndwi_thresh)
+        .where(~satellite_ds[index].isnull())
+        .mean(dim="time")
+    )
     good_mask = (freq >= min_freq) & (freq <= max_freq)
 
     # Flatten to 1D
-    ds_flat = ds.stack(z=("x", "y")).where(good_mask.stack(z=("x", "y")), drop=True)
+    ds_flat = satellite_ds.stack(z=("x", "y")).where(
+        good_mask.stack(z=("x", "y")), drop=True
+    )
 
     # Calculate correlations, and keep only pixels with positive
     # correlations between water observations and tide height
@@ -174,7 +184,7 @@ def ds_to_flat(
 
 def rolling_tide_window(
     i,
-    ds,
+    ds_flat,
     window_spacing,
     window_radius,
     tide_min,
@@ -194,7 +204,9 @@ def rolling_tide_window(
     thresh_max = thresh_centre + window_radius
 
     # Filter dataset
-    masked_ds = ds.where((ds.tide_m >= thresh_min) & (ds.tide_m <= thresh_max))
+    masked_ds = ds_flat.where(
+        (ds_flat.tide_m >= thresh_min) & (ds_flat.tide_m <= thresh_max)
+    )
 
     # Apply median or quantile
     if statistic == "quantile":
@@ -293,7 +305,8 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
     return interval_ds
 
 
-def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
+def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
+
     # Use standard deviation as measure of confidence
     confidence = interval_ds.ndwi_std
 
@@ -304,6 +317,7 @@ def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
     output_list = []
 
     # Export DEM for rolling median and half a standard deviation either side
+    # TODO: rename outputs to "elevation" instead of "dem" (elevation, extents, exposure!)
     for q in [-0.5, 0, 0.5]:
         suffix = {-0.5: "dem_low", 0: "dem", 0.5: "dem_high"}[q]
         print(f"Processing {suffix}")
@@ -319,7 +333,7 @@ def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
         # unstack back to 3D (x, y, time) array
         always_dry = tide_thresh >= tide_max
         dem = tide_thresh.where(~always_dry)
-        dem = dem.unstack("z").reindex_like(ds).transpose("y", "x")
+        dem = dem.unstack("z").reindex_like(satellite_ds).transpose("y", "x")
 
         # Add name and add outputs to list
         dem = dem.rename(suffix)
@@ -333,15 +347,6 @@ def pixel_dem(interval_ds, ds, ndwi_thresh, fname, export_geotiff=True):
     # of the intertidal zone, as the low and high DEMs may not be
     # currently be properly masked to remove always wet/dry terrain
     dem_ds["confidence"] = dem_ds.dem_high - dem_ds.dem_low
-
-    # Export as GeoTIFFs
-    if export_geotiff:
-        print(f"\nExporting GeoTIFF files to 'data/interim/pixel_{fname}_....tif'")
-        dem_ds.map(
-            lambda x: x.odc.write_cog(
-                fname=f"data/interim/pixel_{fname}_{x.name}.tif", overwrite=True
-            )
-        )
 
     return dem_ds
 
@@ -373,6 +378,7 @@ def elevation(
 
     # Load study area from tile grid if passed a string
     if isinstance(study_area, (int, str)):
+
         # Load study area
         gridcell_gdf = (
             gpd.read_file(config["Input files"]["grid_path"])
@@ -396,7 +402,7 @@ def elevation(
 
     # Load data
     log.info(f"Study area {study_area}: Loading satellite data")
-    ds = load_data(
+    satellite_ds = load_data(
         dc=dc,
         geom=geom,
         time_range=(str(start_year), str(end_year)),
@@ -407,11 +413,14 @@ def elevation(
         config_path=config["Virtual product"]["virtual_product_path"],
         filter_gqa=filter_gqa,
     )[["ndwi"]]
-    ds.load()
+    
+    # Load data and close dask client
+    satellite_ds.load()
+    client.close()
 
     # Model tides into every pixel in the three-dimensional (x by y by time) satellite dataset
     log.info(f"Study area {study_area}: Modelling tide heights for each pixel")
-    ds["tide_m"], _ = pixel_tides(ds, resample=True)
+    tide_m, _ = pixel_tides(satellite_ds, resample=True)
 
     # Set tide array pixels to nodata if the satellite data array pixels contain
     # nodata. This ensures that we ignore any tide observations where we don't
@@ -419,33 +428,33 @@ def elevation(
     log.info(
         f"Study area {study_area}: Masking nodata and adding tide heights to satellite data array"
     )
-    ds["tide_m"] = ds["tide_m"].where(~ds.to_array().isel(variable=0).isnull())
+    satellite_ds["tide_m"] = tide_m.where(
+        ~satellite_ds.to_array().isel(variable=0).isnull()
+    )
 
     # Flatten array from 3D to 2D and drop pixels with no correlation with tide
     log.info(
         f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels"
     )
-    ds_flat, freq, good_mask = ds_to_flat(
-        ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
+    flat_ds, freq, good_mask = ds_to_flat(
+        satellite_ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
     )
 
     # Per-pixel rolling median
     log.info(f"Study area {study_area}: Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
-        ds_flat, windows_n=100, window_prop_tide=0.15, max_workers=64
+        flat_ds, windows_n=100, window_prop_tide=0.15, max_workers=64
     )
 
-    # Model intertidal elevation and confidence
+    # Model intertidal elevation and confidence and output master ds
     log.info(f"Study area {study_area}: Modelling intertidal elevation and confidence")
-    dem_ds = pixel_dem(interval_ds, ds, ndwi_thresh, fname)
+    ds = pixel_dem(interval_ds, satellite_ds, ndwi_thresh)
 
-    # Close dask client
-    client.close()
-
+    # Return master ds and frequency layer
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    return dem_ds
+    return ds, freq, tide_m
 
 
 
