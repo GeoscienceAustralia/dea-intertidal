@@ -314,6 +314,7 @@ def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
     output_list = []
 
     # Export DEM for rolling median and half a standard deviation either side
+    # TODO: rename outputs to "elevation" instead of "dem" (elevation, extents, exposure!)
     for q in [-0.5, 0, 0.5]:
         suffix = {-0.5: "dem_low", 0: "dem", 0.5: "dem_high"}[q]
         print(f"Processing {suffix}")
@@ -414,7 +415,7 @@ def elevation(
 
     # Model tides into every pixel in the three-dimensional (x by y by time) satellite dataset
     log.info(f"Study area {study_area}: Modelling tide heights for each pixel")
-    satellite_ds["tide_m"], _ = pixel_tides(satellite_ds, resample=True)
+    tide_m, _ = pixel_tides(satellite_ds, resample=True)
 
     # Set tide array pixels to nodata if the satellite data array pixels contain
     # nodata. This ensures that we ignore any tide observations where we don't
@@ -422,7 +423,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Masking nodata and adding tide heights to satellite data array"
     )
-    satellite_ds["tide_m"] = satellite_ds["tide_m"].where(
+    satellite_ds["tide_m"] = tide_m.where(
         ~satellite_ds.to_array().isel(variable=0).isnull()
     )
 
@@ -451,7 +452,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    return ds, freq
+    return ds, freq, tide_m
 
 
 # def pixel_tide_sort(ds, tide_var="tide_height", ndwi_var="ndwi", tide_dim="tide_n"):
