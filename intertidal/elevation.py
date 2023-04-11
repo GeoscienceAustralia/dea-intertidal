@@ -774,12 +774,17 @@ def intertidal_cli(
                 overwrite=True,
             )
         )
-        log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
+        
 
         # Export high and low tidelines and the offset data
-        hightideline.to_crs('EPSG:4326').to_file(f'data/interim/{fname}_{start_year}_{end_year}_hightideoffset.geojson')
-        lowtideline.to_crs('EPSG:4326').to_file(f'data/interim/{fname}_{start_year}_{end_year}_lowtideoffset.geojson')
-        tidelines_gdf.to_crs('EPSG:4326').to_file(f'data/interim/{fname}_{start_year}_{end_year}_high_low_tidelines.geojson')
+        
+        log.info(f'Study area {study_area}: Exporting high and low tidelines with satellite offset')
+        
+        hightideline.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_hightideoffset.geojson')
+        lowtideline.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_lowtideoffset.geojson')
+        tidelines_gdf.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_high_low_tidelines.geojson')
+        
+        log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
         
     except Exception as e:
         log.exception(f"Study area {study_area}: Failed to run process with error {e}")
