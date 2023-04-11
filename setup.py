@@ -18,7 +18,7 @@ REQUIRED = [
     "geopandas",
     "matplotlib",
     "numpy",
-    "odc-geo"
+    "odc-geo", 
     "odc_ui",
     "pandas",
     "pygeos",
@@ -57,6 +57,12 @@ setup_kwargs = {
     "packages": find_packages(),
     "include_package_data": True,
     "license": "Apache License 2.0",
+    "entry_points": {
+        "console_scripts": [
+            "dea-intertidal = intertidal.elevation:intertidal_cli",
+            "dea-intertidal-hltc = intertidal.hltc:hltc_cli",
+        ]
+    },
 }
 
 setup(**setup_kwargs)
