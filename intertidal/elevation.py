@@ -19,9 +19,9 @@ from datacube.utils.aws import configure_s3_access
 from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
-from intertidal.utils import load_config, configure_logging
+from intertidal.utils import load_config, configure_logging, round_date_strings
 from intertidal.extents import extents
-from intertidal.exposure import pixel_exp
+from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
 from intertidal.tidelines import tidal_offset_tidelines
 
@@ -461,8 +461,8 @@ def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
 
 def elevation(
     study_area,
-    start_year=2020,
-    end_year=2022,
+    start_date='2020',
+    end_date='2022',
     resolution=10,
     crs="EPSG:3577",
     ndwi_thresh=0.1,
@@ -481,10 +481,12 @@ def elevation(
     study_area : int or str or Geometry
         Study area polygon represented as either the ID of a tile grid 
         cell, or a Geometry object.
-    start_year : int, optional
-        Start year of data to load (inclusive), by default 2020.
-    end_year : int, optional
-        End year of data to load (inclusive), by default 2022.
+    start_date : str, optional
+        Start date of data to load (inclusive), by default '2020'. Can
+        be any string supported by datacube (e.g. '2020-01-01')
+    end_date : str, optional
+        End date of data to load (inclusive), by default '2022'. Can
+        be any string supported by datacube (e.g. '2022-12-31')
     resolution : int, optional
         Pixel size in meters, by default 10.
     crs : str, optional
@@ -542,14 +544,12 @@ def elevation(
 
         # Create geom as input for dc.load
         geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs="EPSG:4326")
-        fname = f"{study_area}_{start_year}-{end_year}"
         log.info(f"Study area {study_area}: Loaded study area grid")
 
     # Otherwise, use supplied geom
     else:
         geom = study_area
         study_area = "testing"
-        fname = f"{study_area}_{start_year}-{end_year}"
         log.info(f"Study area {study_area}: Loaded custom study area")
 
     # Load data
@@ -557,7 +557,7 @@ def elevation(
     satellite_ds = load_data(
         dc=dc,
         geom=geom,
-        time_range=(str(start_year), str(end_year)),
+        time_range=(start_date, end_date),
         resolution=resolution,
         crs=crs,
         s2_prod="s2_nbart_ndwi" if include_s2 else None,
@@ -629,21 +629,21 @@ def elevation(
 )
 @click.option(
     "--start_date",
-    type=int,
-    default=2020,
+    type=str,
+    default='2020',
     help="The start date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
 @click.option(
     "--end_date",
-    type=int,
-    default=2022,
+    type=str,
+    default='2022',
     help="The end date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
 @click.option(
     "--resolution",
-    type=float,
+    type=int,
     default=10,
     help="The spatial resolution in metres used to load satellite "
     "data and produce intertidal outputs. Defaults to 10 metre "
@@ -704,8 +704,8 @@ def intertidal_cli(
         # Calculate elevation
         ds, freq, tide_m = elevation(
             study_area,
-            start_year=start_date,
-            end_year=end_date,
+            start_date=start_date,
+            end_date=end_date,
             resolution=resolution,
             crs="EPSG:3577",
             ndwi_thresh=ndwi_thresh,
@@ -723,11 +723,11 @@ def intertidal_cli(
         # Calculate exposure
         log.info(f"Study area {study_area}: Calculating Exposure layer")
         all_timerange = pd.date_range(
-            start=f"{start_date}-01-01 00:00:00",
-            end=f"{end_date}-12-31 00:00:00",
+            start=round_date_strings(start_date, round_type='start'),
+            end=round_date_strings(end_date, round_type='end'),
             freq=modelled_freq,
         )
-        ds["exposure"], tide_cq = pixel_exp(ds.elevation, all_timerange)
+        ds["exposure"], tide_cq = exposure(ds.elevation, all_timerange)
 
         # Calculate spread, offsets and HAT/LAT/LOT/HOT
         log.info(
@@ -775,15 +775,13 @@ def intertidal_cli(
             )
         )
         
-
-        # Export high and low tidelines and the offset data
-        
+        # Export high and low tidelines and the offset data        
         log.info(f'Study area {study_area}: Exporting high and low tidelines with satellite offset')
-        
         hightideline.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_hightideoffset.geojson')
         lowtideline.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_lowtideoffset.geojson')
         tidelines_gdf.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_high_low_tidelines.geojson')
         
+        # Workflow completed
         log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
         
     except Exception as e:
