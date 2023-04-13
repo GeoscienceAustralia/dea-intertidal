@@ -5,30 +5,33 @@ def extents(dem,
             freq,
             ):
     '''
-    Generate binary always/sometimes/never_wet layers from the NDWI frequency layer and intertidal 
-    DEM extents.
+    Generate binary always/sometimes/never_wet layers from the NDWI 
+    frequency layer and intertidal DEM extents.
     
     Parameters
     ----------
     dem : xarray.DataArray
-        An xarray.DataArray of the final intertidal DEM, generated during the intertidal.elevation
-        workflow
+        An xarray.DataArray of the final intertidal DEM, generated 
+        during the intertidal.elevation workflow
     freq : xarray.DataArray
-        An xarray.DataArray of the NDWI frequency layer summarising the frequency of wetness per 
-        pixel for any given time-series, generated during the intertidal.elevation workflow
+        An xarray.DataArray of the NDWI frequency layer summarising the 
+        frequency of wetness per pixel for any given time-series, 
+        generated during the intertidal.elevation workflow
 
     Returns
     -------
     extents : xarray.DataArray
-        A binary xarray.DataArray depicting always/sometimes/never wet intertidal extents as int16 
-        dtype.
+        A binary xarray.DataArray depicting always/sometimes/never wet 
+        intertidal extents.
 
     Notes
     -----
-    The always/sometimes/never_wet layers are built from the NDWI frequency layer ('freq'), 
-    generated to summarise the frequency of wetness per pixel for any given time-series of the 
-    analysis area of interest.
-    The always/sometimes/never_wet layers are calculated from the extents of the intertidal dem.
+    The always/sometimes/never_wet layers are built from the NDWI 
+    frequency layer ('freq'), generated to summarise the frequency of 
+    wetness per pixel for any given time-series of the analysis area of 
+    interest.
+    The always/sometimes/never_wet layers are calculated from the 
+    extents of the intertidal dem.
         - Always_wet areas are classified as 0.
         - Sometimes_wet areas are classified as 1.
         - Never_wet areas are classified as 2.
@@ -58,8 +61,5 @@ def extents(dem,
     # Combine into a single 'Extents' layer
     int_ext = int_ext.combine_first(wet_ext)
     int_ext = int_ext.combine_first(dry_ext)
-
-    ## Add to master dataset
-    extents = int_ext.astype(np.int16)
     
-    return extents
+    return int_ext

@@ -19,7 +19,12 @@ from datacube.utils.aws import configure_s3_access
 from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
-from intertidal.utils import load_config, configure_logging, round_date_strings
+from intertidal.utils import (
+    load_config,
+    configure_logging,
+    round_date_strings,
+    export_intertidal_rasters,
+)
 from intertidal.extents import extents
 from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
@@ -38,7 +43,7 @@ def load_data(
     filter_gqa=True,
 ):
     """
-    Load cloud-masked Landsat and Sentinel-2 NDWI data for a given 
+    Load cloud-masked Landsat and Sentinel-2 NDWI data for a given
     spatial and temporal extent.
 
     Parameters
@@ -46,23 +51,23 @@ def load_data(
     dc : Datacube
         A datacube instance connected to a database.
     geom : Geometry object from datacube.utils.geometry
-        A geometry object from `datacube.utils.geometry` that defines 
-        the spatial extent of interest. 
+        A geometry object from `datacube.utils.geometry` that defines
+        the spatial extent of interest.
     time_range : tuple, optional
         A tuple containing the start and end date for the time range of
         interest, in the format (start_date, end_date). The default is
         ("2019", "2021").
     resolution : int or float, optional
-        The spatial resolution (in metres) to load data at. The default 
+        The spatial resolution (in metres) to load data at. The default
         is 10.
     crs : str, optional
-        The coordinate reference system (CRS) to project data into. The 
+        The coordinate reference system (CRS) to project data into. The
         default is Australian Albers "EPSG:3577".
     s2_prod : str, optional
         The name of the virtual product to use for Sentinel-2 data. The
         default is "s2_nbart_ndwi".
     ls_prod : str, optional
-        The name of the virtual product to use for Landsat data. The 
+        The name of the virtual product to use for Landsat data. The
         default is "ls_nbart_ndwi".
     config_path : str, optional
         The path to the virtual product configuration file. The default is
@@ -74,10 +79,10 @@ def load_data(
     Returns
     -------
     satellite_ds : xarray.Dataset
-        An xarray dataset containing the loaded Landsat and Sentinel-2 
+        An xarray dataset containing the loaded Landsat and Sentinel-2
         data, converted to NDWI with cloud masking applied.
     """
-    
+
     from datacube.virtual import catalog_from_file
     from datacube.utils.masking import mask_invalid_data
     from datacube.utils.geometry import GeoBox, Geometry
@@ -236,10 +241,10 @@ def rolling_tide_window(
     statistic="median",
 ):
     """
-    Filter observations from a flattened array that fall within a 
-    specific tide window, and summarise these values using a given 
-    statistic (median, mean, or quantile).    
-    
+    Filter observations from a flattened array that fall within a
+    specific tide window, and summarise these values using a given
+    statistic (median, mean, or quantile).
+
     This is used to smooth NDWI values along the tide dimension so that
     we can more easily identify the transition from dry to wet pixels
     with increasing tide height.
@@ -251,26 +256,26 @@ def rolling_tide_window(
     ds_flat : xarray.Dataset
         Input dataset with tide observations (tide_m) as a dimension.
     window_spacing : float
-        Provides the spacing of each rolling window interval in tide 
+        Provides the spacing of each rolling window interval in tide
         units (e.g. metres).
     window_radius : float
-        Provides the radius/width of each rolling window in tide units 
+        Provides the radius/width of each rolling window in tide units
         (e.g. metres).
     tide_min : float
         Bottom edge of the rolling window in tide units (e.g. metres).
     statistic : str, optional
-        Statistic to apply on the values within each window. One of 
+        Statistic to apply on the values within each window. One of
         ["median", "mean", "quantile"]. Default is "median".
 
     Returns
     -------
     xarray.Dataset
-        Aggregated dataset of the selected statistic and additional 
+        Aggregated dataset of the selected statistic and additional
         information on the window. The returned dataset includes:
         - ndwi: the aggregated NDWI values within the window.
         - ndwi_std: the standard deviation of the NDWI values within the window.
         - ndwi_count: the number of valid NDWI values within the window.
-    
+
     """
 
     # Set min and max thresholds to filter dataset
@@ -382,40 +387,40 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
 
 def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
     """
-    Calculates a digital elevation model (DEM) and measures of confidence 
+    Calculates a digital elevation model (DEM) and measures of confidence
     for a given area based on satellite imagery and tide data. Elevation
-    is calculated by identifying the max tide per pixel where 
+    is calculated by identifying the max tide per pixel where
     NDWI == land.
 
     Parameters
     ----------
     interval_ds : xarray.Dataset
-        A flattened 2D xarray Dataset containing the rolling median for 
-        each pixel from low to high tide for the given area, with 
+        A flattened 2D xarray Dataset containing the rolling median for
+        each pixel from low to high tide for the given area, with
         variables 'tide_m', 'ndwi', and 'ndwi_std'.
     satellite_ds : xarray.Dataset
         An xarray Dataset containing the original satellite data for the
         given area, used to reshape the 2D `interval_ds` back to 3D.
     ndwi_thresh : float
-        A threshold value for the normalized difference water index 
-        (NDWI), above which pixels are considered water. Defaults to 
+        A threshold value for the normalized difference water index
+        (NDWI), above which pixels are considered water. Defaults to
         0.1, which appears to more reliably capture the transition from
         dry to wet pixels than 0.0.
 
     Returns
     -------
     xarray.Dataset
-        An xarray Dataset containing the DEM for the given area, with 
-        variables 'elevation_low', 'elevation', 'elevation_high', and 
+        An xarray Dataset containing the DEM for the given area, with
+        variables 'elevation_low', 'elevation', 'elevation_high', and
         'elevation_confidence'.
 
     Notes
     -----
-    This function additionally applies a rolling median to smooth the 
-    interval data before identifying the max tide per pixel where 
+    This function additionally applies a rolling median to smooth the
+    interval data before identifying the max tide per pixel where
     NDWI == land. This produces a cleaner and less noisy output.
-    """    
-    
+    """
+
     # Use standard deviation as measure of confidence
     confidence = interval_ds.ndwi_std
 
@@ -461,8 +466,8 @@ def pixel_dem(interval_ds, satellite_ds, ndwi_thresh):
 
 def elevation(
     study_area,
-    start_date='2020',
-    end_date='2022',
+    start_date="2020",
+    end_date="2022",
     resolution=10,
     crs="EPSG:3577",
     ndwi_thresh=0.1,
@@ -473,13 +478,13 @@ def elevation(
     log=None,
 ):
     """
-    Calculates DEA Intertidal Elevation using satellite imagery and 
+    Calculates DEA Intertidal Elevation using satellite imagery and
     tidal modeling.
 
     Parameters
     ----------
     study_area : int or str or Geometry
-        Study area polygon represented as either the ID of a tile grid 
+        Study area polygon represented as either the ID of a tile grid
         cell, or a Geometry object.
     start_date : str, optional
         Start date of data to load (inclusive), by default '2020'. Can
@@ -492,7 +497,7 @@ def elevation(
     crs : str, optional
         Coordinate reference system, by default "EPSG:3577".
     ndwi_thresh : float, optional
-        A threshold value for the normalized difference water index 
+        A threshold value for the normalized difference water index
         (NDWI) above which pixels are considered water, by default 0.1.
     include_s2 : bool, optional
         Whether to include Sentinel-2 data, by default True.
@@ -501,7 +506,7 @@ def elevation(
     filter_gqa : bool, optional
         Whether to apply the GQA filter to the dataset, by default False.
     config_path : str, optional
-        Path to the configuration file, by default 
+        Path to the configuration file, by default
         "configs/dea_intertidal_config.yaml".
     log : logging.Logger, optional
         Logger object, by default None.
@@ -509,16 +514,16 @@ def elevation(
     Returns
     -------
     ds : xarray.Dataset
-        xarray.Dataset object containing intertidal elevation and 
+        xarray.Dataset object containing intertidal elevation and
         confidence values for each pixel in the study area.
     freq : xarray.DataArray
         The frequency layer summarising how frequently a pixel was
         wet across the time series.
     tide_m : xarray.DataArray
-        An xarray.DataArray object containing the modeled tide 
+        An xarray.DataArray object containing the modeled tide
         heights for each pixel in the study area.
-    """    
-    
+    """
+
     if log is None:
         log = configure_logging()
 
@@ -630,14 +635,14 @@ def elevation(
 @click.option(
     "--start_date",
     type=str,
-    default='2020',
+    default="2020",
     help="The start date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
 @click.option(
     "--end_date",
     type=str,
-    default='2022',
+    default="2022",
     help="The end date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
@@ -683,7 +688,6 @@ def elevation(
     default=True,
     help="Whether to use sign AWS requests for S3 access",
 )
-
 def intertidal_cli(
     config_path,
     study_area,
@@ -723,8 +727,8 @@ def intertidal_cli(
         # Calculate exposure
         log.info(f"Study area {study_area}: Calculating Exposure layer")
         all_timerange = pd.date_range(
-            start=round_date_strings(start_date, round_type='start'),
-            end=round_date_strings(end_date, round_type='end'),
+            start=round_date_strings(start_date, round_type="start"),
+            end=round_date_strings(end_date, round_type="end"),
             freq=modelled_freq,
         )
         ds["exposure"], tide_cq = exposure(ds.elevation, all_timerange)
@@ -740,8 +744,8 @@ def intertidal_cli(
             ds["lot"],
             ds["hot"],
             ds["spread"],
-            ds["lt_offset"],
-            ds["ht_offset"],
+            ds["offset_lowtide"],
+            ds["offset_hightide"],
         ) = bias_offset(
             tide_m=tide_m,
             tide_cq=tide_cq,
@@ -749,41 +753,42 @@ def intertidal_cli(
             lot_hot=True,
             lat_hat=True,
         )
-        
+
         # Calculate tidelines
         log.info(
             f"Study area {study_area}: Calculating high and low tidelines "
             "and associated satellite offsets"
         )
-        (
-            hightideline, 
-            lowtideline, 
-            tidelines_gdf
-        ) = tidal_offset_tidelines(
+        (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
             extents=ds.extents,
-            ht_offset=ds.ht_offset,
-            lt_offset=ds.lt_offset,
-            distance=tideline_offset_distance
+            offset_hightide=ds.offset_hightide,
+            offset_lowtide=ds.offset_lowtide,
+            distance=tideline_offset_distance,
         )
 
-        # Export layers as GeoTIFFs
+        # Export layers as GeoTIFFs with optimised data types
         log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
-        ds.map(
-            lambda x: x.odc.write_cog(
-                fname=f"data/interim/{study_area}_{start_date}_{start_date}_{x.name}.tif",
-                overwrite=True,
-            )
+        export_intertidal_rasters(
+            ds, prefix=f"data/interim/{study_area}_{start_date}_{end_date}"
         )
-        
-        # Export high and low tidelines and the offset data        
-        log.info(f'Study area {study_area}: Exporting high and low tidelines with satellite offset')
-        hightideline.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_hightideoffset.geojson')
-        lowtideline.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_lowtideoffset.geojson')
-        tidelines_gdf.to_crs('EPSG:4326').to_file(f'data/interim/{study_area}_{start_date}_{end_date}_high_low_tidelines.geojson')
-        
+
+        # Export high and low tidelines and the offset data
+        log.info(
+            f"Study area {study_area}: Exporting high and low tidelines with satellite offset"
+        )
+        hightideline.to_crs("EPSG:4326").to_file(
+            f"data/interim/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
+        )
+        lowtideline.to_crs("EPSG:4326").to_file(
+            f"data/interim/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
+        )
+        tidelines_gdf.to_crs("EPSG:4326").to_file(
+            f"data/interim/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
+        )
+
         # Workflow completed
         log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
-        
+
     except Exception as e:
         log.exception(f"Study area {study_area}: Failed to run process with error {e}")
         sys.exit(1)

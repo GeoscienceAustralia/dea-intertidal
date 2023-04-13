@@ -27,7 +27,7 @@ def exposure(
     exposure : xarray.DataArray
         An xarray.DataArray containing the percentage time 'exposure' of
         each pixel from seawater for the duration of the modelling 
-        period `timerange`. Values are int 16.
+        period `timerange`.
     tide_cq : xarray.DataArray
         An xarray.DataArray containing the quantiled high temporal 
         resolution tide modelling for each pixel. Dimesions should be 
@@ -64,7 +64,7 @@ def exposure(
     # exposure % per pixel
     idxmin = diff.idxmin(dim="quantile")
 
-    # Convert to percentage then int and add to master ds
-    exposure = (idxmin * 100).astype(np.int16)
+    # Convert to percentage 
+    exposure = (idxmin * 100)
 
     return exposure, tide_cq
