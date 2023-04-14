@@ -213,6 +213,7 @@ def ds_to_flat(
         (satellite_ds[index] > ndwi_thresh)
         .where(~satellite_ds[index].isnull())
         .mean(dim="time")
+        .drop_vars("variable")
     )
     good_mask = (freq >= min_freq) & (freq <= max_freq)
 
@@ -544,7 +545,7 @@ def elevation(
             .to_crs(epsg=4326)
             .set_index("id")
         )
-        gridcell_gdf.index = gridcell_gdf.index.astype(int).astype(str)
+        gridcell_gdf.index = gridcell_gdf.index.astype(str)
         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
         # Create geom as input for dc.load
