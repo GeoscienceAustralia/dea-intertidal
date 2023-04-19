@@ -615,7 +615,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    return ds, freq, tide_m, satellite_ds
+    return ds, freq, tide_m
 
 
 @click.command()
