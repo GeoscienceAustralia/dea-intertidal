@@ -209,13 +209,13 @@ def ds_to_flat(
 
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
-    freq = (
+    frequency = (
         (satellite_ds[index] > ndwi_thresh)
         .where(~satellite_ds[index].isnull())
         .mean(dim="time")
         .drop_vars("variable")
     )
-    good_mask = (freq >= min_freq) & (freq <= max_freq)
+    good_mask = (frequency >= min_freq) & (frequency <= max_freq)
 
     # Flatten to 1D
     ds_flat = satellite_ds.stack(z=("x", "y")).where(
@@ -227,11 +227,11 @@ def ds_to_flat(
     correlations = xr.corr(ds_flat[index] > ndwi_thresh, ds_flat.tide_m, dim="time")
     ds_flat = ds_flat.where(correlations > min_correlation, drop=True)
     
-    # Return correlations to 3D array and mask freq for use in later intertidal modules
+    # Return correlations to 3D array and mask frequency for use in later intertidal modules
     corr = correlations.unstack("z").reindex_like(satellite_ds).transpose("y","x")
-    freq = freq.where(corr > min_correlation, drop=True)
+    freq = frequency.where(corr > min_correlation, drop=True)
     print(
-        f"Reducing analysed pixels from {freq.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / freq.count().item():.2f}%)"
+        f"Reducing analysed pixels from {frequency.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / frequency.count().item():.2f}%)"
     )
     return ds_flat, freq, good_mask
 
