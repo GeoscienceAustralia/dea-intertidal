@@ -226,7 +226,10 @@ def ds_to_flat(
     # correlations between water observations and tide height
     correlations = xr.corr(ds_flat[index] > ndwi_thresh, ds_flat.tide_m, dim="time")
     ds_flat = ds_flat.where(correlations > min_correlation, drop=True)
-
+    
+    # Return correlations to 3D array and mask freq for use in later intertidal modules
+    corr = correlations.unstack("z").reindex_like(satellite_ds).transpose("y","x")
+    freq = freq.where(corr > min_correlation, drop=True)
     print(
         f"Reducing analysed pixels from {freq.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / freq.count().item():.2f}%)"
     )
@@ -612,7 +615,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    return ds, freq, tide_m
+    return ds, freq, tide_m, satellite_ds
 
 
 @click.command()
