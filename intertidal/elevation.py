@@ -199,7 +199,7 @@ def ds_to_flat(
 
     Returns
     -------
-    ds_flat : xr.Dataset
+    flat_ds : xr.Dataset
         Two-dimensional xarray dataset with dimensions (time, z)
     freq : xr.DataArray
         Frequency of wetness for each pixel.
@@ -218,24 +218,24 @@ def ds_to_flat(
     good_mask = (freq >= min_freq) & (freq <= max_freq)
 
     # Flatten to 1D
-    ds_flat = satellite_ds.stack(z=("x", "y")).where(
+    flat_ds = satellite_ds.stack(z=("x", "y")).where(
         good_mask.stack(z=("x", "y")), drop=True
     )
 
     # Calculate correlations, and keep only pixels with positive
     # correlations between water observations and tide height
-    correlations = xr.corr(ds_flat[index] > ndwi_thresh, ds_flat.tide_m, dim="time")
-    ds_flat = ds_flat.where(correlations > min_correlation, drop=True)
+    correlations = xr.corr(flat_ds[index] > ndwi_thresh, flat_ds.tide_m, dim="time")
+    flat_ds = flat_ds.where(correlations > min_correlation, drop=True)
 
     print(
-        f"Reducing analysed pixels from {freq.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / freq.count().item():.2f}%)"
+        f"Reducing analysed pixels from {freq.count().item()} to {len(flat_ds.z)} ({len(flat_ds.z) * 100 / freq.count().item():.2f}%)"
     )
-    return ds_flat, freq, good_mask
+    return flat_ds, freq, good_mask
 
 
 def rolling_tide_window(
     i,
-    ds_flat,
+    flat_ds,
     window_spacing,
     window_radius,
     tide_min,
@@ -254,7 +254,7 @@ def rolling_tide_window(
     ----------
     i : int
         Index of the current window.
-    ds_flat : xarray.Dataset
+    flat_ds : xarray.Dataset
         Input dataset with tide observations (tide_m) as a dimension.
     window_spacing : float
         Provides the spacing of each rolling window interval in tide
@@ -285,8 +285,8 @@ def rolling_tide_window(
     thresh_max = thresh_centre + window_radius
 
     # Filter dataset
-    masked_ds = ds_flat.where(
-        (ds_flat.tide_m >= thresh_min) & (ds_flat.tide_m <= thresh_max)
+    masked_ds = flat_ds.where(
+        (flat_ds.tide_m >= thresh_min) & (flat_ds.tide_m <= thresh_max)
     )
 
     # Apply median or quantile
@@ -304,7 +304,7 @@ def rolling_tide_window(
     return ds_agg
 
 
-def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_workers=64):
+def pixel_rolling_median(flat_ds, windows_n=100, window_prop_tide=0.15, max_workers=64):
     """
     Calculate rolling medians for each pixel in an xarray.Dataset from
     low to high tide, using a set number of rolling windows (defined
@@ -313,7 +313,7 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
 
     Parameters
     ----------
-    ds_flat : xarray.Dataset
+    flat_ds : xarray.Dataset
         A flattened two dimensional (time, z) xr.Dataset containing
         variables "ndwi" and "tide_height", as produced by the
         `ds_to_flat` function
@@ -335,8 +335,8 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
 
     # First obtain some required statistics on the satellite-observed
     # min, max and tide range per pixel
-    tide_max = ds_flat.tide_m.max(dim="time")
-    tide_min = ds_flat.tide_m.min(dim="time")
+    tide_max = flat_ds.tide_m.max(dim="time")
+    tide_min = flat_ds.tide_m.min(dim="time")
     tide_range = tide_max - tide_min
 
     # To conduct a pixel-wise rolling median, we first need to calculate
@@ -367,7 +367,7 @@ def pixel_rolling_median(ds_flat, windows_n=100, window_prop_tide=0.15, max_work
             rolling_intervals,
             *(
                 repeat(i, len(rolling_intervals))
-                for i in [ds_flat, window_spacing_tide, window_radius_tide, tide_min]
+                for i in [flat_ds, window_spacing_tide, window_radius_tide, tide_min]
             ),
         )
 
@@ -590,7 +590,9 @@ def elevation(
         ~satellite_ds.to_array().isel(variable=0).isnull()
     )
 
-    # Flatten array from 3D to 2D and drop pixels with no correlation with tide
+    # Flatten array from 3D to 2D and drop pixels with no correlation with tide.
+    # This greatly improves processing time by ensuring only a narrow strip of 
+    # pixels along the coastline are analysed, rather than the entire x * y array:
     log.info(
         f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels"
     )
@@ -598,7 +600,7 @@ def elevation(
         satellite_ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
     )
 
-    # Per-pixel rolling median
+    # Calculate per-pixel rolling median. 
     log.info(f"Study area {study_area}: Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
         flat_ds, windows_n=100, window_prop_tide=0.15, max_workers=64
