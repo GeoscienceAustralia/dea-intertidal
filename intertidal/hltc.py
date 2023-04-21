@@ -273,7 +273,7 @@ def hltc_geomedians(
     ds_min = satellite_ds.where(satellite_ds.tide_m <= min_thresh)
 
     # select high tide obs
-    ds_max = satellite_ds.where(satellite_ds.tide_m <= max_thresh)
+    ds_max = satellite_ds.where(satellite_ds.tide_m => max_thresh)
 
     # Drop fully cloudy scenes to speed up geomedian
     ds_min = ds_min.sel(time=ds_min.tide_m.isnull().mean(dim=["x", "y"]) < 1).drop(
