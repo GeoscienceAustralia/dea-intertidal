@@ -44,13 +44,13 @@ def extents(dem,
     wet_dry_ext = freq.where(dem.isnull())
     
     ## Create a bool for the always wet and always dry areas by separating the NDWI frequency
-    ## values through the middle.
-    wet_dry_ext = wet_dry_ext >= 0.5
+    ## values through 0.95 (hardcoded value tested in Roebuck Bay, WA)
+    wet_dry_ext = wet_dry_ext >= 0.95
 
-    ## Find the always_wet extent by masking the non-intertidal area for freq values greater than 0.5
+    ## Find the always_wet extent by masking the non-intertidal area for freq values greater than 0.95
     wet_ext = wet_dry_ext.where(wet_dry_ext == True, drop=True)
 
-    ## Find the always_dry extent by masking the non-intertidal area for freq values lower than 0.5
+    ## Find the always_dry extent by masking the non-intertidal area for freq values lower than 0.95
     dry_ext = wet_dry_ext.where(wet_dry_ext == False, drop=True)
 
     ## Classify all non-nan areas as ints
