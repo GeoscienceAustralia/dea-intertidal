@@ -229,11 +229,11 @@ def ds_to_flat(
     
     # Return correlations to 3D array and mask frequency for use in later intertidal modules
     corr = correlations.unstack("z").reindex_like(satellite_ds).transpose("y","x")
-    freq = frequency.where(corr > min_correlation, drop=True)
+    # freq = frequency.where(corr > min_correlation, drop=True)
     print(
         f"Reducing analysed pixels from {frequency.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / frequency.count().item():.2f}%)"
     )
-    return ds_flat, freq, good_mask
+    return ds_flat, frequency, good_mask, corr
 
 
 def rolling_tide_window(
@@ -597,7 +597,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels"
     )
-    flat_ds, freq, good_mask = ds_to_flat(
+    flat_ds, freq, good_mask, corr = ds_to_flat(
         satellite_ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
     )
 
@@ -615,7 +615,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    return ds, freq, tide_m
+    return ds, freq, corr, tide_m
 
 
 @click.command()
