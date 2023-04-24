@@ -229,7 +229,7 @@ def ds_to_flat(
     
     # Return correlations to 3D array and mask frequency for use in later intertidal modules
     corr = correlations.unstack("z").reindex_like(satellite_ds).transpose("y","x")
-    # freq = frequency.where(corr > min_correlation, drop=True)
+    
     print(
         f"Reducing analysed pixels from {frequency.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / frequency.count().item():.2f}%)"
     )
