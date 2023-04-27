@@ -40,8 +40,16 @@ def intertidal_composites(
     log=None,
 ):
     """
-    Calculates Geomedians of High tides and Low tides using satellite imagery and
-    tidal modeling.
+    Calculates Geometric Median composites of the coastal zone at low 
+    and high tide using satellite imagery and tidal modeling.
+    
+    Based on the method described in:
+    
+    Sagar, S., Phillips, C., Bala, B., Roberts, D., & Lymburner, L. 
+    (2018). Generating Continental Scale Pixel-Based Surface Reflectance
+    Composites in Coastal Regions with the Use of a Multi-Resolution
+    Tidal Model. Remote Sensing, 10, 480. 
+    https://doi.org/10.3390/rs10030480
 
     Parameters
     ----------
