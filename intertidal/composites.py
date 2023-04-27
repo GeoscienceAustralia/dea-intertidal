@@ -8,8 +8,7 @@ import click
 
 import datacube
 import odc.geo.xr
-from odc.algo import xr_geomedian
-from odc.algo import mask_cleanup
+from odc.algo import xr_geomedian, xr_quantile
 from datacube.utils.geometry import Geometry
 from datacube.utils.aws import configure_s3_access
 
@@ -22,142 +21,17 @@ from intertidal.utils import (
     round_date_strings,
     export_intertidal_rasters,
 )
+from intertidal.elevation import load_data
 
 
-def load_data(
-    dc,
-    geom,
-    time_range=("2019", "2021"),
-    resolution=10,
-    crs="EPSG:3577",
-    s2_prod="s2_nbart_norm",
-    ls_prod="ls_nbart_norm",
-    config_path="configs/dea_virtual_product_landsat_s2.yaml",
-    filter_gqa=True,
-):
-    """
-    Load cloud-masked Landsat and Sentinel-2 data for a given
-    spatial and temporal extent.
-
-    Parameters
-    ----------
-    dc : Datacube
-        A datacube instance connected to a database.
-    geom : Geometry object from datacube.utils.geometry
-        A geometry object from `datacube.utils.geometry` that defines
-        the spatial extent of interest.
-    time_range : tuple, optional
-        A tuple containing the start and end date for the time range of
-        interest, in the format (start_date, end_date). The default is
-        ("2019", "2021").
-    resolution : int or float, optional
-        The spatial resolution (in metres) to load data at. The default
-        is 10.
-    crs : str, optional
-        The coordinate reference system (CRS) to project data into. The
-        default is Australian Albers "EPSG:3577".
-    s2_prod : str, optional
-        The name of the virtual product to use for Sentinel-2 data. The
-        default is "s2_nbart_norm".
-    ls_prod : str, optional
-        The name of the virtual product to use for Landsat data. The
-        default is "s2_nbart_norm".
-    config_path : str, optional
-        The path to the virtual product configuration file. The default is
-        "configs/dea_virtual_product_landsat_s2.yaml".
-    filter_gqa : bool, optional
-        Whether or not to filter Sentinel-2 data using the GQA filter.
-        The default is True.
-
-    Returns
-    -------
-    satellite_ds : xarray.Dataset
-        An xarray dataset containing the loaded Landsat and Sentinel-2
-        data with cloud masking applied.
-    """
-
-    from datacube.virtual import catalog_from_file
-    from datacube.utils.masking import mask_invalid_data
-    from datacube.utils.geometry import GeoBox, Geometry
-
-    # Load in virtual product catalogue
-    catalog = catalog_from_file(config_path)
-
-    # Create the 'query' dictionary object
-    query_params = {
-        "geopolygon": geom,
-        "time": time_range,
-        "resolution": (-resolution, resolution),
-        "output_crs": crs,
-        "dask_chunks": {"time": 1, "x": 2048, "y": 2048},
-        "resampling": {
-            "*": "cubic",
-            "oa_nbart_contiguity": "nearest",
-            "oa_fmask": "nearest",
-            "oa_s2cloudless_mask": "nearest",
-        },
-    }
-
-    # Optionally add GQA
-    # TODO: Remove once Sentinel-2 GQA issue is resolved
-    if filter_gqa:
-        query_params["gqa_iterative_mean_xy"] = (0, 1)
-
-    # Output list
-    data_list = []
-
-    # If Sentinel-2 data is requested
-    if s2_prod is not None:
-        # Load Sentinel-2 data
-        product = catalog[s2_prod]
-        s2_ds = product.load(dc, **query_params)
-
-        # Apply cloud mask and contiguity mask
-        s2_ds_masked = s2_ds.where(s2_ds.cloud_mask == 1 & s2_ds.contiguity)
-        data_list.append(s2_ds_masked)
-
-    # If Landsat data is requested - default for hltc is no ls.
-    if ls_prod is not None:
-        # Load Landsat data
-        product = catalog[ls_prod]
-        ls_ds = product.load(dc, **query_params)
-
-        # Clean cloud mask by applying morphological closing to all
-        # valid (non cloud, shadow or nodata) pixels. This removes
-        # long, narrow features like false positives over bright beaches.
-        good_data_cleaned = mask_cleanup(
-            mask=ls_ds.cloud_mask.isin([1, 4, 5]),
-            mask_filters=[("closing", 5)],
-        )
-
-        # Dilate cloud and shadow. To ensure that nodata areas (e.g.
-        # Landsat 7 SLC off stripes) are not also dilated, only dilate
-        # mask pixels (e.g. values 0 in `good_data_cleaned`) that are
-        # outside of the original nodata pixels (e.g. not 0 in
-        # `ls_ds.cloud_mask`)
-        good_data_mask = mask_cleanup(
-            mask=(good_data_cleaned == 0) & (ls_ds.cloud_mask != 0),
-            mask_filters=[("dilation", 5)],
-        )
-
-        # Apply cloud mask and contiguity mask
-        ls_ds_masked = ls_ds.where(~good_data_mask & ls_ds.contiguity)
-        data_list.append(ls_ds_masked)
-
-    # Combine into a single ds, sort and drop no longer needed bands
-    satellite_ds = (
-        xr.concat(data_list, dim="time")
-        .sortby("time")
-        .drop(["cloud_mask", "contiguity"])
-    )
-    return satellite_ds
-
-
-def hltc_geomedians(
+def intertidal_composites(
     study_area,
     start_date="2020",
     end_date="2022",
     resolution=10,
+    threshold_method="percent",
+    threshold_lowtide=0.2,
+    threshold_hightide=0.8,
     crs="EPSG:3577",
     include_s2=True,
     include_ls=False,
@@ -182,12 +56,25 @@ def hltc_geomedians(
         be any string supported by datacube (e.g. '2022-12-31')
     resolution : int, optional
         Pixel size in meters, by default 10.
+    threshold_method : str, optional
+        The method used to identify the lower and upper tide height
+        thresholds used to create low and high tide composites. Options
+        are "percent" which will use an absolute percentage of the total
+        tide range, or "percentile" which will take a percentile of all
+        tide observations.
+    threshold_lowtide : float, optional
+        The percent or percentile used to identify low tide
+        observations, by default 0.2.
+    threshold_hightide : float, optional
+        The percent or percentile used to identify high tide
+        observations, by default 0.8.
     crs : str, optional
-        Coordinate reference system, by default "EPSG:3577".
+        Coordinate reference system used to load data, by default
+        "EPSG:3577".
     include_s2 : bool, optional
         Whether to include Sentinel-2 data, by default True.
     include_ls : bool, optional
-        Whether to include Landsat data, by default True.
+        Whether to include Landsat data, by default False.
     filter_gqa : bool, optional
         Whether to apply the GQA filter to the dataset, by default False.
     config_path : str, optional
@@ -198,10 +85,14 @@ def hltc_geomedians(
 
     Returns
     -------
-    ds_min_median : xarray.Dataset
-        xarray.Dataset object containing a geomedian of the obs with the lowest 20% tide values for each pixel in the study area.
-    ds_max_median : xarray.DataArray
-        xarray.Dataset object containing a geomedian of the obs with the highest 20% tide values for each pixel in the study area.
+    ds_lowtide : xarray.Dataset
+        xarray.Dataset object containing a geomedian of the observations
+        with the lowest X percent or percentile tide heights for each
+        pixel in the study area.
+    ds_hightide : xarray.Dataset
+        xarray.Dataset object containing a geomedian of the observations
+        with the highest X percent or percentile tide values for each
+        pixel in the study area.
     """
 
     if log is None:
@@ -211,7 +102,7 @@ def hltc_geomedians(
     client = create_local_dask_cluster(return_client=True)
 
     # Connect to datacube
-    dc = datacube.Datacube(app="Intertidal_elevation")
+    dc = datacube.Datacube(app="Intertidal_composites")
 
     # Load analysis params from config file
     config = load_config(config_path)
@@ -260,41 +151,55 @@ def hltc_geomedians(
     log.info(f"Study area {study_area}: Add tide heights to satellite data array")
     satellite_ds["tide_m"] = tide_m
 
-    # Calculate max, min and full range of tide
-    tide_max = satellite_ds.tide_m.max(dim="time")
-    tide_min = satellite_ds.tide_m.min(dim="time")
-    tide_range = tide_max - tide_min
+    # Calculate a threshold for low and high tide composite using either
+    # an absolute percent of the total tide range, or a percentile of
+    # of all tide observations.
+    log.info(f"Study area {study_area}: Calculate low and high tide thresholds")
+    if threshold_method == "percent":
+        # Calculate max, min and full range of tide
+        tide_max = satellite_ds.tide_m.max(dim="time")
+        tide_min = satellite_ds.tide_m.min(dim="time")
+        tide_range = tide_max - tide_min
 
-    # Calculate a threshold for low and high tide composite
-    min_thresh = tide_min + (tide_range * 0.2)
-    max_thresh = tide_max - (tide_range * 0.2)
+        # Use tide range to calculate thresholds
+        min_thresh = tide_min + (tide_range * threshold_lowtide)
+        max_thresh = tide_min + (tide_range * threshold_hightide)
 
-    # select low tide obs
-    ds_min = satellite_ds.where(satellite_ds.tide_m <= min_thresh)
+    elif threshold_method == "percentile":
+        # Calculate min and max thresholds using percentiles of tides
+        tide_q = xr_quantile(
+            src=satellite_ds[["tide_m"]],
+            quantiles=[threshold_lowtide, threshold_hightide],
+            nodata=np.nan,
+        )
+        min_thresh = tide_q.sel(quantile=threshold_lowtide).tide_m
+        max_thresh = tide_q.sel(quantile=threshold_hightide).tide_m
 
-    # select high tide obs
-    ds_max = satellite_ds.where(satellite_ds.tide_m >= max_thresh)
+    # Select low and high tide obs
+    log.info(f"Study area {study_area}: Masking to low and high tide observations")
+    ds_low = satellite_ds.where(satellite_ds.tide_m <= min_thresh)
+    ds_high = satellite_ds.where(satellite_ds.tide_m >= max_thresh)
 
-    # Drop fully cloudy scenes to speed up geomedian
-    ds_min = ds_min.sel(time=ds_min.tide_m.isnull().mean(dim=["x", "y"]) < 1).drop(
+    # Drop fully empty scenes to speed up geomedian
+    ds_low = ds_low.sel(time=ds_low.tide_m.isnull().mean(dim=["x", "y"]) < 1).drop(
         "tide_m"
     )
-    ds_max = ds_max.sel(time=ds_max.tide_m.isnull().mean(dim=["x", "y"]) < 1).drop(
+    ds_high = ds_high.sel(time=ds_high.tide_m.isnull().mean(dim=["x", "y"]) < 1).drop(
         "tide_m"
     )
 
     # Compute geomedian
-    log.info(f"Calculate geomedians for {study_area}")
-    ds_20_median = xr_geomedian(ds=ds_min)
-    ds_80_median = xr_geomedian(ds=ds_max)
+    log.info(f"Study area {study_area}: Calculate geomedians")
+    ds_lowtide = xr_geomedian(ds=ds_low)
+    ds_hightide = xr_geomedian(ds=ds_high)
 
     # Load data and close dask client
-    ds_20_median.load()
-    ds_80_median.load()
+    ds_lowtide.load()
+    ds_hightide.load()
 
     client.close()
 
-    return ds_20_median, ds_80_median
+    return ds_lowtide, ds_hightide
 
 
 @click.command()
@@ -338,31 +243,52 @@ def hltc_geomedians(
     "Sentinel-2 resolution.",
 )
 @click.option(
+    "--threshold_lowtide",
+    type=float,
+    default=0.2,
+    help="The percent or percentile used to identify low tide "
+    "observations. Defaults to 0.2.",
+)
+@click.option(
+    "--threshold_hightide",
+    type=float,
+    default=0.8,
+    help="The percent or percentile used to identify high tide "
+    "observations. Defaults to 0.8.",
+)
+@click.option(
     "--aws_unsigned/--no-aws_unsigned",
     type=bool,
     default=True,
     help="Whether to use sign AWS requests for S3 access",
 )
-def hltc_cli(
+def intertidal_composites_cli(
     config_path,
     study_area,
     start_date,
     end_date,
     resolution,
+    threshold_lowtide,
+    threshold_hightide,
     aws_unsigned,
 ):
-    log = configure_logging(f"Generating HLTCs for study area {study_area}")
+    log = configure_logging(
+        f"Study area {study_area}: Generating Intertidal composites"
+    )
 
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
     try:
-        # Calculate hltc geomedians
-        ds_20, ds_80 = hltc_geomedians(
+        # Calculate high and low tide geomedian composites
+        ds_lowtide, ds_hightide = intertidal_composites(
             study_area,
             start_date=start_date,
             end_date=end_date,
             resolution=resolution,
+            threshold_method="percent",
+            threshold_lowtide=threshold_lowtide,
+            threshold_hightide=threshold_hightide,
             crs="EPSG:3577",
             include_s2=True,
             include_ls=False,
@@ -375,16 +301,26 @@ def hltc_cli(
         log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
 
         prefix = f"data/interim/{study_area}_{start_date}_{end_date}"
-        ds_80.to_array().odc.write_cog(prefix + "_hltc_80_s2.tif", overwrite=True)
-        ds_20.to_array().odc.write_cog(prefix + "_hltc_20_s2.tif", overwrite=True)
-        ds_20.odc.to_rgba(vmin=0.0, vmax=0.3).plot.imshow().figure.savefig(
-            prefix + "_hltc_20_s2_rgb.png"
+        ds_lowtide.to_array().odc.write_cog(
+            f"{prefix}_composite_{int(threshold_lowtide * 100)}_s2.tif", overwrite=True
         )
-        ds_80.odc.to_rgba(vmin=0.0, vmax=0.3).plot.imshow().figure.savefig(
-            prefix + "_hltc_80_s2_rgb.png"
+        ds_hightide.to_array().odc.write_cog(
+            f"{prefix}_composite_{int(threshold_hightide * 100)}_s2.tif", overwrite=True
         )
+
+        # Export as images
+        prefix = f"data/figures/{study_area}_{start_date}_{end_date}"
+        ds_lowtide.odc.to_rgba(vmin=0.0, vmax=0.3).plot.imshow().figure.savefig(
+            f"{prefix}_composite_{int(threshold_lowtide * 100)}_s2_rgb.png"
+        )
+        ds_hightide.odc.to_rgba(vmin=0.0, vmax=0.3).plot.imshow().figure.savefig(
+            f"{prefix}_composite_{int(threshold_hightide * 100)}_s2_rgb.png"
+        )
+
         # Workflow completed
-        log.info(f"Study area {study_area}: Completed HLTC workflow")
+        log.info(
+            f"Study area {study_area}: Completed DEA Intertidal composites workflow"
+        )
 
     except Exception as e:
         log.exception(f"Study area {study_area}: Failed to run process with error {e}")
@@ -392,4 +328,4 @@ def hltc_cli(
 
 
 if __name__ == "__main__":
-    hltc_cli()
+    intertidal_composites_cli()
