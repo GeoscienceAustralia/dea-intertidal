@@ -50,7 +50,7 @@ def bias_offset(
         percentage of the modelled tide heights.
         * `offset_lowtide`: The low tide offset measures the offset of the 
         sensor-observed lowest tide from the minimum modelled tide.
-        * `ht_offset`: The high tide measures the offset of the 
+        * `offset_hightide`: The high tide measures the offset of the 
         sensor-observed highest tide from the maximum modelled tide.         
     """
     
