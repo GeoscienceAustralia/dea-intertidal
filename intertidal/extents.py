@@ -102,31 +102,31 @@ def extents(freq,
     Notes:
     ------
     Classes are defined as follows:
-    0: Intertidal
+    0: Dry
+        Pixels with wettness `freq` < 0.05
+        Includes intermittently dry pixels with wetness frequency < 0.5 and > 0.05
+        and `corr` to tide > 0.1 to capture intertidal pixels buffered
+        out by the `corr` threshold of 0.2
+    1: Intertidal
         Frequency of pixel wetness (`freq`) is > 0.01 and < 0.99
         The correlation (`corr`) between `freq` and tide-heights is > 0.2
-    1: Wet tidal
+    2: Wet tidal
         Frequency of pixel wetness (`freq`) is > 0.95
         Includes intermittently wet pixels with `freq` > 0.5 and < 0.95,
         and `corr` to tide > 0.1. This captures intertidal pixels buffered
         out by the `corr` threshold of 0.2 (default)
         Pixels are located offshore, within 10 pixels of known ocean, as defined
         by the Geodata 100k coastline dataset (`ocean_da`)
-    2: Wet nontidal
+    3: Wet nontidal
         Frequency of pixel wetness (`freq`) is > 0.95
         Includes intermittently wet pixels with `freq` > 0.5 and < 0.95,
         and `corr` to tide > 0.1. This captures intertidal pixels buffered
         out by the `corr` threshold of 0.2 (default)
         Pixels are located onshore, more than 10 pixels from known ocean, as defined
         by the Geodata 100k coastline dataset (`ocean_da`)
-    3: Intermittently wet nontidal
+    4: Intermittently wet nontidal
         Pixels with wetting `freq` between 0.95 and 0.05 and
         `corr` of `freq` to tide is < 0.1    
-    4: Dry
-        Pixels with wettness `freq` < 0.05
-        Includes intermittently dry pixels with wetness frequency < 0.5 and > 0.05
-        and `corr` to tide > 0.1 to capture intertidal pixels buffered
-        out by the `corr` threshold of 0.2
     '''
     
     ## Connect to datacube to load `ocean_da`
@@ -164,12 +164,12 @@ def extents(freq,
 
     ## Relabel pixels in the classes. 
     ## Add intermittent tidal wet/dry to the always wet/dry classes
-    intertidal = intertidal.where(intertidal.isnull(), 0)
-    wet = wet.where(wet.isnull(), 1)
-    dry = dry.where(dry.isnull(), 4)
-    intermittent_tidal_wet = intermittent_tidal_wet.where(intermittent_tidal_wet.isnull(), 1)
-    intermittent_tidal_dry = intermittent_tidal_dry.where(intermittent_tidal_dry.isnull(), 4)                    
-    intermittent_nontidal = intermittent_nontidal.where(intermittent_nontidal.isnull(), 3)
+    intertidal = intertidal.where(intertidal.isnull(), 1)
+    wet = wet.where(wet.isnull(), 2)
+    dry = dry.where(dry.isnull(), 0)
+    intermittent_tidal_wet = intermittent_tidal_wet.where(intermittent_tidal_wet.isnull(), 2)
+    intermittent_tidal_dry = intermittent_tidal_dry.where(intermittent_tidal_dry.isnull(), 0)                    
+    intermittent_nontidal = intermittent_nontidal.where(intermittent_nontidal.isnull(), 4)
 
     ## Combine classes
     extents = intertidal.combine_first(wet)
@@ -210,8 +210,8 @@ def extents(freq,
     wet_tidal = extents.where((extents==1) & (ocean_mask == True), drop=True)
 
     ## Relabel pixels
-    wet_nontidal = wet_nontidal.where(wet_nontidal.isnull(), 2)
-    wet_tidal = wet_tidal.where(wet_tidal.isnull(), 1)
+    wet_nontidal = wet_nontidal.where(wet_nontidal.isnull(), 3)
+    wet_tidal = wet_tidal.where(wet_tidal.isnull(), 2)
 
     ## remove `wet` pixels from int_ext to replace with the tidal and non tidal wet classes
     extents = extents.where(extents != 1, np.nan)
