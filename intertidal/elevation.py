@@ -229,7 +229,7 @@ def ds_to_flat(
     corr = correlations.unstack("z").reindex_like(satellite_ds).transpose("y","x")
     
     print(
-        f"Reducing analysed pixels from {freq.count().item()} to {len(ds_flat.z)} ({len(ds_flat.z) * 100 / freq.count().item():.2f}%)"
+        f"Reducing analysed pixels from {freq.count().item()} to {len(flat_ds.z)} ({len(flat_ds.z) * 100 / freq.count().item():.2f}%)"
     )
     return flat_ds, freq, good_mask, corr
 
@@ -710,7 +710,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels"
     )
-    flat_ds, freq, good_mask = ds_to_flat(
+    flat_ds, freq, good_mask, corr = ds_to_flat(
         satellite_ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
     )
 
@@ -737,7 +737,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    return ds, freq, tide_m
+    return ds, freq, corr, tide_m
 
 
 @click.command()
