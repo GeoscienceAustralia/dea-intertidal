@@ -164,11 +164,14 @@ def extents(freq,
 
     ## Relabel pixels in the classes. 
     ## Add intermittent tidal wet/dry to the always wet/dry classes
-    intertidal = intertidal.where(intertidal.isnull(), 1)
-    wet = wet.where(wet.isnull(), 2)
     dry = dry.where(dry.isnull(), 0)
+    intermittent_tidal_dry = intermittent_tidal_dry.where(intermittent_tidal_dry.isnull(), 0)
+    
+    intertidal = intertidal.where(intertidal.isnull(), 1)
+    
+    wet = wet.where(wet.isnull(), 2)
     intermittent_tidal_wet = intermittent_tidal_wet.where(intermittent_tidal_wet.isnull(), 2)
-    intermittent_tidal_dry = intermittent_tidal_dry.where(intermittent_tidal_dry.isnull(), 0)                    
+        
     intermittent_nontidal = intermittent_nontidal.where(intermittent_nontidal.isnull(), 4)
 
     ## Combine classes
@@ -206,15 +209,15 @@ def extents(freq,
     ocean_mask = ocean_masking(landwater, ocean_da)
 
     ## distinguish wet tidal from non-tidal pixels
-    wet_nontidal = extents.where((extents==1) & (ocean_mask == False))#, drop=True) ## Weird artefacts when drop=True
-    wet_tidal = extents.where((extents==1) & (ocean_mask == True), drop=True)
+    wet_nontidal = extents.where((extents==2) & (ocean_mask == False))#, drop=True) ## Weird artefacts when drop=True
+    wet_tidal = extents.where((extents==2) & (ocean_mask == True), drop=True)
 
     ## Relabel pixels
     wet_nontidal = wet_nontidal.where(wet_nontidal.isnull(), 3)
     wet_tidal = wet_tidal.where(wet_tidal.isnull(), 2)
 
     ## remove `wet` pixels from int_ext to replace with the tidal and non tidal wet classes
-    extents = extents.where(extents != 1, np.nan)
+    extents = extents.where(extents != 2, np.nan)
 
     ## combine wet tidal and nontidal variables back into int_ext
     extents = extents.combine_first(wet_nontidal)
