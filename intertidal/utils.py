@@ -245,3 +245,55 @@ def intertidal_hillshade(
     )
 
     return hillshaded_da
+
+
+def pixel_ebb_flow(satellite_ds, tide_m, offset_min=15):
+    """
+    Computes whether each pixel in a satellite dataset represents ebb or
+    flow tide conditions.
+
+    This function compares the original modelled tide heights from the
+    moment of satellite data acquisition with new tide hieghts modelled
+    after after shifting the original timesteps forward by `offset_min`
+    minutes. If a pixel's tide height is lower at the `tide_m_offset`
+    time than at the original time, it is considered to be flowing
+    (rising) over time. Otherwise, it is considered to be ebbing
+    (falling) over time.
+
+    Parameters
+    ----------
+    tide_m : xarray.DataArray
+        An array containing modelled tide heights for each pixel and
+        timestep in a satellite dataset.
+    offset_min : int, optional
+        The time offset in minutes to use for the comparison (default
+        is 15).
+
+    Returns
+    -------
+    ebb_flow_da : xarray.DataArray
+        A new DataArray with the same dimensions as `tide_m` containing
+        a boolean value for each pixel indicating whether the tide is
+        ebbing (False) or flowing (True).
+    tide_m_offset : xarray.DataArray
+        An array containing modelled tides offset by `offset_min`
+        minutes in time, for reference.
+    """
+
+    # Offset times in original array by X minutes forward in time
+    times_offset = tide_m.time + np.timedelta64(offset_min, "m")
+
+    # Model tides into every pixel in the three-dimensional (x, y, time)
+    # input array
+    tide_m_offset, _ = pixel_tides(tide_m, times=times_offset, resample=True)
+
+    # Restore original times so both arrays can be combined using xarray
+    tide_m_offset["time"] = tide_m["time"]
+
+    # For each pixel, test whether original tides were lower than
+    # tides offset to X minutes later. If they were lower, the tide was
+    # "flowing" (rising) over time, if they were higher the tide was
+    # "ebbing" (falling) over time
+    ebb_flow_da = (tide_m < tide_m_offset).rename("ebb_flow")
+
+    return ebb_flow_da, tide_m_offset
