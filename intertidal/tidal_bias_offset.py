@@ -28,8 +28,8 @@ def bias_offset(
         each pixel. Should have 'quantile', 'x' and 'y' in its 
         dimensions.
     extents : xr.DataArray
-        An xarray.DataArray representing the always, sometimes and never 
-        wet extents of the intertidal zone. Should have the same 
+        An xarray.DataArray representing 5 ecosystem class extents 
+        of the intertidal zone. Should have the same 
         dimensions as `tide_m` and `tide_cq`.
     lat_hat : bool, optional
         Lowest/highest astronomical tides. This work considers the 
@@ -76,18 +76,18 @@ def bias_offset(
         
     # Add the lowest and highest astronomical tides
     if lat_hat:
-        lat = min_mod.where(extents != 2)
-        hat = max_mod.where(extents != 2)
+        lat = min_mod.where((extents == 2)&(extents==1))
+        hat = max_mod.where((extents == 2)&(extents==1))
     
     # Add the lowest and highest sensor-observed tides
     if lot_hot:
-        lot = min_obs.where(extents != 2)
-        hot = max_obs.where(extents != 2)
+        lot = min_obs.where((extents == 2)&(extents==1))
+        hot = max_obs.where((extents == 2)&(extents==1))
         
     # Mask out non-intertidal pixels using ds extents
-    spread = spread.where(extents != 2)
-    offset_hightide = offset_hightide.where(extents != 2)
-    offset_lowtide = offset_lowtide.where(extents != 2)
+    spread = spread.where((extents == 2)&(extents==1))
+    offset_hightide = offset_hightide.where((extents == 2)&(extents==1))
+    offset_lowtide = offset_lowtide.where((extents == 2)&(extents==1))
     
     if lat_hat:
         if lot_hot:
@@ -134,7 +134,7 @@ def tidal_offset_tidelines(extents,
         a `geopandas.GeoDataFrame` containing the multilinestring tidelines.   
     '''
     # Extract the high/low tide boundaries
-    tidelines_gdf = subpixel_contours(da=extents, z_values=[0.5, 1.5])
+    tidelines_gdf = subpixel_contours(da=extents, z_values=[1.5, 0.5])
     
     # Translate the high/Low tidelines into point data at regular intervals
     lowtideline = points_on_line(tidelines_gdf, 0, distance=distance)
