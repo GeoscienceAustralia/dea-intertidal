@@ -76,18 +76,18 @@ def bias_offset(
         
     # Add the lowest and highest astronomical tides
     if lat_hat:
-        lat = min_mod.where((extents == 2)&(extents==1))
-        hat = max_mod.where((extents == 2)&(extents==1))
+        lat = min_mod.where((extents == 1)|(extents==2))
+        hat = max_mod.where((extents == 1)|(extents==2))
     
     # Add the lowest and highest sensor-observed tides
     if lot_hot:
-        lot = min_obs.where((extents == 2)&(extents==1))
-        hot = max_obs.where((extents == 2)&(extents==1))
+        lot = min_obs.where((extents == 2)|(extents==1))
+        hot = max_obs.where((extents == 2)|(extents==1))
         
     # Mask out non-intertidal pixels using ds extents
-    spread = spread.where((extents == 2)&(extents==1))
-    offset_hightide = offset_hightide.where((extents == 2)&(extents==1))
-    offset_lowtide = offset_lowtide.where((extents == 2)&(extents==1))
+    spread = spread.where((extents == 2)|(extents==1))
+    offset_hightide = offset_hightide.where((extents == 2)|(extents==1))
+    offset_lowtide = offset_lowtide.where((extents == 2)|(extents==1))
     
     if lat_hat:
         if lot_hot:
