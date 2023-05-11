@@ -133,6 +133,9 @@ def tidal_offset_tidelines(extents,
         high and low tidelines with their respective tidal offsets and
         a `geopandas.GeoDataFrame` containing the multilinestring tidelines.   
     '''
+    ## Create a three class extents dataset: tidal wet/intertidal/dry
+    extents=extents.where((extents==0)|(extents==1)|(extents==2), np.nan)
+    
     # Extract the high/low tide boundaries
     tidelines_gdf = subpixel_contours(da=extents, z_values=[1.5, 0.5])
     
