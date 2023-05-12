@@ -307,7 +307,7 @@ def pixel_rolling_median(flat_ds, windows_n=100, window_prop_tide=0.15, max_work
     low to high tide, using a set number of rolling windows (defined
     by `windows_n`) with radius determined by the proportion of the tide
     range specified by `window_prop_tide`.
-    
+
     For each window, the function returns the median of all tide heights
     and NDWI index values within the window, and returns an array with a
     new "interval" dimension that summarises these values from low to
@@ -451,7 +451,9 @@ def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
     return dem_flat.to_dataset(name="elevation")
 
 
-def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75):
+def pixel_uncertainty(
+    flat_ds, flat_dem, ndwi_thresh=0.1, method="mad", min_q=0.25, max_q=0.75
+):
     """
     Calculate uncertainty bounds around a modelled elevation based on
     observations that were misclassified by a given NDWI threshold.
@@ -460,8 +462,7 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
     modelled elevation, i.e., wet observations (NDWI > threshold) at
     lower tide heights than the modelled elevation, or dry observations
     (NDWI < threshold) at higher tide heights than the modelled
-    elevation. It calculates the interquartile tide height range of
-    these misclassified observations.
+    elevation.
 
     Parameters
     ----------
@@ -476,12 +477,18 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
         A threshold value for NDWI, below which an observation is
         considered "dry", and above which it is considered "wet". The
         default is 0.1.
+    method : string, optional
+        Whether to calculate uncertainty using Median Absolute Deviation
+        (MAD) of the tide heights of all misclassified points, or by
+        taking upper/lower tide height quantiles of miscalssified points.
+        Defaults to "mad" for Median Absolute Deviation; use "quantile"
+        to use quantile calculation instead.
     min_q, max_q : float, optional
-        The minimum and maximum quantiles used to estimate uncertainty
-        bounds based on misclassified points. Defaults to interquartile
-        range, or 0.25, 0.75. This provides a balance between capturing
-        the range of uncertainty at each pixel, while not being overly
-        influenced by outliers in `flat_ds`.
+        If `method == "quantile": the minimum and maximum quantiles used
+        to estimate uncertainty bounds based on misclassified points.
+        Defaults to interquartile range, or 0.25, 0.75. This provides a
+        balance between capturing the range of uncertainty at each
+        pixel, while not being overly influenced by outliers in `flat_ds`.
 
     Returns
     -------
@@ -502,24 +509,41 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
     )
     misclassified_all = misclassified_wet | misclassified_dry
     misclassified_ds = flat_ds.where(misclassified_all).drop("variable")
+    
+    # Calculate sum of misclassified points
+    misclassified_sum = misclassified_all.sum(dim="time")
+
+    # Calculate uncertainty by taking the Median Absolute Deviation of
+    # all misclassified points.
+    if method == "mad":
+        # Calculate median of absolute deviations
+        # TODO: Account for large MAD on pixels with very few
+        # misclassified points. Set < X misclassified points to 0 MAD?
+        mad = abs(misclassified_ds.tide_m - flat_dem.elevation).median(dim="time")
+
+        # Calculate low and high bounds
+        uncertainty_low = flat_dem.elevation - mad
+        uncertainty_high = flat_dem.elevation + mad
 
     # Calculate interquartile tide height range of our misclassified
     # observations to obtain lower and upper uncertainty bounds around our
     # modelled elevation.
-    misclassified_q = xr_quantile(
-        src=misclassified_ds.dropna(dim="time", how="all")[["tide_m"]],
-        quantiles=[min_q, max_q],
-        nodata=np.nan,
-    ).tide_m.fillna(flat_dem.elevation)
+    elif method == "quantile":
+        # Use xr_quantile (faster than built-in .quantile)
+        misclassified_q = xr_quantile(
+            src=misclassified_ds.dropna(dim="time", how="all")[["tide_m"]],
+            quantiles=[min_q, max_q],
+            nodata=np.nan,
+        ).tide_m.fillna(flat_dem.elevation)
+
+        # Extract low and high bounds
+        uncertainty_low = misclassified_q.sel(quantile=min_q, drop=True)
+        uncertainty_high = misclassified_q.sel(quantile=max_q, drop=True)
 
     # Clip min and max uncertainty to modelled elevation to ensure lower
     # bounds are not above modelled elevation (and vice versa)
-    dem_flat_low = np.minimum(
-        misclassified_q.sel(quantile=min_q, drop=True), flat_dem.elevation
-    )
-    dem_flat_high = np.maximum(
-        misclassified_q.sel(quantile=max_q, drop=True), flat_dem.elevation
-    )
+    dem_flat_low = np.minimum(uncertainty_low, flat_dem.elevation)
+    dem_flat_high = np.maximum(uncertainty_high, flat_dem.elevation)
 
     # Subtract low from high DEM to summarise uncertainy range
     dem_flat_uncertainty = dem_flat_high - dem_flat_low
@@ -528,6 +552,7 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
         dem_flat_low,
         dem_flat_high,
         dem_flat_uncertainty,
+        misclassified_sum,
     )
 
 
@@ -835,7 +860,7 @@ def intertidal_cli(
     log = configure_logging(f"Intertidal processing for study area {study_area}")
 
     # Configure S3
-    configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned) 
+    configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
     try:
         # Calculate elevation
@@ -999,105 +1024,105 @@ if __name__ == "__main__":
 #         raise ConnectionError("Access to dask gateway cluster unauthorized")
 
 
-# def abslmp_gauge(
-#     coords, start_year=2019, end_year=2021, data_path="data/raw/ABSLMP", plot=True
-# ):
-#     """
-#     Loads water level data from the nearest Australian Baseline Sea Level
-#     Monitoring Project gauge.
-#     """
+def abslmp_gauge(
+    coords, start_year=2019, end_year=2021, data_path="data/raw/ABSLMP", plot=True
+):
+    """
+    Loads water level data from the nearest Australian Baseline Sea Level
+    Monitoring Project gauge.
+    """
 
-#     from shapely.ops import nearest_points
-#     from shapely.geometry import Point
+    from shapely.ops import nearest_points
+    from shapely.geometry import Point
 
-#     # Standardise coords format
-#     if isinstance(coords, (xr.core.dataset.Dataset, xr.core.dataarray.DataArray)):
-#         print("Using dataset bounds to load gauge data")
-#         coords = coords.odc.geobox.geographic_extent.geom
-#     elif isinstance(coords, tuple):
-#         coords = Point(coords)
+    # Standardise coords format
+    if isinstance(coords, (xr.core.dataset.Dataset, xr.core.dataarray.DataArray)):
+        print("Using dataset bounds to load gauge data")
+        coords = coords.odc.geobox.geographic_extent.geom
+    elif isinstance(coords, tuple):
+        coords = Point(coords)
 
-#     # Convert coords to GeoDataFrame
-#     coords_gdf = gpd.GeoDataFrame(geometry=[coords], crs="EPSG:4326").to_crs(
-#         "EPSG:3577"
-#     )
+    # Convert coords to GeoDataFrame
+    coords_gdf = gpd.GeoDataFrame(geometry=[coords], crs="EPSG:4326").to_crs(
+        "EPSG:3577"
+    )
 
-#     # Load station metadata
-#     site_metadata_df = pd.read_csv(
-#         f"{data_path}/ABSLMP_station_metadata.csv", index_col="ID CODE"
-#     )
+    # Load station metadata
+    site_metadata_df = pd.read_csv(
+        f"{data_path}/ABSLMP_station_metadata.csv", index_col="ID CODE"
+    )
 
-#     # Convert metadata to GeoDataFrame
-#     sites_metadata_gdf = gpd.GeoDataFrame(
-#         data=site_metadata_df,
-#         geometry=gpd.points_from_xy(
-#             site_metadata_df.LONGITUDE, site_metadata_df.LATITUDE
-#         ),
-#         crs="EPSG:4326",
-#     ).to_crs("EPSG:3577")
+    # Convert metadata to GeoDataFrame
+    sites_metadata_gdf = gpd.GeoDataFrame(
+        data=site_metadata_df,
+        geometry=gpd.points_from_xy(
+            site_metadata_df.LONGITUDE, site_metadata_df.LATITUDE
+        ),
+        crs="EPSG:4326",
+    ).to_crs("EPSG:3577")
 
-#     # Find nearest row
-#     site_metadata_gdf = gpd.sjoin_nearest(coords_gdf, sites_metadata_gdf).iloc[0]
-#     site_id = site_metadata_gdf["index_right"]
-#     site_name = site_metadata_gdf["TOWN / DISTRICT"]
+    # Find nearest row
+    site_metadata_gdf = gpd.sjoin_nearest(coords_gdf, sites_metadata_gdf).iloc[0]
+    site_id = site_metadata_gdf["index_right"]
+    site_name = site_metadata_gdf["TOWN / DISTRICT"]
 
-#     # Read all tide data
-#     print(f"Loading ABSLMP gauge {site_id} ({site_name})")
-#     available_paths = glob(f"{data_path}/{site_id}_*.csv")
-#     available_years = sorted([int(i[-8:-4]) for i in available_paths])
+    # Read all tide data
+    print(f"Loading ABSLMP gauge {site_id} ({site_name})")
+    available_paths = glob(f"{data_path}/{site_id}_*.csv")
+    available_years = sorted([int(i[-8:-4]) for i in available_paths])
 
-#     loaded_data = [
-#         pd.read_csv(
-#             f"{data_path}/{site_id}_{year}.csv",
-#             index_col=0,
-#             parse_dates=True,
-#             na_values=-9999,
-#         )
-#         for year in range(start_year, end_year)
-#         if year in available_years
-#     ]
+    loaded_data = [
+        pd.read_csv(
+            f"{data_path}/{site_id}_{year}.csv",
+            index_col=0,
+            parse_dates=True,
+            na_values=-9999,
+        )
+        for year in range(start_year, end_year)
+        if year in available_years
+    ]
 
-#     try:
-#         # Combine loaded data
-#         df = pd.concat(loaded_data).rename(
-#             {" Adjusted Residuals": "Adjusted Residuals"}, axis=1
-#         )
+    try:
+        # Combine loaded data
+        df = pd.concat(loaded_data).rename(
+            {" Adjusted Residuals": "Adjusted Residuals"}, axis=1
+        )
 
-#         # Extract water level and residuals
-#         clean_df = df[["Sea Level", "Adjusted Residuals"]].rename_axis("time")
-#         clean_df.columns = ["sea_level", "residuals"]
-#         clean_df["sea_level"] = clean_df.sea_level - site_metadata_gdf.AHD
-#         clean_df["sea_level_noresiduals"] = clean_df.sea_level - clean_df.residuals
+        # Extract water level and residuals
+        clean_df = df[["Sea Level", "Adjusted Residuals"]].rename_axis("time")
+        clean_df.columns = ["sea_level", "residuals"]
+        clean_df["sea_level"] = clean_df.sea_level - site_metadata_gdf.AHD
+        clean_df["sea_level_noresiduals"] = clean_df.sea_level - clean_df.residuals
 
-#         # Summarise non-residual waterlevels by week to assess seasonality
-#         seasonal_df = (
-#             clean_df[["sea_level_noresiduals"]]
-#             .groupby(clean_df.index.isocalendar().week)
-#             .mean()
-#         )
+        # Summarise non-residual waterlevels by week to assess seasonality
+        seasonal_df = (
+            clean_df[["sea_level_noresiduals"]]
+            .groupby(clean_df.index.isocalendar().week)
+            .mean()
+        )
 
-#         # Plot
-#         if plot:
-#             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-#             axes = axes.flatten()
-#             clean_df["sea_level"].plot(ax=axes[0], lw=0.2)
-#             axes[0].set_title("Water levels (AHD)")
-#             axes[0].set_xlabel("")
-#             clean_df["residuals"].plot(ax=axes[1], lw=0.3)
-#             axes[1].set_title("Adjusted residuals")
-#             axes[1].set_xlabel("")
-#             clean_df["sea_level_noresiduals"].plot(ax=axes[2], lw=0.2)
-#             axes[2].set_title("Water levels, no residuals (AHD)")
-#             axes[2].set_xlabel("")
-#             seasonal_df.plot(ax=axes[3])
-#             axes[3].set_title("Seasonal")
+        # Plot
+        if plot:
+            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            axes = axes.flatten()
+            clean_df["sea_level"].plot(ax=axes[0], lw=0.2)
+            axes[0].set_title("Water levels (AHD)")
+            axes[0].set_xlabel("")
+            clean_df["residuals"].plot(ax=axes[1], lw=0.3)
+            axes[1].set_title("Adjusted residuals")
+            axes[1].set_xlabel("")
+            clean_df["sea_level_noresiduals"].plot(ax=axes[2], lw=0.2)
+            axes[2].set_title("Water levels, no residuals (AHD)")
+            axes[2].set_xlabel("")
+            seasonal_df.plot(ax=axes[3])
+            axes[3].set_title("Seasonal")
 
-#         return clean_df, seasonal_df
+        return clean_df, seasonal_df
 
-#     except ValueError:
-#         print(
-#             f"\nNo data for selected start and end year. Available years include:\n{available_years}"
-#         )
+    except ValueError:
+        print(
+            f"\nNo data for selected start and end year. Available years include:\n{available_years}"
+        )
 
 
 # def abslmp_correction(ds, start_year=2010, end_year=2021):
