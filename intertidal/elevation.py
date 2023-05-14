@@ -899,7 +899,7 @@ def intertidal_cli(
             
             # Calculate extents
             log.info(f"Study area {study_area}: Calculating Extents layer")
-            ds["extents"] = extents(ds.elevation, freq)
+            ds["extents"] = extents(freq, ds.elevation, corr)
 
             if exposure_offsets:
                 # Calculate exposure
@@ -997,7 +997,7 @@ def intertidal_cli(
 
             # Calculate extents
             log.info(f"Study area {study_area}: Calculating Extents layer")
-            ds["extents"] = extents(ds.elevation, freq)
+            ds["extents"] = extents(freq, ds.elevation, corr)
 
             if exposure_offsets:
                 # Calculate exposure
