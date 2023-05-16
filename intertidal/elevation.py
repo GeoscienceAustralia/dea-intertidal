@@ -601,14 +601,20 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
 
 def elevation(
     study_area,
-    start_date="2020",
-    end_date="2022",
+    start_date,
+    end_date,
     resolution=10,
     crs="EPSG:3577",
     ndwi_thresh=0.1,
     include_s2=True,
     include_ls=True,
     filter_gqa=False,
+    min_freq=0.01,
+    max_freq=0.99,
+    min_correlation=0.2,
+    windows_n=100,
+    window_prop_tide=0.15,
+    max_workers=64,
     config_path="configs/dea_intertidal_config.yaml",
     log=None,
 ):
@@ -640,6 +646,21 @@ def elevation(
         Whether to include Landsat data, by default True.
     filter_gqa : bool, optional
         Whether to apply the GQA filter to the dataset, by default False.
+    min_freq, max_freq : float, optional
+        Minimum and maximum frequency of wetness required for a pixel to
+        be included in the analysis, by default 0.01 and 0.99.
+    min_correlation : float, optional
+        Minimum correlation between water index and tide height required
+        for a pixel to be included in the analysis, by default 0.2.
+    windows_n : int, optional
+        Number of rolling windows to iterate over in per-pixel rolling
+        median calculation, by default 100
+    window_prop_tide : float, optional
+        Proportion of the tide range to use for each window radius in
+        per-pixel rolling median calculation, by default 0.15
+    max_workers : int, optional
+        Maximum number of worker processes to use for parallel
+        execution in per-pixel rolling median calculation, by default 64
     config_path : str, optional
         Path to the configuration file, by default
         "configs/dea_intertidal_config.yaml".
@@ -733,14 +754,21 @@ def elevation(
     log.info(
         f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels"
     )
-    flat_ds, freq, good_mask = ds_to_flat(
-        satellite_ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
+    flat_ds, freq, good_mask, corr = ds_to_flat(
+        satellite_ds,
+        ndwi_thresh=0.0,
+        min_freq=min_freq,
+        max_freq=max_freq,
+        min_correlation=min_correlation,
     )
 
     # Calculate per-pixel rolling median.
     log.info(f"Study area {study_area}: Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
-        flat_ds, windows_n=100, window_prop_tide=0.15, max_workers=64
+        flat_ds,
+        windows_n=windows_n,
+        window_prop_tide=window_prop_tide,
+        max_workers=max_workers,
     )
 
     # Model intertidal elevation
@@ -760,7 +788,7 @@ def elevation(
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    return ds, freq, tide_m
+    return ds, freq, corr, tide_m
 
 
 @click.command()
