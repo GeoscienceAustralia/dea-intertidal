@@ -225,11 +225,13 @@ def ds_to_flat(
     # correlations between water observations and tide height
     correlations = xr.corr(flat_ds[index] > ndwi_thresh, flat_ds.tide_m, dim="time")
     flat_ds = flat_ds.where(correlations > min_correlation, drop=True)
-
+    # Return correlations to 3D array and mask frequency for use in later intertidal modules
+    corr = correlations.unstack("z").reindex_like(satellite_ds).transpose("y","x")
+    
     print(
         f"Reducing analysed pixels from {freq.count().item()} to {len(flat_ds.z)} ({len(flat_ds.z) * 100 / freq.count().item():.2f}%)"
     )
-    return flat_ds, freq, good_mask
+    return flat_ds, freq, good_mask, corr
 
 
 def rolling_tide_window(
@@ -756,7 +758,7 @@ def elevation(
     )
     flat_ds, freq, good_mask, corr = ds_to_flat(
         satellite_ds,
-        ndwi_thresh=0.0,
+        ndwi_thresh=ndwi_thresh,
         min_freq=min_freq,
         max_freq=max_freq,
         min_correlation=min_correlation,
