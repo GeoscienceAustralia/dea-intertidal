@@ -1043,66 +1043,66 @@ def intertidal_cli(
                 )
                 ds["exposure"], tide_cq = exposure(ds.elevation, all_timerange)
 
-                # Calculate spread, offsets and HAT/LAT/LOT/HOT
-                log.info(
-                    f"Study area {study_area}: Calculating spread, offset "
-                    "and HAT/LAT/LOT/HOT layers"
-                )
-                (
-                    ds["lat"],
-                    ds["hat"],
-                    ds["lot"],
-                    ds["hot"],
-                    ds["spread"],
-                    ds["offset_lowtide"],
-                    ds["offset_hightide"],
-                ) = bias_offset(
-                    tide_m=tide_m,
-                    tide_cq=tide_cq,
-                    extents=ds.extents,
-                    lot_hot=True,
-                    lat_hat=True,
-                )
-
-                # Calculate tidelines
-                log.info(
-                    f"Study area {study_area}: Calculating high and low tidelines "
-                    "and associated satellite offsets"
-                )
-                (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
-                    extents=ds.extents,
-                    offset_hightide=ds.offset_hightide,
-                    offset_lowtide=ds.offset_lowtide,
-                    distance=tideline_offset_distance,
-                )
-
-                # Export high and low tidelines and the offset data
-                log.info(
-                    f"Study area {study_area}: Exporting high and low tidelines with satellite offset"
-                )
-                hightideline.to_crs("EPSG:4326").to_file(
-                    f"data/interim/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
-                )
-                lowtideline.to_crs("EPSG:4326").to_file(
-                    f"data/interim/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
-                )
-                tidelines_gdf.to_crs("EPSG:4326").to_file(
-                    f"data/interim/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
-                )
-
-            else:
-                log.info(
-                    f"Study area {study_area}: Skipping Exposure and spread/offsets/tidelines calculation"
-                )
-
-            # Export layers as GeoTIFFs with optimised data types
-            log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
-            export_intertidal_rasters(
-                ds, prefix=f"data/interim/{study_area}_{start_date}_{end_date}"
+            # Calculate spread, offsets and HAT/LAT/LOT/HOT
+            log.info(
+                f"Study area {study_area}: Calculating spread, offset "
+                "and HAT/LAT/LOT/HOT layers"
+            )
+            (
+                ds["lat"],
+                ds["hat"],
+                ds["lot"],
+                ds["hot"],
+                ds["spread"],
+                ds["offset_lowtide"],
+                ds["offset_hightide"],
+            ) = bias_offset(
+                tide_m=tide_m,
+                tide_cq=tide_cq,
+                extents=ds.extents,
+                lot_hot=True,
+                lat_hat=True,
             )
 
-            # Workflow completed
-            log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
+            # Calculate tidelines
+            log.info(
+                f"Study area {study_area}: Calculating high and low tidelines "
+                "and associated satellite offsets"
+            )
+            (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
+                extents=ds.extents,
+                offset_hightide=ds.offset_hightide,
+                offset_lowtide=ds.offset_lowtide,
+                distance=tideline_offset_distance,
+            )
+
+            # Export high and low tidelines and the offset data
+            log.info(
+                f"Study area {study_area}: Exporting high and low tidelines with satellite offset"
+            )
+            hightideline.to_crs("EPSG:4326").to_file(
+                f"data/interim/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
+            )
+            lowtideline.to_crs("EPSG:4326").to_file(
+                f"data/interim/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
+            )
+            tidelines_gdf.to_crs("EPSG:4326").to_file(
+                f"data/interim/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
+            )
+
+        else:
+            log.info(
+                f"Study area {study_area}: Skipping Exposure and spread/offsets/tidelines calculation"
+            )
+
+        # Export layers as GeoTIFFs with optimised data types
+        log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
+        export_intertidal_rasters(
+            ds, prefix=f"data/interim/{study_area}_{start_date}_{end_date}"
+        )
+
+        # Workflow completed
+        log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
 
     except Exception as e:
         log.exception(f"Study area {study_area}: Failed to run process with error {e}")
