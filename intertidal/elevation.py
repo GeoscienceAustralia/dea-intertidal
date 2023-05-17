@@ -487,12 +487,18 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
         range, or 0.25, 0.75. This provides a balance between capturing
         the range of uncertainty at each pixel, while not being overly
         influenced by outliers in `flat_ds`.
+    output_auxiliaries : bool, optional
+        True if auxiliary outputs are required for debugging
 
     Returns
     -------
     tuple of xarray.DataArray
         The lower and upper uncertainty bounds around the modelled
         elevation, and the summary uncertainty range between them.
+    misclassified_ds : xr.DataSet
+        If output_auxiliaries = True, a flattened Dataset is returned
+        showing all identified misclassified pixels in both the `ndwi`
+        and `tide_m` arrays.
     """
 
     # Identify observations that were misclassifed by our modelled
@@ -534,7 +540,7 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
         dem_flat_low,
         dem_flat_high,
         dem_flat_uncertainty,
-        misclassified_ds
+        misclassified_ds,
     )
     
     else:
@@ -600,7 +606,7 @@ def elevation(
     filter_gqa=False,
     config_path="configs/dea_intertidal_config.yaml",
     log=None,
-    output_auxiliaries=False,
+    output_auxiliaries = False,
 ):
     """
     Calculates DEA Intertidal Elevation using satellite imagery and
@@ -635,6 +641,8 @@ def elevation(
         "configs/dea_intertidal_config.yaml".
     log : logging.Logger, optional
         Logger object, by default None.
+    output_auxiliaries : bool, optional
+        True if auxiliary outputs are required for debugging
 
     Returns
     -------
@@ -647,6 +655,14 @@ def elevation(
     tide_m : xarray.DataArray
         An xarray.DataArray object containing the modeled tide
         heights for each pixel in the study area.
+    good_mask : xarray.DataArray
+        An xarray.DataArray identifiying candidate intertidal pixels.
+        Only returned if `output_auxiliaries` is True.        
+    misclassified_ds : xarray.DataArray
+        An xarray.DataArray derived from a xarray.Dataset of the same 
+        name. The returned variable is a count of misclassified ndwi
+        pixels, reshaped after satellite_ds. Only returned if
+        'output_auxiliaries' is True.
     """
 
     if log is None:
@@ -740,9 +756,17 @@ def elevation(
     # Model intertidal uncertainty and add arrays into elevation dataset
     log.info(f"Study area {study_area}: Modelling intertidal uncertainty")
     if output_auxiliaries:
-        flat_dem[
-            ["elevation_low", "elevation_high", "elevation_uncertainty"],
-        ], misclassified_ds = pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh, output_auxiliaries=output_auxiliaries)
+        (elevation_low, 
+         elevation_high, 
+         elevation_uncertainty, 
+         misclassified_ds) = pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh, output_auxiliaries=output_auxiliaries)
+        
+        flat_dem[["elevation_low", 
+                  "elevation_high", 
+                  "elevation_uncertainty"]] = (elevation_low, 
+                                               elevation_high, 
+                                               elevation_uncertainty)
+        
     else:
         flat_dem[
             ["elevation_low", "elevation_high", "elevation_uncertainty"]
@@ -756,6 +780,15 @@ def elevation(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
     if output_auxiliaries:
+        
+        # Unstack misclassified_ds
+        # Note: not using the flat_to_ds func as the time dimension on misclassified_ds
+        # was interfering with the transpose step
+        misclassified_ds = misclassified_ds.unstack('z').reindex_like(satellite_ds)
+        
+        # Count misclassified pixels
+        misclassified_ds = misclassified_ds.ndwi.count(dim='time').transpose("y", "x")
+        
         return ds, freq, corr, tide_m, good_mask, misclassified_ds
     else:
         return ds, freq, corr, tide_m
@@ -889,13 +922,13 @@ def intertidal_cli(
                 log=log,
                 output_auxiliaries=output_auxiliaries,
             )
-
+            
             # Compile auxiliary files into xr.Dataset
             ds_debug = xr.Dataset()
-            ds_debug['freq'] = freq
-            ds_debug['corr'] = corr
-            ds_debug['good_mask'] = good_mask
-            ds_debug['misclassified_ds'] = misclassified_ds
+            ds_debug['NDWI_freq'] = freq
+            ds_debug['NDWI_tide_corr'] = corr
+            ds_debug['intertidal_candidate_px'] = good_mask
+            ds_debug['misclassified_px_count'] = misclassified_ds
             
             # Calculate extents
             log.info(f"Study area {study_area}: Calculating Extents layer")
@@ -978,9 +1011,11 @@ def intertidal_cli(
             # Workflow completed
             log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
             
+            return freq, corr, good_mask, misclassified_ds
+            
         else:
              # Calculate elevation
-            ds, freq, tide_m = elevation(
+            ds, freq, corr, tide_m = elevation(
                 study_area,
                 start_date=start_date,
                 end_date=end_date,
@@ -992,7 +1027,6 @@ def intertidal_cli(
                 filter_gqa=False,
                 config_path=config_path,
                 log=log,
-                output_auxiliaries=output_auxiliaries,
             )
 
             # Calculate extents
