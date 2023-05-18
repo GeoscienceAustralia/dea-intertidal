@@ -202,8 +202,8 @@ def ds_to_flat(
         Two-dimensional xarray dataset with dimensions (time, z)
     freq : xr.DataArray
         Frequency of wetness for each pixel.
-    good_mask : xr.DataArray
-        Boolean mask indicating which pixels meet the inclusion criteria.
+    corr : xr.DataArray
+        Pearson correlation between NDWI and tide heights for each pixel
     """
 
     # Calculate frequency of wet per pixel, then threshold
@@ -231,7 +231,7 @@ def ds_to_flat(
     print(
         f"Reducing analysed pixels from {freq.count().item()} to {len(flat_ds.z)} ({len(flat_ds.z) * 100 / freq.count().item():.2f}%)"
     )
-    return flat_ds, freq, good_mask, corr
+    return flat_ds, freq, corr
 
 
 def rolling_tide_window(
