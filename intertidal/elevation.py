@@ -1,3 +1,4 @@
+import os
 import sys
 import numpy as np
 import pandas as pd
@@ -597,10 +598,10 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
         pixel is stacked into a single "z" dimension.
     template : xarray.Dataset or xarray.Dataarray
         A dataset  containing the original spatial dimensions and
-        coordinates of the data, used as a template to reshape the 
+        coordinates of the data, used as a template to reshape the
         flattened data back to the spatial dimensions.
     stacked_dim : str, optional
-        The name of the stacked y/x dimension in the flattened dataset. 
+        The name of the stacked y/x dimension in the flattened dataset.
         The default is "z".
 
     Returns
@@ -696,8 +697,8 @@ def elevation(
         per-pixel rolling median calculation, by default 0.15
     max_workers : int, optional
         Maximum number of worker processes to use for parallel execution
-        in the per-pixel rolling median calculation. Defaults to None, 
-        which uses built-in methods from `concurrent.futures` to 
+        in the per-pixel rolling median calculation. Defaults to None,
+        which uses built-in methods from `concurrent.futures` to
         determine workers.
     config_path : str, optional
         Path to the configuration file, by default
@@ -961,6 +962,10 @@ def intertidal_cli(
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
+    # Create output folder. If it doesn't exist, create it
+    output_dir = f"data/interim/{study_area}"
+    os.makedirs(output_dir, exist_ok=True)
+
     try:
         # Calculate elevation
         ds, ds_aux, tide_m = elevation(
@@ -1002,13 +1007,13 @@ def intertidal_cli(
                 "and HAT/LAT/LOT/HOT layers"
             )
             (
-                ds["lat"],
-                ds["hat"],
-                ds["lot"],
-                ds["hot"],
-                ds["spread"],
-                ds["offset_lowtide"],
-                ds["offset_hightide"],
+                ds["oa_lat"],
+                ds["oa_hat"],
+                ds["oa_lot"],
+                ds["oa_hot"],
+                ds["oa_spread"],
+                ds["oa_offset_lowtide"],
+                ds["oa_offset_hightide"],
             ) = bias_offset(
                 tide_m=tide_m,
                 tide_cq=tide_cq,
@@ -1024,23 +1029,23 @@ def intertidal_cli(
             )
             (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
                 extents=ds.extents,
-                offset_hightide=ds.offset_hightide,
-                offset_lowtide=ds.offset_lowtide,
+                offset_hightide=ds.oa_offset_hightide,
+                offset_lowtide=ds.oa_offset_lowtide,
                 distance=tideline_offset_distance,
             )
 
             # Export high and low tidelines and the offset data
             log.info(
-                f"Study area {study_area}: Exporting high and low tidelines with satellite offset"
+                f"Study area {study_area}: Exporting high and low tidelines with satellite offset to {output_dir}"
             )
             hightideline.to_crs("EPSG:4326").to_file(
-                f"data/interim/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
+                f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
             )
             lowtideline.to_crs("EPSG:4326").to_file(
-                f"data/interim/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
+                f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
             )
             tidelines_gdf.to_crs("EPSG:4326").to_file(
-                f"data/interim/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
+                f"{output_dir}/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
             )
 
         else:
@@ -1049,19 +1054,19 @@ def intertidal_cli(
             )
 
         # Export layers as GeoTIFFs with optimised data types
-        log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
+        log.info(f"Study area {study_area}: Exporting output GeoTIFFs to {output_dir}")
         export_intertidal_rasters(
-            ds, prefix=f"data/interim/test_{study_area}_{start_date}_{end_date}"
+            ds, prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}"
         )
 
         if output_auxiliaries:
             # Export auxiliary debug layers as GeoTIFFs with optimised data types
             log.info(
-                f"Study area {study_area}: Exporting debugging outputs to GeoTIFFs"
+                f"Study area {study_area}: Exporting debugging GeoTIFFs to {output_dir}"
             )
             export_intertidal_rasters(
                 ds_aux,
-                prefix=f"data/interim/test_{study_area}_{start_date}_{end_date}_debug",
+                prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}_debug",
             )
 
         # Workflow completed
