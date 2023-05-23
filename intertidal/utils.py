@@ -143,9 +143,9 @@ def export_intertidal_rasters(
             # Primary layers
             "exposure",
             "extents",
-            "offset_hightide",
-            "offset_lowtide",
-            "spread",
+            "oa_offset_hightide",
+            "oa_offset_lowtide",
+            "oa_spread",
             # Debug/auxiliary layers
             "misclassified_px_count",
             "intertidal_candidates",
