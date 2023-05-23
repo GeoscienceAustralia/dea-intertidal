@@ -538,11 +538,6 @@ def pixel_uncertainty(
     misclassified_all = misclassified_wet | misclassified_dry
     misclassified_ds = flat_ds.where(misclassified_all).drop("variable")
 
-    # Calculate sum of misclassified points
-    misclassified_sum = misclassified_all.sum(dim="time").rename(
-        "misclassified_px_count"
-    )
-
     # Calculate uncertainty by taking the Median Absolute Deviation of
     # all misclassified points.
     if method == "mad":
@@ -577,6 +572,13 @@ def pixel_uncertainty(
 
     # Subtract low from high DEM to summarise uncertainy range
     dem_flat_uncertainty = dem_flat_high - dem_flat_low
+
+    # Calculate sum of misclassified points
+    misclassified_sum = (
+        misclassified_all.sum(dim="time")
+        .rename("misclassified_px_count")
+        .where(~flat_dem.elevation.isnull())
+    )
 
     return (
         dem_flat_low,
