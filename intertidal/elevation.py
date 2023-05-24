@@ -162,7 +162,7 @@ def load_data(
 
 def ds_to_flat(
     satellite_ds,
-    ndwi_thresh=0.1,
+    ndwi_thresh=0.0,
     index="ndwi",
     min_freq=0.01,
     max_freq=0.99,
@@ -183,7 +183,7 @@ def ds_to_flat(
         "tide_m" and a water index variable as provided by `index`.
     ndwi_thresh : float, optional
         Threshold for NDWI index used to identify wet or dry pixels.
-        Default is 0.1.
+        Default is 0.0.
     index : str, optional
         Name of the water index variable. Default is "ndwi".
     min_freq : float, optional
@@ -235,7 +235,7 @@ def ds_to_flat(
     # first convert NDWI into a boolean dry/wet layer before running the
     # correlation. This prevents small changes in NDWI beneath the water
     # surface from producing correlations with tide height.
-    wet_dry = flat_ds[index]  # > ndwi_thresh
+    wet_dry = flat_ds[index] > ndwi_thresh
     corr = xr.corr(wet_dry, flat_ds.tide_m, dim="time").rename("ndwi_tide_corr")
 
     # Keep only pixels with correlations that meet min threshold
@@ -801,7 +801,6 @@ def elevation(
     )
     flat_ds, freq, corr, intertidal_candidates = ds_to_flat(
         satellite_ds,
-        ndwi_thresh=ndwi_thresh,
         min_freq=min_freq,
         max_freq=max_freq,
         min_correlation=min_correlation,
