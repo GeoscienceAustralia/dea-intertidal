@@ -98,7 +98,7 @@ def load_data(
         "output_crs": crs,
         "dask_chunks": {"time": 1, "x": 2048, "y": 2048},
         "resampling": {
-            "*": "cubic",
+            "*": "average",
             "oa_nbart_contiguity": "nearest",
             "oa_fmask": "nearest",
             "oa_s2cloudless_mask": "nearest",
@@ -162,7 +162,7 @@ def load_data(
 
 def ds_to_flat(
     satellite_ds,
-    ndwi_thresh=0.1,
+    ndwi_thresh=0.0,
     index="ndwi",
     min_freq=0.01,
     max_freq=0.99,
@@ -538,11 +538,6 @@ def pixel_uncertainty(
     misclassified_all = misclassified_wet | misclassified_dry
     misclassified_ds = flat_ds.where(misclassified_all).drop("variable")
 
-    # Calculate sum of misclassified points
-    misclassified_sum = misclassified_all.sum(dim="time").rename(
-        "misclassified_px_count"
-    )
-
     # Calculate uncertainty by taking the Median Absolute Deviation of
     # all misclassified points.
     if method == "mad":
@@ -577,6 +572,13 @@ def pixel_uncertainty(
 
     # Subtract low from high DEM to summarise uncertainy range
     dem_flat_uncertainty = dem_flat_high - dem_flat_low
+
+    # Calculate sum of misclassified points
+    misclassified_sum = (
+        misclassified_all.sum(dim="time")
+        .rename("misclassified_px_count")
+        .where(~flat_dem.elevation.isnull())
+    )
 
     return (
         dem_flat_low,
@@ -740,14 +742,14 @@ def elevation(
         # Load study area
         gridcell_gdf = (
             gpd.read_file(config["Input files"]["grid_path"])
-            .to_crs(epsg=4326)
+            .to_crs(crs)
             .set_index("id")
         )
         gridcell_gdf.index = gridcell_gdf.index.astype(str)
         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
         # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs="EPSG:4326")
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
         log.info(f"Study area {study_area}: Loaded study area grid")
 
     # Otherwise, use supplied geom
@@ -799,7 +801,7 @@ def elevation(
     )
     flat_ds, freq, corr, intertidal_candidates = ds_to_flat(
         satellite_ds,
-        ndwi_thresh=ndwi_thresh,
+        ndwi_thresh=0.0,
         min_freq=min_freq,
         max_freq=max_freq,
         min_correlation=min_correlation,
