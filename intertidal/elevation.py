@@ -98,7 +98,7 @@ def load_data(
         "output_crs": crs,
         "dask_chunks": {"time": 1, "x": 2048, "y": 2048},
         "resampling": {
-            "*": "cubic",
+            "*": "average",
             "oa_nbart_contiguity": "nearest",
             "oa_fmask": "nearest",
             "oa_s2cloudless_mask": "nearest",
@@ -742,14 +742,14 @@ def elevation(
         # Load study area
         gridcell_gdf = (
             gpd.read_file(config["Input files"]["grid_path"])
-            .to_crs(epsg=4326)
+            .to_crs(crs)
             .set_index("id")
         )
         gridcell_gdf.index = gridcell_gdf.index.astype(str)
         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
         # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs="EPSG:4326")
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
         log.info(f"Study area {study_area}: Loaded study area grid")
 
     # Otherwise, use supplied geom

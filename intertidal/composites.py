@@ -121,14 +121,14 @@ def intertidal_composites(
         # Load study area
         gridcell_gdf = (
             gpd.read_file(config["Input files"]["grid_path"])
-            .to_crs(epsg=4326)
+            .to_crs(crs)
             .set_index("id")
         )
         gridcell_gdf.index = gridcell_gdf.index.astype(str)
         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
         # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs="EPSG:4326")
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
         log.info(f"Study area {study_area}: Loaded study area grid")
 
     # Otherwise, use supplied geom
@@ -184,7 +184,7 @@ def intertidal_composites(
         min_thresh = tide_q.sel(quantile=threshold_lowtide).tide_m
         max_thresh = tide_q.sel(quantile=threshold_hightide).tide_m
 
-    # Select low and high tide obs
+    # Select low and high tide observations
     log.info(f"Study area {study_area}: Masking to low and high tide observations")
     ds_low = satellite_ds.where(satellite_ds.tide_m <= min_thresh)
     ds_high = satellite_ds.where(satellite_ds.tide_m >= max_thresh)
@@ -195,17 +195,19 @@ def intertidal_composites(
     )
     ds_high = ds_high.sel(time=ds_high.tide_m.isnull().mean(dim=["x", "y"]) < 1).drop(
         "tide_m"
-    )
+    )   
 
-    # Compute geomedian
-    log.info(f"Study area {study_area}: Calculate geomedians")
+    # Calculate low tide geomedian and process with Dask
+    log.info(f"Study area {study_area}: Processing low tide geomedian")
     ds_lowtide = xr_geomedian(ds=ds_low)
-    ds_hightide = xr_geomedian(ds=ds_high)
-
-    # Load data and close dask client
     ds_lowtide.load()
+    
+    # Calculate high tide geomedian and process with Dask
+    log.info(f"Study area {study_area}: Processing high tide geomedian")
+    ds_hightide = xr_geomedian(ds=ds_high)
     ds_hightide.load()
 
+    # Close Dask client
     client.close()
 
     return ds_lowtide, ds_hightide
