@@ -964,7 +964,7 @@ def intertidal_cli(
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
     # Create output folder. If it doesn't exist, create it
-    output_dir = f"data/interim/{study_area}"
+    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
     os.makedirs(output_dir, exist_ok=True)
 
     try:
@@ -1023,31 +1023,31 @@ def intertidal_cli(
                 lat_hat=True,
             )
 
-            # Calculate tidelines
-            log.info(
-                f"Study area {study_area}: Calculating high and low tidelines "
-                "and associated satellite offsets"
-            )
-            (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
-                extents=ds.extents,
-                offset_hightide=ds.oa_offset_hightide,
-                offset_lowtide=ds.oa_offset_lowtide,
-                distance=tideline_offset_distance,
-            )
+#             # Calculate tidelines
+#             log.info(
+#                 f"Study area {study_area}: Calculating high and low tidelines "
+#                 "and associated satellite offsets"
+#             )
+#             (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
+#                 extents=ds.extents,
+#                 offset_hightide=ds.oa_offset_hightide,
+#                 offset_lowtide=ds.oa_offset_lowtide,
+#                 distance=tideline_offset_distance,
+#             )
 
-            # Export high and low tidelines and the offset data
-            log.info(
-                f"Study area {study_area}: Exporting high and low tidelines with satellite offset to {output_dir}"
-            )
-            hightideline.to_crs("EPSG:4326").to_file(
-                f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
-            )
-            lowtideline.to_crs("EPSG:4326").to_file(
-                f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
-            )
-            tidelines_gdf.to_crs("EPSG:4326").to_file(
-                f"{output_dir}/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
-            )
+#             # Export high and low tidelines and the offset data
+#             log.info(
+#                 f"Study area {study_area}: Exporting high and low tidelines with satellite offset to {output_dir}"
+#             )
+#             hightideline.to_crs("EPSG:4326").to_file(
+#                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
+#             )
+#             lowtideline.to_crs("EPSG:4326").to_file(
+#                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
+#             )
+#             tidelines_gdf.to_crs("EPSG:4326").to_file(
+#                 f"{output_dir}/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
+#             )
 
         else:
             log.info(
@@ -1057,7 +1057,7 @@ def intertidal_cli(
         # Export layers as GeoTIFFs with optimised data types
         log.info(f"Study area {study_area}: Exporting output GeoTIFFs to {output_dir}")
         export_intertidal_rasters(
-            ds, prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}"
+            ds, prefix=f"{output_dir}/DEV_{study_area}_{start_date}_{end_date}"
         )
 
         if output_auxiliaries:
@@ -1067,7 +1067,7 @@ def intertidal_cli(
             )
             export_intertidal_rasters(
                 ds_aux,
-                prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}_debug",
+                prefix=f"{output_dir}/DEV_{study_area}_{start_date}_{end_date}_debug",
             )
 
         # Workflow completed
