@@ -964,7 +964,7 @@ def intertidal_cli(
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
     # Create output folder. If it doesn't exist, create it
-    output_dir = f"data/interim/{study_area}"
+    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
     os.makedirs(output_dir, exist_ok=True)
 
     try:
