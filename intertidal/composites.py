@@ -1,3 +1,4 @@
+import os
 import sys
 import numpy as np
 import pandas as pd
@@ -29,7 +30,7 @@ def intertidal_composites(
     start_date="2020",
     end_date="2022",
     resolution=10,
-    threshold_method="percent",
+    threshold_method="percentile",
     threshold_lowtide=0.2,
     threshold_hightide=0.8,
     crs="EPSG:3577",
@@ -120,14 +121,14 @@ def intertidal_composites(
         # Load study area
         gridcell_gdf = (
             gpd.read_file(config["Input files"]["grid_path"])
-            .to_crs(epsg=4326)
+            .to_crs(crs)
             .set_index("id")
         )
         gridcell_gdf.index = gridcell_gdf.index.astype(str)
         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
         # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs="EPSG:4326")
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
         log.info(f"Study area {study_area}: Loaded study area grid")
 
     # Otherwise, use supplied geom
@@ -183,7 +184,7 @@ def intertidal_composites(
         min_thresh = tide_q.sel(quantile=threshold_lowtide).tide_m
         max_thresh = tide_q.sel(quantile=threshold_hightide).tide_m
 
-    # Select low and high tide obs
+    # Select low and high tide observations
     log.info(f"Study area {study_area}: Masking to low and high tide observations")
     ds_low = satellite_ds.where(satellite_ds.tide_m <= min_thresh)
     ds_high = satellite_ds.where(satellite_ds.tide_m >= max_thresh)
@@ -194,17 +195,19 @@ def intertidal_composites(
     )
     ds_high = ds_high.sel(time=ds_high.tide_m.isnull().mean(dim=["x", "y"]) < 1).drop(
         "tide_m"
-    )
+    )   
 
-    # Compute geomedian
-    log.info(f"Study area {study_area}: Calculate geomedians")
+    # Calculate low tide geomedian and process with Dask
+    log.info(f"Study area {study_area}: Processing low tide geomedian")
     ds_lowtide = xr_geomedian(ds=ds_low)
-    ds_hightide = xr_geomedian(ds=ds_high)
-
-    # Load data and close dask client
     ds_lowtide.load()
+    
+    # Calculate high tide geomedian and process with Dask
+    log.info(f"Study area {study_area}: Processing high tide geomedian")
+    ds_hightide = xr_geomedian(ds=ds_high)
     ds_hightide.load()
 
+    # Close Dask client
     client.close()
 
     return ds_lowtide, ds_hightide
@@ -286,6 +289,10 @@ def intertidal_composites_cli(
 
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
+    
+    # Create output folder. If it doesn't exist, create it
+    output_dir = f"data/interim/{study_area}"
+    os.makedirs(output_dir, exist_ok=True)
 
     try:
         # Calculate high and low tide geomedian composites
@@ -294,7 +301,7 @@ def intertidal_composites_cli(
             start_date=start_date,
             end_date=end_date,
             resolution=resolution,
-            threshold_method="percent",
+            threshold_method="percentile",
             threshold_lowtide=threshold_lowtide,
             threshold_hightide=threshold_hightide,
             crs="EPSG:3577",
@@ -306,23 +313,23 @@ def intertidal_composites_cli(
         )
 
         # Export layers as GeoTIFFs
-        log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
+        log.info(f"Study area {study_area}: Exporting outputs GeoTIFFs to {output_dir}")
 
-        prefix = f"data/interim/{study_area}_{start_date}_{end_date}"
+        prefix = f"{output_dir}/{study_area}_{start_date}_{end_date}"
         ds_lowtide.to_array().odc.write_cog(
-            f"{prefix}_composite_{int(threshold_lowtide * 100)}_s2.tif", overwrite=True
+            f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}.tif", overwrite=True
         )
         ds_hightide.to_array().odc.write_cog(
-            f"{prefix}_composite_{int(threshold_hightide * 100)}_s2.tif", overwrite=True
+            f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}.tif", overwrite=True
         )
 
         # Export as images
         prefix = f"data/figures/{study_area}_{start_date}_{end_date}"
         ds_lowtide.odc.to_rgba(vmin=0.0, vmax=0.3).plot.imshow().figure.savefig(
-            f"{prefix}_composite_{int(threshold_lowtide * 100)}_s2_rgb.png"
+            f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}_rgb.png"
         )
         ds_hightide.odc.to_rgba(vmin=0.0, vmax=0.3).plot.imshow().figure.savefig(
-            f"{prefix}_composite_{int(threshold_hightide * 100)}_s2_rgb.png"
+            f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}_rgb.png"
         )
 
         # Workflow completed

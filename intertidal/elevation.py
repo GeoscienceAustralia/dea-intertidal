@@ -1,3 +1,4 @@
+import os
 import sys
 import numpy as np
 import pandas as pd
@@ -97,7 +98,7 @@ def load_data(
         "output_crs": crs,
         "dask_chunks": {"time": 1, "x": 2048, "y": 2048},
         "resampling": {
-            "*": "cubic",
+            "*": "average",
             "oa_nbart_contiguity": "nearest",
             "oa_fmask": "nearest",
             "oa_s2cloudless_mask": "nearest",
@@ -161,7 +162,7 @@ def load_data(
 
 def ds_to_flat(
     satellite_ds,
-    ndwi_thresh=0.1,
+    ndwi_thresh=0.0,
     index="ndwi",
     min_freq=0.01,
     max_freq=0.99,
@@ -182,7 +183,7 @@ def ds_to_flat(
         "tide_m" and a water index variable as provided by `index`.
     ndwi_thresh : float, optional
         Threshold for NDWI index used to identify wet or dry pixels.
-        Default is 0.1.
+        Default is 0.0.
     index : str, optional
         Name of the water index variable. Default is "ndwi".
     min_freq : float, optional
@@ -199,42 +200,59 @@ def ds_to_flat(
     Returns
     -------
     flat_ds : xr.Dataset
-        Two-dimensional xarray dataset with dimensions (time, z)
+        Two-dimensional xarray dataset with dimensions (time, z),
+        containing NDWI and tide height variables.
     freq : xr.DataArray
-        Frequency of wetness for each pixel.
-    good_mask : xr.DataArray
-        Boolean mask indicating which pixels meet the inclusion criteria.
+        Frequency of wetness for each pixel (where NDWI > `ndwi_thresh`).
     corr : xr.DataArray
-        Correlation of pixel wetness to tide height
+        Correlation of NDWI pixel wetness with tide height.
+    intertidal_candidates : xr.DataArray
+        Pixels identified as potential intertidal candidates for
+        subsequent elevation modelling by the above frequency and
+        correlation thresholds.
     """
+
+    # Flatten satellite dataset by stacking "y" and "x" dimensions
+    flat_ds = satellite_ds.stack(z=("y", "x"))
 
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
     freq = (
-        (satellite_ds[index] > ndwi_thresh)
-        .where(~satellite_ds[index].isnull())
+        (flat_ds[index] > ndwi_thresh)
+        .where(~flat_ds[index].isnull())
         .mean(dim="time")
         .drop_vars("variable")
+        .rename("ndwi_wet_freq")
     )
-    good_mask = (freq >= min_freq) & (freq <= max_freq)
+    freq_mask = (freq >= min_freq) & (freq <= max_freq)
 
-    # Flatten to 1D
-    flat_ds = satellite_ds.stack(z=("x", "y")).where(
-        good_mask.stack(z=("x", "y")), drop=True
+    # Flatten to 1D, dropping any pixels that are not in frequency mask
+    flat_ds = flat_ds.where(freq_mask, drop=True)
+
+    # Calculate correlations between NDWI water observations and tide
+    # height. Because we are only interested in pixels with inundation
+    # patterns (e.g.transitions from dry to wet) are driven by tide, we
+    # first convert NDWI into a boolean dry/wet layer before running the
+    # correlation. This prevents small changes in NDWI beneath the water
+    # surface from producing correlations with tide height.
+    wet_dry = flat_ds[index] > ndwi_thresh
+    corr = xr.corr(wet_dry, flat_ds.tide_m, dim="time").rename("ndwi_tide_corr")
+
+    # Keep only pixels with correlations that meet min threshold
+    corr_mask = corr >= min_correlation
+    flat_ds = flat_ds.where(corr_mask, drop=True)
+
+    # Return pixels identified as intertidal candidates
+    intertidal_candidates = corr_mask.where(corr_mask, drop=True).rename(
+        "intertidal_candidate_px"
     )
 
-    # Calculate correlations, and keep only pixels with positive
-    # correlations between water observations and tide height
-    correlations = xr.corr(flat_ds[index] > ndwi_thresh, flat_ds.tide_m, dim="time")
-    flat_ds = flat_ds.where(correlations > min_correlation, drop=True)
-    
-    # Return correlations to 3D array for use in later intertidal modules
-    corr = correlations.unstack("z").reindex_like(satellite_ds).transpose("y","x")
-    
     print(
-        f"Reducing analysed pixels from {freq.count().item()} to {len(flat_ds.z)} ({len(flat_ds.z) * 100 / freq.count().item():.2f}%)"
+        f"Reducing analysed pixels from {freq.count().item()} to "
+        f"{len(intertidal_candidates.z)} ({len(intertidal_candidates.z) * 100 / freq.count().item():.2f}%)"
     )
-    return flat_ds, freq, good_mask, corr
+
+    return flat_ds, freq, corr, intertidal_candidates
 
 
 def rolling_tide_window(
@@ -306,13 +324,15 @@ def rolling_tide_window(
     return ds_agg
 
 
-def pixel_rolling_median(flat_ds, windows_n=100, window_prop_tide=0.15, max_workers=64):
+def pixel_rolling_median(
+    flat_ds, windows_n=100, window_prop_tide=0.15, max_workers=None
+):
     """
     Calculate rolling medians for each pixel in an xarray.Dataset from
     low to high tide, using a set number of rolling windows (defined
     by `windows_n`) with radius determined by the proportion of the tide
     range specified by `window_prop_tide`.
-    
+
     For each window, the function returns the median of all tide heights
     and NDWI index values within the window, and returns an array with a
     new "interval" dimension that summarises these values from low to
@@ -456,7 +476,9 @@ def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
     return dem_flat.to_dataset(name="elevation")
 
 
-def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75, output_auxiliaries=False):
+def pixel_uncertainty(
+    flat_ds, flat_dem, ndwi_thresh=0.1, method="mad", min_q=0.25, max_q=0.75
+):
     """
     Calculate uncertainty bounds around a modelled elevation based on
     observations that were misclassified by a given NDWI threshold.
@@ -465,8 +487,7 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
     modelled elevation, i.e., wet observations (NDWI > threshold) at
     lower tide heights than the modelled elevation, or dry observations
     (NDWI < threshold) at higher tide heights than the modelled
-    elevation. It calculates the interquartile tide height range of
-    these misclassified observations.
+    elevation.
 
     Parameters
     ----------
@@ -481,24 +502,27 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
         A threshold value for NDWI, below which an observation is
         considered "dry", and above which it is considered "wet". The
         default is 0.1.
+    method : string, optional
+        Whether to calculate uncertainty using Median Absolute Deviation
+        (MAD) of the tide heights of all misclassified points, or by
+        taking upper/lower tide height quantiles of miscalssified points.
+        Defaults to "mad" for Median Absolute Deviation; use "quantile"
+        to use quantile calculation instead.
     min_q, max_q : float, optional
-        The minimum and maximum quantiles used to estimate uncertainty
-        bounds based on misclassified points. Defaults to interquartile
-        range, or 0.25, 0.75. This provides a balance between capturing
-        the range of uncertainty at each pixel, while not being overly
-        influenced by outliers in `flat_ds`.
-    output_auxiliaries : bool, optional
-        True if auxiliary outputs are required for debugging
+        If `method == "quantile": the minimum and maximum quantiles used
+        to estimate uncertainty bounds based on misclassified points.
+        Defaults to interquartile range, or 0.25, 0.75. This provides a
+        balance between capturing the range of uncertainty at each
+        pixel, while not being overly influenced by outliers in `flat_ds`.
 
     Returns
     -------
-    tuple of xarray.DataArray
+    dem_flat_low, dem_flat_high, dem_flat_uncertainty : xarray.DataArray
         The lower and upper uncertainty bounds around the modelled
         elevation, and the summary uncertainty range between them.
-    misclassified_ds : xr.DataSet
-        If output_auxiliaries = True, a flattened Dataset is returned
-        showing all identified misclassified pixels in both the `ndwi`
-        and `tide_m` arrays.
+    misclassified_sum : xarray.DataArray
+        The sum of individual satellite observations misclassified by
+        the modelled elevation and NDWI threshold.
     """
 
     # Identify observations that were misclassifed by our modelled
@@ -514,41 +538,54 @@ def pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh=0.1, min_q=0.25, max_q=0.75
     misclassified_all = misclassified_wet | misclassified_dry
     misclassified_ds = flat_ds.where(misclassified_all).drop("variable")
 
+    # Calculate uncertainty by taking the Median Absolute Deviation of
+    # all misclassified points.
+    if method == "mad":
+        # Calculate median of absolute deviations
+        # TODO: Account for large MAD on pixels with very few
+        # misclassified points. Set < X misclassified points to 0 MAD?
+        mad = abs(misclassified_ds.tide_m - flat_dem.elevation).median(dim="time")
+
+        # Calculate low and high bounds
+        uncertainty_low = flat_dem.elevation - mad
+        uncertainty_high = flat_dem.elevation + mad
+
     # Calculate interquartile tide height range of our misclassified
     # observations to obtain lower and upper uncertainty bounds around our
     # modelled elevation.
-    misclassified_q = xr_quantile(
-        src=misclassified_ds.dropna(dim="time", how="all")[["tide_m"]],
-        quantiles=[min_q, max_q],
-        nodata=np.nan,
-    ).tide_m.fillna(flat_dem.elevation)
+    elif method == "quantile":
+        # Use xr_quantile (faster than built-in .quantile)
+        misclassified_q = xr_quantile(
+            src=misclassified_ds.dropna(dim="time", how="all")[["tide_m"]],
+            quantiles=[min_q, max_q],
+            nodata=np.nan,
+        ).tide_m.fillna(flat_dem.elevation)
+
+        # Extract low and high bounds
+        uncertainty_low = misclassified_q.sel(quantile=min_q, drop=True)
+        uncertainty_high = misclassified_q.sel(quantile=max_q, drop=True)
 
     # Clip min and max uncertainty to modelled elevation to ensure lower
     # bounds are not above modelled elevation (and vice versa)
-    dem_flat_low = np.minimum(
-        misclassified_q.sel(quantile=min_q, drop=True), flat_dem.elevation
-    )
-    dem_flat_high = np.maximum(
-        misclassified_q.sel(quantile=max_q, drop=True), flat_dem.elevation
-    )
+    dem_flat_low = np.minimum(uncertainty_low, flat_dem.elevation)
+    dem_flat_high = np.maximum(uncertainty_high, flat_dem.elevation)
 
     # Subtract low from high DEM to summarise uncertainy range
     dem_flat_uncertainty = dem_flat_high - dem_flat_low
 
-    if output_auxiliaries:
-        return (
+    # Calculate sum of misclassified points
+    misclassified_sum = (
+        misclassified_all.sum(dim="time")
+        .rename("misclassified_px_count")
+        .where(~flat_dem.elevation.isnull())
+    )
+
+    return (
         dem_flat_low,
         dem_flat_high,
         dem_flat_uncertainty,
-        misclassified_ds,
+        misclassified_sum,
     )
-    
-    else:
-        return (
-            dem_flat_low,
-            dem_flat_high,
-            dem_flat_uncertainty,
-        )
 
 
 def flat_to_ds(flat_ds, template, stacked_dim="z"):
@@ -559,36 +596,43 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
     Parameters
     ----------
     flat_ds : xarray.Dataset
-        A flattened xarray.Dataset, i.e., a dataset where each "y", "x"
+        A flattened xarray.Dataset, i.e., a dataset where each y/x
         pixel is stacked into a single "z" dimension.
-    template : xarray.Dataset
-        An xarray.Dataset containing the original spatial dimensions and
-        coordinates of the data, used as a template to reshape the flattened
-        data back to the spatial dimensions.
+    template : xarray.Dataset or xarray.Dataarray
+        A dataset  containing the original spatial dimensions and
+        coordinates of the data, used as a template to reshape the
+        flattened data back to the spatial dimensions.
     stacked_dim : str, optional
-        The name of the stacked dimension in the flattened dataset. The
-        default is "z".
+        The name of the stacked y/x dimension in the flattened dataset.
+        The default is "z".
 
     Returns
     -------
     xarray.Dataset
         The unflattened xarray Dataset, with the same spatial dimensions
-        (e.g. "y", "x") as the template.
+        (e.g. y/x) as the template.
 
     Notes
     -----
     The function unstacks the flattened dataset along the stacked
-    dimension, reindexes the resulting dataset to match the spatial
-    dimensions and coordinates of the template, and transposes the
-    dimensions to match the order of the template's "y", "x", and
-    variable dimensions.
+    dimension, reindexes the resulting dataset to match the coordinates
+    of the template, and transposes the dimensions to match the order of
+    the template's spatial y/x dimensions.
     """
 
-    # Unstack back to match template array
     unstacked_ds = (
+        # First, unstack back into y/x dimensions
         flat_ds.unstack(stacked_dim)
+        # After unstacking, our output can be missing entire y/x
+        # coordinates contained in `template`. To address this, we need
+        # to "reindex" our unstacked data so that it has exactly the
+        # same coordinates as `template`. Affected pixels will be filled
+        # with np.nan
         .reindex_like(template)
-        .transpose(*template.odc.spatial_dims)
+        # Finally, we ensure that our spatial y/x dimensions have not
+        # been rotated during the unstack. The `...` preserves any extra
+        # non-spatial dimensions (like "time") if they exist
+        .transpose(..., *template.odc.spatial_dims)
     )
 
     return unstacked_ds
@@ -596,17 +640,22 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
 
 def elevation(
     study_area,
-    start_date="2020",
-    end_date="2022",
+    start_date,
+    end_date,
     resolution=10,
     crs="EPSG:3577",
     ndwi_thresh=0.1,
     include_s2=True,
     include_ls=True,
     filter_gqa=False,
+    min_freq=0.01,
+    max_freq=0.99,
+    min_correlation=0.2,
+    windows_n=100,
+    window_prop_tide=0.15,
+    max_workers=None,
     config_path="configs/dea_intertidal_config.yaml",
     log=None,
-    output_auxiliaries = False,
 ):
     """
     Calculates DEA Intertidal Elevation using satellite imagery and
@@ -636,33 +685,44 @@ def elevation(
         Whether to include Landsat data, by default True.
     filter_gqa : bool, optional
         Whether to apply the GQA filter to the dataset, by default False.
+    min_freq, max_freq : float, optional
+        Minimum and maximum frequency of wetness required for a pixel to
+        be included in the analysis, by default 0.01 and 0.99.
+    min_correlation : float, optional
+        Minimum correlation between water index and tide height required
+        for a pixel to be included in the analysis, by default 0.2.
+    windows_n : int, optional
+        Number of rolling windows to iterate over in per-pixel rolling
+        median calculation, by default 100
+    window_prop_tide : float, optional
+        Proportion of the tide range to use for each window radius in
+        per-pixel rolling median calculation, by default 0.15
+    max_workers : int, optional
+        Maximum number of worker processes to use for parallel execution
+        in the per-pixel rolling median calculation. Defaults to None,
+        which uses built-in methods from `concurrent.futures` to
+        determine workers.
     config_path : str, optional
         Path to the configuration file, by default
         "configs/dea_intertidal_config.yaml".
     log : logging.Logger, optional
         Logger object, by default None.
-    output_auxiliaries : bool, optional
-        True if auxiliary outputs are required for debugging
 
     Returns
     -------
     ds : xarray.Dataset
-        xarray.Dataset object containing intertidal elevation and
+        A dataset containing intertidal elevation and
         confidence values for each pixel in the study area.
-    freq : xarray.DataArray
-        The frequency layer summarising how frequently a pixel was
-        wet across the time series.
+    ds_aux : xarray.Dataset
+        A dataset containg auxiliary layers used for subsequent
+        workflows and debugging. These include information about the
+        frequency of inundation for each pixel, correlations between
+        NDWI and tide height, the number of misclassified observations
+        resulting from the modelled elevation value, and the intertidal
+        candidate pixels passed to the elevation modelling code.
     tide_m : xarray.DataArray
         An xarray.DataArray object containing the modeled tide
         heights for each pixel in the study area.
-    good_mask : xarray.DataArray
-        An xarray.DataArray identifiying candidate intertidal pixels.
-        Only returned if `output_auxiliaries` is True.        
-    misclassified_ds : xarray.DataArray
-        An xarray.DataArray derived from a xarray.Dataset of the same 
-        name. The returned variable is a count of misclassified ndwi
-        pixels, reshaped after satellite_ds. Only returned if
-        'output_auxiliaries' is True.
     """
 
     if log is None:
@@ -682,14 +742,14 @@ def elevation(
         # Load study area
         gridcell_gdf = (
             gpd.read_file(config["Input files"]["grid_path"])
-            .to_crs(epsg=4326)
+            .to_crs(crs)
             .set_index("id")
         )
         gridcell_gdf.index = gridcell_gdf.index.astype(str)
         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
         # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs="EPSG:4326")
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
         log.info(f"Study area {study_area}: Loaded study area grid")
 
     # Otherwise, use supplied geom
@@ -737,61 +797,62 @@ def elevation(
     # along the coast are analysed, rather than the entire study area.
     # (This step is later reversed using the `flat_to_ds` function)
     log.info(
-        f"Study area {study_area}: Flattening satellite data array and filtering to tide influenced pixels"
+        f"Study area {study_area}: Flattening satellite data array and filtering to intertidal candidate pixels"
     )
-    flat_ds, freq, good_mask, corr = ds_to_flat(
-        satellite_ds, ndwi_thresh=0.0, min_freq=0.01, max_freq=0.99, min_correlation=0.2
+    flat_ds, freq, corr, intertidal_candidates = ds_to_flat(
+        satellite_ds,
+        min_freq=min_freq,
+        max_freq=max_freq,
+        min_correlation=min_correlation,
     )
 
     # Calculate per-pixel rolling median.
     log.info(f"Study area {study_area}: Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
-        flat_ds, windows_n=100, window_prop_tide=0.15, max_workers=64
+        flat_ds,
+        windows_n=windows_n,
+        window_prop_tide=window_prop_tide,
+        max_workers=max_workers,
     )
 
     # Model intertidal elevation
     log.info(f"Study area {study_area}: Modelling intertidal elevation")
     flat_dem = pixel_dem(interval_ds, flat_ds, ndwi_thresh)
 
-    # Model intertidal uncertainty and add arrays into elevation dataset
+    # Model intertidal elevation uncertainty
     log.info(f"Study area {study_area}: Modelling intertidal uncertainty")
-    if output_auxiliaries:
-        (elevation_low, 
-         elevation_high, 
-         elevation_uncertainty, 
-         misclassified_ds) = pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh, output_auxiliaries=output_auxiliaries)
-        
-        flat_dem[["elevation_low", 
-                  "elevation_high", 
-                  "elevation_uncertainty"]] = (elevation_low, 
-                                               elevation_high, 
-                                               elevation_uncertainty)
-        
-    else:
-        flat_dem[
-            ["elevation_low", "elevation_high", "elevation_uncertainty"]
-        ] = pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh)
+    (
+        elevation_low,
+        elevation_high,
+        elevation_uncertainty,
+        misclassified,
+    ) = pixel_uncertainty(flat_ds, flat_dem, ndwi_thresh)
 
-    # Unstack into original spatial dimensions to create master dataset
+    # Add uncertainty array to dataset
+    # TODO: decide whether we want to also keep low and high bounds
+    flat_dem["elevation_uncertainty"] = elevation_uncertainty
+
+    # Combine auxiliary layers into a new auxilary dataset. Using
+    # `xr.combine_by_coords` is required because each of our debug
+    # layers have different lengths/coordinates along the "z" dimension
+    flat_ds_aux = xr.combine_by_coords(
+        [freq, corr, intertidal_candidates, misclassified],
+        fill_value={"intertidal_candidates": False},
+    )
+
+    # Unstack all layers back into their original spatial dimensions
+    log.info(
+        f"Study area {study_area}: Unflattening data back to its original spatial dimensions"
+    )
     ds = flat_to_ds(flat_dem, satellite_ds)
+    ds_aux = flat_to_ds(flat_ds_aux, satellite_ds)
 
-    # Return master ds and frequency layer
+    # Return master dataset and debug dataset
     log.info(
         f"Study area {study_area}: Successfully completed intertidal elevation modelling"
     )
-    if output_auxiliaries:
-        
-        # Unstack misclassified_ds
-        # Note: not using the flat_to_ds func as the time dimension on misclassified_ds
-        # was interfering with the transpose step
-        misclassified_ds = misclassified_ds.unstack('z').reindex_like(satellite_ds)
-        
-        # Count misclassified pixels
-        misclassified_ds = misclassified_ds.ndwi.count(dim='time').transpose("y", "x")
-        
-        return ds, freq, corr, tide_m, good_mask, misclassified_ds
-    else:
-        return ds, freq, corr, tide_m
+
+    return ds, ds_aux, tide_m
 
 
 @click.command()
@@ -860,7 +921,7 @@ def elevation(
     help="The distance along each high and low tideline "
     "at which the respective high or low tide satellite "
     "offset will be calculated. By default, the distance "
-    "is set to 500m.",
+    "is set to 500 m.",
 )
 @click.option(
     "--exposure_offsets/--no-exposure_offsets",
@@ -871,16 +932,18 @@ def elevation(
     "to False by passing `--no-exposure_offsets`.",
 )
 @click.option(
-    "--aws_unsigned/--no-aws_unsigned",
-    type=bool,
-    default=True,
-    help="Whether to use sign AWS requests for S3 access",
+    "--output_auxiliaries",
+    is_flag=True,
+    default=False,
+    help="Whether to output auxiliary files for debugging. Defaults to "
+    "False; can be set to True by passing `--output_auxiliaries`.",
 )
 @click.option(
-    "--output_auxiliaries",
-    type=bool,
-    default=False,
-    help="Whether to output auxiliary files for debugging",
+    "--aws_unsigned/--no-aws_unsigned",
+    is_flag=True,
+    default=True,
+    help="Whether to sign AWS requests for S3 access. Defaults to "
+    "True; can be set to False by passing `--no-aws_unsigned`.",
 )
 def intertidal_cli(
     config_path,
@@ -892,156 +955,52 @@ def intertidal_cli(
     modelled_freq,
     tideline_offset_distance,
     exposure_offsets,
-    aws_unsigned,
     output_auxiliaries,
+    aws_unsigned,
 ):
     log = configure_logging(f"Intertidal processing for study area {study_area}")
 
     # Configure S3
-    configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned) 
+    configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
+
+    # Create output folder. If it doesn't exist, create it
+    output_dir = f"data/interim/{study_area}"
+    os.makedirs(output_dir, exist_ok=True)
 
     try:
-        if output_auxiliaries:
-            # Calculate elevation
-            (ds, 
-             freq, 
-             corr, 
-             tide_m, 
-             good_mask, 
-             misclassified_ds) = elevation(
-                study_area,
-                start_date=start_date,
-                end_date=end_date,
-                resolution=resolution,
-                crs="EPSG:3577",
-                ndwi_thresh=ndwi_thresh,
-                include_s2=True,
-                include_ls=True,
-                filter_gqa=False,
-                config_path=config_path,
-                log=log,
-                output_auxiliaries=output_auxiliaries,
-            )
-            
-            # Compile auxiliary files into xr.Dataset
-            ds_debug = xr.Dataset()
-            ds_debug['NDWI_freq'] = freq
-            ds_debug['NDWI_tide_corr'] = corr
-            ds_debug['intertidal_candidate_px'] = good_mask
-            ds_debug['misclassified_px_count'] = misclassified_ds
-            
-            # Calculate extents
-            log.info(f"Study area {study_area}: Calculating Extents layer")
-            ds["extents"] = extents(freq, ds.elevation, corr)
+        # Calculate elevation
+        ds, ds_aux, tide_m = elevation(
+            study_area,
+            start_date=start_date,
+            end_date=end_date,
+            resolution=resolution,
+            crs="EPSG:3577",
+            ndwi_thresh=ndwi_thresh,
+            include_s2=True,
+            include_ls=True,
+            filter_gqa=False,
+            config_path=config_path,
+            log=log,
+        )
 
-            if exposure_offsets:
-                # Calculate exposure
-                log.info(f"Study area {study_area}: Calculating Exposure layer")
-                all_timerange = pd.date_range(
-                    start=round_date_strings(start_date, round_type="start"),
-                    end=round_date_strings(end_date, round_type="end"),
-                    freq=modelled_freq,
-                )
-                ds["exposure"], tide_cq = exposure(ds.elevation, all_timerange)
+        # Calculate extents
+        log.info(f"Study area {study_area}: Calculating Extents layer")
+        ds["extents"] = extents(
+            ds_aux.ndwi_wet_freq, ds.elevation, ds_aux.ndwi_tide_corr
+        )
 
-                # Calculate spread, offsets and HAT/LAT/LOT/HOT
-                log.info(
-                    f"Study area {study_area}: Calculating spread, offset "
-                    "and HAT/LAT/LOT/HOT layers"
-                )
-                (
-                    ds["lat"],
-                    ds["hat"],
-                    ds["lot"],
-                    ds["hot"],
-                    ds["spread"],
-                    ds["offset_lowtide"],
-                    ds["offset_hightide"],
-                ) = bias_offset(
-                    tide_m=tide_m,
-                    tide_cq=tide_cq,
-                    extents=ds.extents,
-                    lot_hot=True,
-                    lat_hat=True,
-                )
+        if exposure_offsets:
+            log.info(f"Study area {study_area}: Calculating Exposure layer")
 
-                # Calculate tidelines
-                log.info(
-                    f"Study area {study_area}: Calculating high and low tidelines "
-                    "and associated satellite offsets"
-                )
-                (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
-                    extents=ds.extents,
-                    offset_hightide=ds.offset_hightide,
-                    offset_lowtide=ds.offset_lowtide,
-                    distance=tideline_offset_distance,
-                )
-
-                # Export high and low tidelines and the offset data
-                log.info(
-                    f"Study area {study_area}: Exporting high and low tidelines with satellite offset"
-                )
-                hightideline.to_crs("EPSG:4326").to_file(
-                    f"data/interim/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
-                )
-                lowtideline.to_crs("EPSG:4326").to_file(
-                    f"data/interim/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
-                )
-                tidelines_gdf.to_crs("EPSG:4326").to_file(
-                    f"data/interim/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
-                )
-
-            else:
-                log.info(
-                    f"Study area {study_area}: Skipping Exposure and spread/offsets/tidelines calculation"
-                )
-
-            # Export layers as GeoTIFFs with optimised data types
-            log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
-            export_intertidal_rasters(
-                ds, prefix=f"data/interim/{study_area}_{start_date}_{end_date}"
-            )
-            
-            # Export auxiliary debug layers as GeoTIFFs with optimised data types
-            log.info(f"Study area {study_area}: Exporting debugging outputs to GeoTIFFs")
-            export_intertidal_rasters(
-                ds_debug, prefix=f"data/interim/Debug_{study_area}_{start_date}_{end_date}"
+            # Set time range
+            all_timerange = pd.date_range(
+                start=round_date_strings(start_date, round_type="start"),
+                end=round_date_strings(end_date, round_type="end"),
+                freq=modelled_freq,
             )
 
-            # Workflow completed
-            log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
-            
-            return freq, corr, good_mask, misclassified_ds
-            
-        else:
-             # Calculate elevation
-            ds, freq, corr, tide_m = elevation(
-                study_area,
-                start_date=start_date,
-                end_date=end_date,
-                resolution=resolution,
-                crs="EPSG:3577",
-                ndwi_thresh=ndwi_thresh,
-                include_s2=True,
-                include_ls=True,
-                filter_gqa=False,
-                config_path=config_path,
-                log=log,
-            )
-
-            # Calculate extents
-            log.info(f"Study area {study_area}: Calculating Extents layer")
-            ds["extents"] = extents(freq, ds.elevation, corr)
-
-            if exposure_offsets:
-                # Calculate exposure
-                log.info(f"Study area {study_area}: Calculating Exposure layer")
-                all_timerange = pd.date_range(
-                    start=round_date_strings(start_date, round_type="start"),
-                    end=round_date_strings(end_date, round_type="end"),
-                    freq=modelled_freq,
-                )
-                ds["exposure"], tide_cq = exposure(ds.elevation, all_timerange)
+            # Calculate exposure
+            ds["exposure"], tide_cq = exposure(ds.elevation, all_timerange)
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(
@@ -1049,13 +1008,13 @@ def intertidal_cli(
                 "and HAT/LAT/LOT/HOT layers"
             )
             (
-                ds["lat"],
-                ds["hat"],
-                ds["lot"],
-                ds["hot"],
-                ds["spread"],
-                ds["offset_lowtide"],
-                ds["offset_hightide"],
+                ds["oa_lat"],
+                ds["oa_hat"],
+                ds["oa_lot"],
+                ds["oa_hot"],
+                ds["oa_spread"],
+                ds["oa_offset_lowtide"],
+                ds["oa_offset_hightide"],
             ) = bias_offset(
                 tide_m=tide_m,
                 tide_cq=tide_cq,
@@ -1071,23 +1030,23 @@ def intertidal_cli(
             )
             (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
                 extents=ds.extents,
-                offset_hightide=ds.offset_hightide,
-                offset_lowtide=ds.offset_lowtide,
+                offset_hightide=ds.oa_offset_hightide,
+                offset_lowtide=ds.oa_offset_lowtide,
                 distance=tideline_offset_distance,
             )
 
             # Export high and low tidelines and the offset data
             log.info(
-                f"Study area {study_area}: Exporting high and low tidelines with satellite offset"
+                f"Study area {study_area}: Exporting high and low tidelines with satellite offset to {output_dir}"
             )
             hightideline.to_crs("EPSG:4326").to_file(
-                f"data/interim/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
+                f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
             )
             lowtideline.to_crs("EPSG:4326").to_file(
-                f"data/interim/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
+                f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
             )
             tidelines_gdf.to_crs("EPSG:4326").to_file(
-                f"data/interim/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
+                f"{output_dir}/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
             )
 
         else:
@@ -1096,10 +1055,20 @@ def intertidal_cli(
             )
 
         # Export layers as GeoTIFFs with optimised data types
-        log.info(f"Study area {study_area}: Exporting outputs to GeoTIFFs")
+        log.info(f"Study area {study_area}: Exporting output GeoTIFFs to {output_dir}")
         export_intertidal_rasters(
-            ds, prefix=f"data/interim/{study_area}_{start_date}_{end_date}"
+            ds, prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}"
         )
+
+        if output_auxiliaries:
+            # Export auxiliary debug layers as GeoTIFFs with optimised data types
+            log.info(
+                f"Study area {study_area}: Exporting debugging GeoTIFFs to {output_dir}"
+            )
+            export_intertidal_rasters(
+                ds_aux,
+                prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}_debug",
+            )
 
         # Workflow completed
         log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
@@ -1111,190 +1080,3 @@ def intertidal_cli(
 
 if __name__ == "__main__":
     intertidal_cli()
-
-
-# def pixel_tide_sort(ds, tide_var="tide_height", ndwi_var="ndwi", tide_dim="tide_n"):
-
-#     # NOT CURRENTLY USED
-
-#     # Return indicies to sort each pixel by tide along time dim
-#     sort_indices = np.argsort(ds[tide_var].values, axis=0)
-
-#     # Use indices to sort both tide and NDWI array
-#     tide_sorted = np.take_along_axis(ds[tide_var].values, sort_indices, axis=0)
-#     ndwi_sorted = np.take_along_axis(ds[ndwi_var].values, sort_indices, axis=0)
-
-#     # Update values in array
-#     ds[tide_var][:] = tide_sorted
-#     ds[ndwi_var][:] = ndwi_sorted
-
-#     return (
-#         ds.assign_coords(coords={tide_dim: ("time", np.linspace(0, 1, len(ds.time)))})
-#         .swap_dims({"time": tide_dim})
-#         .drop("time")
-#     )
-
-
-# def create_dask_gateway_cluster(profile="r5_L", workers=2):
-#     """
-#     Create a cluster in our internal dask cluster.
-#     Parameters
-#     ----------
-#     profile : str
-#         Possible values are:
-#             - r5_L (2 cores, 15GB memory)
-#             - r5_XL (4 cores, 31GB memory)
-#             - r5_2XL (8 cores, 63GB memory)
-#             - r5_4XL (16 cores, 127GB memory)
-#     workers : int
-#         Number of workers in the cluster.
-#     """
-
-#     try:
-#         from dask_gateway import Gateway
-
-#         gateway = Gateway()
-
-#         # Close any existing clusters
-#         if len(cluster_names) > 0:
-#             print("Cluster(s) still running:", cluster_names)
-#             for n in cluster_names:
-#                 cluster = gateway.connect(n.name)
-#                 cluster.shutdown()
-
-#         # Connect to new cluster
-#         options = gateway.cluster_options()
-#         options["profile"] = profile
-#         options["jupyterhub_user"] = "robbi"
-#         cluster = gateway.new_cluster(options)
-#         cluster.scale(workers)
-
-#         return cluster
-
-#     except ClientConnectionError:
-#         raise ConnectionError("Access to dask gateway cluster unauthorized")
-
-
-# def abslmp_gauge(
-#     coords, start_year=2019, end_year=2021, data_path="data/raw/ABSLMP", plot=True
-# ):
-#     """
-#     Loads water level data from the nearest Australian Baseline Sea Level
-#     Monitoring Project gauge.
-#     """
-
-#     from shapely.ops import nearest_points
-#     from shapely.geometry import Point
-
-#     # Standardise coords format
-#     if isinstance(coords, (xr.core.dataset.Dataset, xr.core.dataarray.DataArray)):
-#         print("Using dataset bounds to load gauge data")
-#         coords = coords.odc.geobox.geographic_extent.geom
-#     elif isinstance(coords, tuple):
-#         coords = Point(coords)
-
-#     # Convert coords to GeoDataFrame
-#     coords_gdf = gpd.GeoDataFrame(geometry=[coords], crs="EPSG:4326").to_crs(
-#         "EPSG:3577"
-#     )
-
-#     # Load station metadata
-#     site_metadata_df = pd.read_csv(
-#         f"{data_path}/ABSLMP_station_metadata.csv", index_col="ID CODE"
-#     )
-
-#     # Convert metadata to GeoDataFrame
-#     sites_metadata_gdf = gpd.GeoDataFrame(
-#         data=site_metadata_df,
-#         geometry=gpd.points_from_xy(
-#             site_metadata_df.LONGITUDE, site_metadata_df.LATITUDE
-#         ),
-#         crs="EPSG:4326",
-#     ).to_crs("EPSG:3577")
-
-#     # Find nearest row
-#     site_metadata_gdf = gpd.sjoin_nearest(coords_gdf, sites_metadata_gdf).iloc[0]
-#     site_id = site_metadata_gdf["index_right"]
-#     site_name = site_metadata_gdf["TOWN / DISTRICT"]
-
-#     # Read all tide data
-#     print(f"Loading ABSLMP gauge {site_id} ({site_name})")
-#     available_paths = glob(f"{data_path}/{site_id}_*.csv")
-#     available_years = sorted([int(i[-8:-4]) for i in available_paths])
-
-#     loaded_data = [
-#         pd.read_csv(
-#             f"{data_path}/{site_id}_{year}.csv",
-#             index_col=0,
-#             parse_dates=True,
-#             na_values=-9999,
-#         )
-#         for year in range(start_year, end_year)
-#         if year in available_years
-#     ]
-
-#     try:
-#         # Combine loaded data
-#         df = pd.concat(loaded_data).rename(
-#             {" Adjusted Residuals": "Adjusted Residuals"}, axis=1
-#         )
-
-#         # Extract water level and residuals
-#         clean_df = df[["Sea Level", "Adjusted Residuals"]].rename_axis("time")
-#         clean_df.columns = ["sea_level", "residuals"]
-#         clean_df["sea_level"] = clean_df.sea_level - site_metadata_gdf.AHD
-#         clean_df["sea_level_noresiduals"] = clean_df.sea_level - clean_df.residuals
-
-#         # Summarise non-residual waterlevels by week to assess seasonality
-#         seasonal_df = (
-#             clean_df[["sea_level_noresiduals"]]
-#             .groupby(clean_df.index.isocalendar().week)
-#             .mean()
-#         )
-
-#         # Plot
-#         if plot:
-#             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-#             axes = axes.flatten()
-#             clean_df["sea_level"].plot(ax=axes[0], lw=0.2)
-#             axes[0].set_title("Water levels (AHD)")
-#             axes[0].set_xlabel("")
-#             clean_df["residuals"].plot(ax=axes[1], lw=0.3)
-#             axes[1].set_title("Adjusted residuals")
-#             axes[1].set_xlabel("")
-#             clean_df["sea_level_noresiduals"].plot(ax=axes[2], lw=0.2)
-#             axes[2].set_title("Water levels, no residuals (AHD)")
-#             axes[2].set_xlabel("")
-#             seasonal_df.plot(ax=axes[3])
-#             axes[3].set_title("Seasonal")
-
-#         return clean_df, seasonal_df
-
-#     except ValueError:
-#         print(
-#             f"\nNo data for selected start and end year. Available years include:\n{available_years}"
-#         )
-
-
-# def abslmp_correction(ds, start_year=2010, end_year=2021):
-#     """
-#     Applies a seasonal correction to tide height data based on the nearest
-#     Australian Baseline Sea Level Monitoring Project gauge.
-#     """
-
-#     # Load seasonal data from ABSLMP
-#     _, abslmp_seasonal_df = abslmp_gauge(
-#         coords=ds, start_year=start_year, end_year=end_year, plot=False
-#     )
-
-#     # Apply weekly offsets to tides
-#     df_correction = abslmp_seasonal_df.loc[ds.time.dt.weekofyear].reset_index(drop=True)
-#     df_correction.index = ds.time
-#     da_correction = (
-#         df_correction.rename_axis("time")
-#         .rename({"sea_level_noresiduals": "tide_m"}, axis=1)
-#         .to_xarray()
-#     )
-#     ds["tide_m"] = ds["tide_m"] + da_correction.tide_m
-
-#     return ds

@@ -140,11 +140,15 @@ def export_intertidal_rasters(
     # Use default list of bands to convert to integers if none provided
     if int_bands is None:
         int_bands = (
+            # Primary layers
             "exposure",
             "extents",
-            "offset_hightide",
-            "offset_lowtide",
-            "spread",
+            "oa_offset_hightide",
+            "oa_offset_lowtide",
+            "oa_spread",
+            # Debug/auxiliary layers
+            "misclassified_px_count",
+            "intertidal_candidates",
         )
 
     for band in ds:
@@ -297,3 +301,190 @@ def pixel_ebb_flow(satellite_ds, tide_m, offset_min=15):
     ebb_flow_da = (tide_m < tide_m_offset).rename("ebb_flow")
 
     return ebb_flow_da, tide_m_offset
+
+
+# def pixel_tide_sort(ds, tide_var="tide_height", ndwi_var="ndwi", tide_dim="tide_n"):
+
+#     # NOT CURRENTLY USED
+
+#     # Return indicies to sort each pixel by tide along time dim
+#     sort_indices = np.argsort(ds[tide_var].values, axis=0)
+
+#     # Use indices to sort both tide and NDWI array
+#     tide_sorted = np.take_along_axis(ds[tide_var].values, sort_indices, axis=0)
+#     ndwi_sorted = np.take_along_axis(ds[ndwi_var].values, sort_indices, axis=0)
+
+#     # Update values in array
+#     ds[tide_var][:] = tide_sorted
+#     ds[ndwi_var][:] = ndwi_sorted
+
+#     return (
+#         ds.assign_coords(coords={tide_dim: ("time", np.linspace(0, 1, len(ds.time)))})
+#         .swap_dims({"time": tide_dim})
+#         .drop("time")
+#     )
+
+
+# def create_dask_gateway_cluster(profile="r5_L", workers=2):
+#     """
+#     Create a cluster in our internal dask cluster.
+#     Parameters
+#     ----------
+#     profile : str
+#         Possible values are:
+#             - r5_L (2 cores, 15GB memory)
+#             - r5_XL (4 cores, 31GB memory)
+#             - r5_2XL (8 cores, 63GB memory)
+#             - r5_4XL (16 cores, 127GB memory)
+#     workers : int
+#         Number of workers in the cluster.
+#     """
+
+#     try:
+#         from dask_gateway import Gateway
+
+#         gateway = Gateway()
+
+#         # Close any existing clusters
+#         if len(cluster_names) > 0:
+#             print("Cluster(s) still running:", cluster_names)
+#             for n in cluster_names:
+#                 cluster = gateway.connect(n.name)
+#                 cluster.shutdown()
+
+#         # Connect to new cluster
+#         options = gateway.cluster_options()
+#         options["profile"] = profile
+#         options["jupyterhub_user"] = "robbi"
+#         cluster = gateway.new_cluster(options)
+#         cluster.scale(workers)
+
+#         return cluster
+
+#     except ClientConnectionError:
+#         raise ConnectionError("Access to dask gateway cluster unauthorized")
+
+
+# def abslmp_gauge(
+#     coords, start_year=2019, end_year=2021, data_path="data/raw/ABSLMP", plot=True
+# ):
+#     """
+#     Loads water level data from the nearest Australian Baseline Sea Level
+#     Monitoring Project gauge.
+#     """
+
+#     from shapely.ops import nearest_points
+#     from shapely.geometry import Point
+
+#     # Standardise coords format
+#     if isinstance(coords, (xr.core.dataset.Dataset, xr.core.dataarray.DataArray)):
+#         print("Using dataset bounds to load gauge data")
+#         coords = coords.odc.geobox.geographic_extent.geom
+#     elif isinstance(coords, tuple):
+#         coords = Point(coords)
+
+#     # Convert coords to GeoDataFrame
+#     coords_gdf = gpd.GeoDataFrame(geometry=[coords], crs="EPSG:4326").to_crs(
+#         "EPSG:3577"
+#     )
+
+#     # Load station metadata
+#     site_metadata_df = pd.read_csv(
+#         f"{data_path}/ABSLMP_station_metadata.csv", index_col="ID CODE"
+#     )
+
+#     # Convert metadata to GeoDataFrame
+#     sites_metadata_gdf = gpd.GeoDataFrame(
+#         data=site_metadata_df,
+#         geometry=gpd.points_from_xy(
+#             site_metadata_df.LONGITUDE, site_metadata_df.LATITUDE
+#         ),
+#         crs="EPSG:4326",
+#     ).to_crs("EPSG:3577")
+
+#     # Find nearest row
+#     site_metadata_gdf = gpd.sjoin_nearest(coords_gdf, sites_metadata_gdf).iloc[0]
+#     site_id = site_metadata_gdf["index_right"]
+#     site_name = site_metadata_gdf["TOWN / DISTRICT"]
+
+#     # Read all tide data
+#     print(f"Loading ABSLMP gauge {site_id} ({site_name})")
+#     available_paths = glob(f"{data_path}/{site_id}_*.csv")
+#     available_years = sorted([int(i[-8:-4]) for i in available_paths])
+
+#     loaded_data = [
+#         pd.read_csv(
+#             f"{data_path}/{site_id}_{year}.csv",
+#             index_col=0,
+#             parse_dates=True,
+#             na_values=-9999,
+#         )
+#         for year in range(start_year, end_year)
+#         if year in available_years
+#     ]
+
+#     try:
+#         # Combine loaded data
+#         df = pd.concat(loaded_data).rename(
+#             {" Adjusted Residuals": "Adjusted Residuals"}, axis=1
+#         )
+
+#         # Extract water level and residuals
+#         clean_df = df[["Sea Level", "Adjusted Residuals"]].rename_axis("time")
+#         clean_df.columns = ["sea_level", "residuals"]
+#         clean_df["sea_level"] = clean_df.sea_level - site_metadata_gdf.AHD
+#         clean_df["sea_level_noresiduals"] = clean_df.sea_level - clean_df.residuals
+
+#         # Summarise non-residual waterlevels by week to assess seasonality
+#         seasonal_df = (
+#             clean_df[["sea_level_noresiduals"]]
+#             .groupby(clean_df.index.isocalendar().week)
+#             .mean()
+#         )
+
+#         # Plot
+#         if plot:
+#             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+#             axes = axes.flatten()
+#             clean_df["sea_level"].plot(ax=axes[0], lw=0.2)
+#             axes[0].set_title("Water levels (AHD)")
+#             axes[0].set_xlabel("")
+#             clean_df["residuals"].plot(ax=axes[1], lw=0.3)
+#             axes[1].set_title("Adjusted residuals")
+#             axes[1].set_xlabel("")
+#             clean_df["sea_level_noresiduals"].plot(ax=axes[2], lw=0.2)
+#             axes[2].set_title("Water levels, no residuals (AHD)")
+#             axes[2].set_xlabel("")
+#             seasonal_df.plot(ax=axes[3])
+#             axes[3].set_title("Seasonal")
+
+#         return clean_df, seasonal_df
+
+#     except ValueError:
+#         print(
+#             f"\nNo data for selected start and end year. Available years include:\n{available_years}"
+#         )
+
+
+# def abslmp_correction(ds, start_year=2010, end_year=2021):
+#     """
+#     Applies a seasonal correction to tide height data based on the nearest
+#     Australian Baseline Sea Level Monitoring Project gauge.
+#     """
+
+#     # Load seasonal data from ABSLMP
+#     _, abslmp_seasonal_df = abslmp_gauge(
+#         coords=ds, start_year=start_year, end_year=end_year, plot=False
+#     )
+
+#     # Apply weekly offsets to tides
+#     df_correction = abslmp_seasonal_df.loc[ds.time.dt.weekofyear].reset_index(drop=True)
+#     df_correction.index = ds.time
+#     da_correction = (
+#         df_correction.rename_axis("time")
+#         .rename({"sea_level_noresiduals": "tide_m"}, axis=1)
+#         .to_xarray()
+#     )
+#     ds["tide_m"] = ds["tide_m"] + da_correction.tide_m
+
+#     return ds
