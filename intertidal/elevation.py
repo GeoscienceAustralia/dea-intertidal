@@ -33,7 +33,7 @@ from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
 
 def load_data(
     dc,
-    geom,
+    study_area,
     time_range=("2019", "2021"),
     resolution=10,
     crs="EPSG:3577",
@@ -41,6 +41,7 @@ def load_data(
     ls_prod="ls_nbart_ndwi",
     config_path="configs/dea_virtual_product_landsat_s2.yaml",
     filter_gqa=True,
+    log=None,
 ):
     """
     Load cloud-masked Landsat and Sentinel-2 NDWI data for a given
@@ -86,9 +87,42 @@ def load_data(
     from datacube.virtual import catalog_from_file
     from datacube.utils.masking import mask_invalid_data
     from datacube.utils.geometry import GeoBox, Geometry
+    
+    if log is None:
+        log = configure_logging()
 
     # Load in virtual product catalogue
     catalog = catalog_from_file(config_path)
+    
+        # Create local dask cluster to improve data load time
+    client = create_local_dask_cluster(return_client=True)
+
+    # Connect to datacube
+    dc = datacube.Datacube(app="Intertidal_elevation")
+
+    # Load analysis params from config file
+    config = load_config(config_path)
+
+    # Load study area from tile grid if passed a string
+    if isinstance(study_area, (int, str)):
+        # Load study area
+        gridcell_gdf = (
+            gpd.read_file(config["Input files"]["grid_path"])
+            .to_crs(crs)
+            .set_index("id")
+        )
+        gridcell_gdf.index = gridcell_gdf.index.astype(str)
+        gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
+
+        # Create geom as input for dc.load
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
+        log.info(f"Study area {study_area}: Loaded study area grid")
+
+    # Otherwise, use supplied geom
+    else:
+        geom = study_area
+        study_area = "testing"
+        log.info(f"Study area {study_area}: Loaded custom study area")
 
     # Create the 'query' dictionary object
     query_params = {
@@ -98,7 +132,7 @@ def load_data(
         "output_crs": crs,
         "dask_chunks": {"time": 1, "x": 2048, "y": 2048},
         "resampling": {
-            "*": "average",
+            "*": "cubic",
             "oa_nbart_contiguity": "nearest",
             "oa_fmask": "nearest",
             "oa_s2cloudless_mask": "nearest",
@@ -157,6 +191,12 @@ def load_data(
         .sortby("time")
         .drop(["cloud_mask", "contiguity"])
     )
+    
+    
+    # Load data and close dask client
+    satellite_ds.load()
+    client.close()
+    
     return satellite_ds
 
 
@@ -639,7 +679,7 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
 
 
 def elevation(
-    study_area,
+    satellite_ds,
     start_date,
     end_date,
     resolution=10,
@@ -727,54 +767,6 @@ def elevation(
 
     if log is None:
         log = configure_logging()
-
-    # Create local dask cluster to improve data load time
-    client = create_local_dask_cluster(return_client=True)
-
-    # Connect to datacube
-    dc = datacube.Datacube(app="Intertidal_elevation")
-
-    # Load analysis params from config file
-    config = load_config(config_path)
-
-    # Load study area from tile grid if passed a string
-    if isinstance(study_area, (int, str)):
-        # Load study area
-        gridcell_gdf = (
-            gpd.read_file(config["Input files"]["grid_path"])
-            .to_crs(crs)
-            .set_index("id")
-        )
-        gridcell_gdf.index = gridcell_gdf.index.astype(str)
-        gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
-
-        # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
-        log.info(f"Study area {study_area}: Loaded study area grid")
-
-    # Otherwise, use supplied geom
-    else:
-        geom = study_area
-        study_area = "testing"
-        log.info(f"Study area {study_area}: Loaded custom study area")
-
-    # Load data
-    log.info(f"Study area {study_area}: Loading satellite data")
-    satellite_ds = load_data(
-        dc=dc,
-        geom=geom,
-        time_range=(start_date, end_date),
-        resolution=resolution,
-        crs=crs,
-        s2_prod="s2_nbart_ndwi" if include_s2 else None,
-        ls_prod="ls_nbart_ndwi" if include_ls else None,
-        config_path=config["Virtual product"]["virtual_product_path"],
-        filter_gqa=filter_gqa,
-    )[["ndwi"]]
-
-    # Load data and close dask client
-    satellite_ds.load()
-    client.close()
 
     # Model tides into every pixel in the three-dimensional (x by y by
     # time) satellite dataset
