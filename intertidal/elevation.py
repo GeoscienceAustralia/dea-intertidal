@@ -31,6 +31,39 @@ from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
 
 
+def extract_geom(study_area, config, id_col="id"):
+    """
+    Handles extraction of a datacube Geometry object from either a
+    string or integer tile ID. If a Geometry object is passed in, it
+    will be returned as-is.
+    """
+    # Load study area from tile grid if passed a string
+    if isinstance(study_area, (int, str)):
+        # Load study area
+        gridcell_gdf = gpd.read_file(config["Input files"]["grid_path"]).set_index(
+            id_col
+        )
+        gridcell_gdf.index = gridcell_gdf.index.astype(str)
+        gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
+
+        # Create geom as input for dc.load
+        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=gridcell_gdf.crs)
+
+    # Otherwise, use supplied geom
+    elif isinstance(study_area, Geometry):
+        geom = study_area
+        study_area = "custom"
+
+    else:
+        raise Exception(
+            "Unsupported input type for `study_area`; please "
+            "provide either a string, integer or dataube Geometry "
+            "object."
+        )
+
+    return geom, study_area
+
+
 def load_data(
     dc,
     study_area,
@@ -39,7 +72,7 @@ def load_data(
     crs="EPSG:3577",
     s2_prod="s2_nbart_ndwi",
     ls_prod="ls_nbart_ndwi",
-    config_path="configs/dea_virtual_product_landsat_s2.yaml",
+    config_path="configs/dea_intertidal_config.yaml",
     filter_gqa=True,
     log=None,
 ):
@@ -51,9 +84,10 @@ def load_data(
     ----------
     dc : Datacube
         A datacube instance connected to a database.
-    geom : Geometry object from datacube.utils.geometry
-        A geometry object from `datacube.utils.geometry` that defines
-        the spatial extent of interest.
+    study_area : int, str or Geometry
+        Study area polygon represented as either the ID of a tile grid
+        cell, or a `datacube.utils.geometry` object defining the spatial
+        extent of interest.
     time_range : tuple, optional
         A tuple containing the start and end date for the time range of
         interest, in the format (start_date, end_date). The default is
@@ -87,47 +121,26 @@ def load_data(
     from datacube.virtual import catalog_from_file
     from datacube.utils.masking import mask_invalid_data
     from datacube.utils.geometry import GeoBox, Geometry
-    
+
     if log is None:
         log = configure_logging()
 
-    # Load in virtual product catalogue
-    catalog = catalog_from_file(config_path)
-    
-        # Create local dask cluster to improve data load time
-    client = create_local_dask_cluster(return_client=True)
-
-    # Connect to datacube
-    dc = datacube.Datacube(app="Intertidal_elevation")
-
-    # Load analysis params from config file
+    # Load product and virtual product catalogue configs
     config = load_config(config_path)
+    catalog = catalog_from_file(config["Virtual product"]["virtual_product_path"])
 
-    # Load study area from tile grid if passed a string
-    if isinstance(study_area, (int, str)):
-        # Load study area
-        gridcell_gdf = (
-            gpd.read_file(config["Input files"]["grid_path"])
-            .to_crs(crs)
-            .set_index("id")
-        )
-        gridcell_gdf.index = gridcell_gdf.index.astype(str)
-        gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
+    # Load study area geometry object, and project to match `crs`
+    geom, study_area = extract_geom(study_area, config)
+    geom = geom.to_crs(crs)
 
-        # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=crs)
-        log.info(f"Study area {study_area}: Loaded study area grid")
-
-    # Otherwise, use supplied geom
-    else:
-        geom = study_area
-        study_area = "testing"
-        log.info(f"Study area {study_area}: Loaded custom study area")
-
-    # Create the 'query' dictionary object
+    # Set up query params
     query_params = {
         "geopolygon": geom,
         "time": time_range,
+    }
+
+    # Set up load params
+    load_params = {
         "resolution": (-resolution, resolution),
         "output_crs": crs,
         "dask_chunks": {"time": 1, "x": 2048, "y": 2048},
@@ -151,7 +164,7 @@ def load_data(
     if s2_prod is not None:
         # Load Sentinel-2 data
         product = catalog[s2_prod]
-        s2_ds = product.load(dc, **query_params)
+        s2_ds = product.load(dc, **query_params, **load_params)
 
         # Apply cloud mask and contiguity mask
         s2_ds_masked = s2_ds.where(s2_ds.cloud_mask == 1 & s2_ds.contiguity)
@@ -161,7 +174,7 @@ def load_data(
     if ls_prod is not None:
         # Load Landsat data
         product = catalog[ls_prod]
-        ls_ds = product.load(dc, **query_params)
+        ls_ds = product.load(dc, **query_params, **load_params)
 
         # Clean cloud mask by applying morphological closing to all
         # valid (non cloud, shadow or nodata) pixels. This removes
@@ -191,12 +204,7 @@ def load_data(
         .sortby("time")
         .drop(["cloud_mask", "contiguity"])
     )
-    
-    
-    # Load data and close dask client
-    satellite_ds.load()
-    client.close()
-    
+
     return satellite_ds
 
 
@@ -493,6 +501,9 @@ def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
     NDWI == land. This produces a cleaner and less noisy output.
     """
 
+    # TODO: Implement interpolation of intervals
+    # interval_ds = interval_ds.interp(interval=np.linspace(0, 56, 100), method="linear")
+
     # Smooth tidal intervals using a rolling mean
     if smooth_radius > 1:
         smoothed_ds = interval_ds.rolling(
@@ -680,14 +691,7 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
 
 def elevation(
     satellite_ds,
-    start_date,
-    end_date,
-    resolution=10,
-    crs="EPSG:3577",
     ndwi_thresh=0.1,
-    include_s2=True,
-    include_ls=True,
-    filter_gqa=False,
     min_freq=0.01,
     max_freq=0.99,
     min_correlation=0.2,
@@ -695,6 +699,7 @@ def elevation(
     window_prop_tide=0.15,
     max_workers=None,
     config_path="configs/dea_intertidal_config.yaml",
+    study_area=None,
     log=None,
 ):
     """
@@ -703,28 +708,12 @@ def elevation(
 
     Parameters
     ----------
-    study_area : int or str or Geometry
-        Study area polygon represented as either the ID of a tile grid
-        cell, or a Geometry object.
-    start_date : str, optional
-        Start date of data to load (inclusive), by default '2020'. Can
-        be any string supported by datacube (e.g. '2020-01-01')
-    end_date : str, optional
-        End date of data to load (inclusive), by default '2022'. Can
-        be any string supported by datacube (e.g. '2022-12-31')
-    resolution : int, optional
-        Pixel size in meters, by default 10.
-    crs : str, optional
-        Coordinate reference system, by default "EPSG:3577".
+    satellite_ds : xarray.Dataset
+        A satellite data time series containing an "ndwi" water index
+        variable.
     ndwi_thresh : float, optional
         A threshold value for the normalized difference water index
         (NDWI) above which pixels are considered water, by default 0.1.
-    include_s2 : bool, optional
-        Whether to include Sentinel-2 data, by default True.
-    include_ls : bool, optional
-        Whether to include Landsat data, by default True.
-    filter_gqa : bool, optional
-        Whether to apply the GQA filter to the dataset, by default False.
     min_freq, max_freq : float, optional
         Minimum and maximum frequency of wetness required for a pixel to
         be included in the analysis, by default 0.01 and 0.99.
@@ -745,6 +734,9 @@ def elevation(
     config_path : str, optional
         Path to the configuration file, by default
         "configs/dea_intertidal_config.yaml".
+    study_area : string, optional
+        An optional string giving the name of the analysis; used to
+        prefix log entries.
     log : logging.Logger, optional
         Logger object, by default None.
 
@@ -765,19 +757,26 @@ def elevation(
         heights for each pixel in the study area.
     """
 
+    # Set up logs if no log is passed in
     if log is None:
         log = configure_logging()
 
+    # Use study area name for logs if it exists
+    if study_area is not None:
+        log_prefix = f"Study area {study_area}: "
+    else:
+        log_prefix = ""
+
     # Model tides into every pixel in the three-dimensional (x by y by
     # time) satellite dataset
-    log.info(f"Study area {study_area}: Modelling tide heights for each pixel")
+    log.info(f"{log_prefix}Modelling tide heights for each pixel")
     tide_m, _ = pixel_tides(satellite_ds, resample=True)
 
     # Set tide array pixels to nodata if the satellite data array pixels
     # contain nodata. This ensures that we ignore any tide observations
     # where we don't have matching satellite imagery
     log.info(
-        f"Study area {study_area}: Masking nodata and adding tide heights to satellite data array"
+        f"{log_prefix}Masking nodata and adding tide heights to satellite data array"
     )
     satellite_ds["tide_m"] = tide_m.where(
         ~satellite_ds.to_array().isel(variable=0).isnull()
@@ -789,7 +788,7 @@ def elevation(
     # along the coast are analysed, rather than the entire study area.
     # (This step is later reversed using the `flat_to_ds` function)
     log.info(
-        f"Study area {study_area}: Flattening satellite data array and filtering to intertidal candidate pixels"
+        f"{log_prefix}Flattening satellite data array and filtering to intertidal candidate pixels"
     )
     flat_ds, freq, corr, intertidal_candidates = ds_to_flat(
         satellite_ds,
@@ -799,7 +798,7 @@ def elevation(
     )
 
     # Calculate per-pixel rolling median.
-    log.info(f"Study area {study_area}: Running per-pixel rolling median")
+    log.info(f"{log_prefix}Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
         flat_ds,
         windows_n=windows_n,
@@ -808,11 +807,11 @@ def elevation(
     )
 
     # Model intertidal elevation
-    log.info(f"Study area {study_area}: Modelling intertidal elevation")
+    log.info(f"{log_prefix}Modelling intertidal elevation")
     flat_dem = pixel_dem(interval_ds, flat_ds, ndwi_thresh)
 
     # Model intertidal elevation uncertainty
-    log.info(f"Study area {study_area}: Modelling intertidal uncertainty")
+    log.info(f"{log_prefix}Modelling intertidal uncertainty")
     (
         elevation_low,
         elevation_high,
@@ -833,16 +832,12 @@ def elevation(
     )
 
     # Unstack all layers back into their original spatial dimensions
-    log.info(
-        f"Study area {study_area}: Unflattening data back to its original spatial dimensions"
-    )
+    log.info(f"{log_prefix}Unflattening data back to its original spatial dimensions")
     ds = flat_to_ds(flat_dem, satellite_ds)
     ds_aux = flat_to_ds(flat_ds_aux, satellite_ds)
 
     # Return master dataset and debug dataset
-    log.info(
-        f"Study area {study_area}: Successfully completed intertidal elevation modelling"
-    )
+    log.info(f"{log_prefix}Successfully completed intertidal elevation modelling")
 
     return ds, ds_aux, tide_m
 
@@ -960,29 +955,48 @@ def intertidal_cli(
     os.makedirs(output_dir, exist_ok=True)
 
     try:
-        # Calculate elevation
-        ds, ds_aux, tide_m = elevation(
-            study_area,
-            start_date=start_date,
-            end_date=end_date,
+        log.info(f"Study area {study_area}: Loading satellite data")
+
+        # Connect to datacube to load data
+        dc = datacube.Datacube(app="Intertidal_CLI")
+
+        # Create local dask cluster to improve data load time
+        client = create_local_dask_cluster(return_client=True)
+
+        satellite_ds = load_data(
+            dc=dc,
+            study_area=study_area,
+            time_range=(start_date, end_date),
             resolution=resolution,
             crs="EPSG:3577",
-            ndwi_thresh=ndwi_thresh,
-            include_s2=True,
-            include_ls=True,
+            s2_prod="s2_nbart_ndwi",
+            ls_prod="ls_nbart_ndwi",
             filter_gqa=False,
             config_path=config_path,
+        )[["ndwi"]]
+
+        # Load data and close dask client
+        satellite_ds.load()
+        client.close()
+
+        # Calculate elevation
+        log.info(f"Study area {study_area}: Calculating Intertidal Elevation")
+        ds, ds_aux, tide_m = elevation(
+            satellite_ds,
+            ndwi_thresh=ndwi_thresh,
+            config_path=config_path,
+            study_area=study_area,
             log=log,
         )
 
         # Calculate extents
-        log.info(f"Study area {study_area}: Calculating Extents layer")
+        log.info(f"Study area {study_area}: Calculating Intertidal Extents")
         ds["extents"] = extents(
             ds_aux.ndwi_wet_freq, ds.elevation, ds_aux.ndwi_tide_corr
         )
 
         if exposure_offsets:
-            log.info(f"Study area {study_area}: Calculating Exposure layer")
+            log.info(f"Study area {study_area}: Calculating Intertidal Exposure")
 
             # Set time range
             all_timerange = pd.date_range(
