@@ -34,8 +34,35 @@ from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
 def extract_geom(study_area, config, id_col="id"):
     """
     Handles extraction of a datacube Geometry object from either a
-    string or integer tile ID. If a Geometry object is passed in, it
-    will be returned as-is.
+    string or integer tile ID.
+
+    If passed as a string or integer, a Geometry object will be
+    extracted based on the extent of the relevant study area grid cell.
+    If a Geometry object is passed in, it will be returned as-is.
+
+    TODO: Refactor this func to use a Gridspec directly instead of a
+    study area polygon dataset.
+
+    Parameters
+    ----------
+    study_area : int, str or Geometry
+        Study area polygon represented as either the ID of a tile grid
+        cell, or a `datacube.utils.geometry.Geometry` object defining
+        the spatial extent of interest.
+    config : dict
+        A loaded configuration file, used to obtain the path to the
+        study area grid ("grid_path").
+    id_col : str, optional
+        The name of the study area grid column containing each grid
+        cell ID. Defaults to "id".
+
+    Returns
+    -------
+    geom : datacube.utils.geometry.Geometry
+        A datacube Geometry object providing the analysis extents.
+    study_area : str
+        Returns either the previously provided `study_area` ID, or the
+        string "custom" if a custom Geometry object is passed in.
     """
     # Load study area from tile grid if passed a string
     if isinstance(study_area, (int, str)):
@@ -105,11 +132,12 @@ def load_data(
         The name of the virtual product to use for Landsat data. The
         default is "ls_nbart_ndwi".
     config_path : str, optional
-        The path to the virtual product configuration file. The default is
-        "configs/dea_virtual_product_landsat_s2.yaml".
+        Path to the configuration file, used to obtain the virtual
+        products config to load ("virtual_product_path").
+        Defaults to "configs/dea_intertidal_config.yaml".
     filter_gqa : bool, optional
         Whether or not to filter Sentinel-2 data using the GQA filter.
-        The default is True.
+        Defaults to True.
 
     Returns
     -------
@@ -1114,31 +1142,31 @@ def intertidal_cli(
                 lat_hat=True,
             )
 
-#             # Calculate tidelines
-#             log.info(
-#                 f"Study area {study_area}: Calculating high and low tidelines "
-#                 "and associated satellite offsets"
-#             )
-#             (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
-#                 extents=ds.extents,
-#                 offset_hightide=ds.oa_offset_hightide,
-#                 offset_lowtide=ds.oa_offset_lowtide,
-#                 distance=tideline_offset_distance,
-#             )
+        #             # Calculate tidelines
+        #             log.info(
+        #                 f"Study area {study_area}: Calculating high and low tidelines "
+        #                 "and associated satellite offsets"
+        #             )
+        #             (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
+        #                 extents=ds.extents,
+        #                 offset_hightide=ds.oa_offset_hightide,
+        #                 offset_lowtide=ds.oa_offset_lowtide,
+        #                 distance=tideline_offset_distance,
+        #             )
 
-#             # Export high and low tidelines and the offset data
-#             log.info(
-#                 f"Study area {study_area}: Exporting high and low tidelines with satellite offset to {output_dir}"
-#             )
-#             hightideline.to_crs("EPSG:4326").to_file(
-#                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
-#             )
-#             lowtideline.to_crs("EPSG:4326").to_file(
-#                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
-#             )
-#             tidelines_gdf.to_crs("EPSG:4326").to_file(
-#                 f"{output_dir}/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
-#             )
+        #             # Export high and low tidelines and the offset data
+        #             log.info(
+        #                 f"Study area {study_area}: Exporting high and low tidelines with satellite offset to {output_dir}"
+        #             )
+        #             hightideline.to_crs("EPSG:4326").to_file(
+        #                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
+        #             )
+        #             lowtideline.to_crs("EPSG:4326").to_file(
+        #                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
+        #             )
+        #             tidelines_gdf.to_crs("EPSG:4326").to_file(
+        #                 f"{output_dir}/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
+        #             )
 
         else:
             log.info(
