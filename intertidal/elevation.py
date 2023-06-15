@@ -59,7 +59,8 @@ def extract_geom(study_area, config, id_col="id"):
     Returns
     -------
     geom : datacube.utils.geometry.Geometry
-        A datacube Geometry object providing the analysis extents.
+        A datacube Geometry object defining the spatial extent of 
+        interest.
     study_area : str
         Returns either the previously provided `study_area` ID, or the
         string "custom" if a custom Geometry object is passed in.
@@ -113,8 +114,8 @@ def load_data(
         A datacube instance connected to a database.
     study_area : int, str or Geometry
         Study area polygon represented as either the ID of a tile grid
-        cell, or a `datacube.utils.geometry` object defining the spatial
-        extent of interest.
+        cell, or a `datacube.utils.geometry.Geometry` object defining 
+        the spatial extent of interest.
     time_range : tuple, optional
         A tuple containing the start and end date for the time range of
         interest, in the format (start_date, end_date). The default is
