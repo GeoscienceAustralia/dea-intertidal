@@ -698,6 +698,8 @@ def elevation(
     windows_n=100,
     window_prop_tide=0.15,
     max_workers=None,
+    tide_model="FES2014",
+    tide_model_dir="/var/share/tide_models",
     config_path="configs/dea_intertidal_config.yaml",
     study_area=None,
     log=None,
@@ -721,16 +723,26 @@ def elevation(
         Minimum correlation between water index and tide height required
         for a pixel to be included in the analysis, by default 0.2.
     windows_n : int, optional
-        Number of rolling windows to iterate over in per-pixel rolling
-        median calculation, by default 100
+        Number of rolling windows to iterate over in the per-pixel
+        rolling median calculation, by default 100
     window_prop_tide : float, optional
         Proportion of the tide range to use for each window radius in
-        per-pixel rolling median calculation, by default 0.15
+        the per-pixel rolling median calculation, by default 0.15
     max_workers : int, optional
         Maximum number of worker processes to use for parallel execution
         in the per-pixel rolling median calculation. Defaults to None,
         which uses built-in methods from `concurrent.futures` to
         determine workers.
+    tide_model : str, optional
+        The tide model used to model tides, as supported by the `pyTMD`
+        Python package. Options include:
+        - "FES2014" (default; pre-configured on DEA Sandbox)
+        - "TPXO8-atlas"
+        - "TPXO9-atlas-v5"
+    tide_model_dir : str, optional
+        The directory containing tide model data files. Defaults to
+        "/var/share/tide_models"; for more information about the
+        directory structure, refer to `dea_tools.coastal.model_tides`.
     config_path : str, optional
         Path to the configuration file, by default
         "configs/dea_intertidal_config.yaml".
@@ -770,7 +782,9 @@ def elevation(
     # Model tides into every pixel in the three-dimensional (x by y by
     # time) satellite dataset
     log.info(f"{log_prefix}Modelling tide heights for each pixel")
-    tide_m, _ = pixel_tides(satellite_ds, resample=True)
+    tide_m, _ = pixel_tides(
+        satellite_ds, resample=True, model=tide_model, directory=tide_model_dir
+    )
 
     # Set tide array pixels to nodata if the satellite data array pixels
     # contain nodata. This ensures that we ignore any tide observations
@@ -891,6 +905,58 @@ def elevation(
     "which appears to more reliably capture this transition than 0.0.",
 )
 @click.option(
+    "--min_freq",
+    type=float,
+    default=0.01,
+    help="Minimum frequency of wetness required for a pixel to be "
+    "included in the analysis, by default 0.01.",
+)
+@click.option(
+    "--max_freq",
+    type=float,
+    default=0.99,
+    help="Maximum frequency of wetness required for a pixel to be "
+    "included in the analysis, by default 0.99.",
+)
+@click.option(
+    "--min_correlation",
+    type=float,
+    default=0.2,
+    help="Minimum correlation between water index and tide height "
+    "required for a pixel to be included in the analysis, by default "
+    "0.2.",
+)
+@click.option(
+    "--windows_n",
+    type=int,
+    default=100,
+    help="Number of rolling windows to iterate over in the per-pixel "
+    "rolling median calculation, by default 100.",
+)
+@click.option(
+    "--window_prop_tide",
+    type=float,
+    default=0.15,
+    help="Proportion of the tide range to use for each window radius "
+    "in the per-pixel rolling median calculation, by default 0.15.",
+)
+@click.option(
+    "--tide_model",
+    type=str,
+    default="FES2014",
+    help="The tide model used to model tides, as supported by the "
+    "`pyTMD` Python package. Options include 'FES2014' (default), "
+    "'TPXO8-atlas' and 'TPXO9-atlas-v5'.",
+)
+@click.option(
+    "--tide_model_dir",
+    type=str,
+    default="/var/share/tide_models",
+    help="The directory containing tide model data files. Defaults to "
+    "'/var/share/tide_models'; for more information about the required "
+    "directory structure, refer to `dea_tools.coastal.model_tides`.",
+)
+@click.option(
     "--modelled_freq",
     type=str,
     default="30min",
@@ -939,6 +1005,13 @@ def intertidal_cli(
     end_date,
     resolution,
     ndwi_thresh,
+    min_freq,
+    max_freq,
+    min_correlation,
+    windows_n,
+    window_prop_tide,
+    tide_model,
+    tide_model_dir,
     modelled_freq,
     tideline_offset_distance,
     exposure_offsets,
@@ -984,6 +1057,13 @@ def intertidal_cli(
         ds, ds_aux, tide_m = elevation(
             satellite_ds,
             ndwi_thresh=ndwi_thresh,
+            min_freq=min_freq,
+            max_freq=max_freq,
+            min_correlation=min_correlation,
+            windows_n=windows_n,
+            window_prop_tide=window_prop_tide,
+            tide_model=tide_model,
+            tide_model_dir=tide_model_dir,
             config_path=config_path,
             study_area=study_area,
             log=log,
@@ -1006,7 +1086,12 @@ def intertidal_cli(
             )
 
             # Calculate exposure
-            ds["exposure"], tide_cq = exposure(ds.elevation, all_timerange)
+            ds["exposure"], tide_cq = exposure(
+                dem=ds.elevation,
+                time_range=all_timerange,
+                tide_model=tide_model,
+                tide_model_dir=tide_model_dir,
+            )
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(
