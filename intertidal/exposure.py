@@ -12,7 +12,7 @@ def exposure(
 ):
     """
     Calculate exposure percentage for each pixel based on tide-height
-    differences between the NIDEM value and percentile values of the
+    differences between the elevation value and percentile values of the
     tide model for a given time range.
 
     Parameters
