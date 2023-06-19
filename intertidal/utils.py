@@ -217,13 +217,20 @@ def intertidal_hillshade(
 
     # Fill upper and bottom of intertidal zone with min and max heights
     # so that hillshade can be applied across the entire raster
-    elevation_filled = xr.where(extents == 0, elevation.min(), elevation)
-    elevation_filled = xr.where(extents == 2, elevation.max(), elevation_filled)
+    # elevation_filled = xr.where(extents == 0, elevation.min(), elevation)
+    # elevation_filled = xr.where(extents == 2, elevation.max(), elevation_filled)
+    elevation_filled = xr.where(extents == 0, elevation.max(), elevation)
+    elevation_filled = xr.where(extents == 2, elevation.min(), elevation_filled)
+    elevation_filled = xr.where(extents == 3, elevation.max(), elevation_filled)
+    elevation_filled = xr.where(extents == 4, elevation.max(), elevation_filled)
+    
+    from scipy.ndimage import gaussian_filter
+    input_data = gaussian_filter(elevation_filled, sigma=1)
 
     # Create hillshade based on elevation data
     ls = LightSource(azdeg=azdeg, altdeg=altdeg)
     hillshade = ls.shade(
-        elevation_filled.values,
+        input_data,
         cmap=plt.cm.viridis,
         blend_mode=lambda x, y: x * y,
         vert_exag=vert_exag,
