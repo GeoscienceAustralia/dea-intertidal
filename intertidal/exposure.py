@@ -73,7 +73,7 @@ def exposure(
         directory=tide_model_dir,
     )
 
-    # Calculate the tide-height difference between the NIDEM value and
+    # Calculate the tide-height difference between the elevation value and
     # each percentile value per pixel
     diff = abs(tide_cq - dem)
 
