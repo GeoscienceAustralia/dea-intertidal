@@ -3,12 +3,12 @@ aiohttp
 botocore
 click==8.1.3
 datacube[s3,performance]==1.8.13
-dea-tools==0.2.8.dev60
+dea-tools==0.2.8.dev111
 geopandas==0.12.2
 matplotlib==3.7.0
 numpy==1.23.5
 odc-geo==0.3.3
-pyTMD==1.1.3
+pyTMD==2.0.5
 pandas==1.5.3
 pygeos==0.14
 pyproj==3.4.1
