@@ -882,7 +882,7 @@ def elevation(
         resample=True,
         model=tide_model,
         directory=tide_model_dir,
-        cutoff=30,
+        cutoff=np.inf,
     )
 
     # Set tide array pixels to nodata if the satellite data array pixels
