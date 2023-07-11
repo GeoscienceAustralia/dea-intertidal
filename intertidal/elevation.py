@@ -13,8 +13,10 @@ import click
 
 import datacube
 import odc.geo.xr
+from odc.geo.geom import Geometry
+from odc.geo.gridspec import GridSpec
+from odc.geo.types import xy_
 from odc.algo import mask_cleanup, xr_quantile
-from datacube.utils.geometry import Geometry
 from datacube.utils.aws import configure_s3_access
 
 from dea_tools.coastal import pixel_tides
@@ -31,70 +33,149 @@ from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
 
 
-def extract_geom(study_area, config, id_col="id"):
+def extract_geom(study_area=None, geom=None):
     """
     Handles extraction of a datacube Geometry object from either a
-    string or integer tile ID.
+    GridSpec tile ID (e.g. 'x143y56'), or a provided Geometry object.
 
-    If passed as a string or integer, a Geometry object will be
-    extracted based on the extent of the relevant study area grid cell.
-    If a Geometry object is passed in, it will be returned as-is.
-
-    TODO: Refactor this func to use a Gridspec directly instead of a
-    study area polygon dataset.
+    If passed as a tile ID string via `study_area`, a Geometry object 
+    will be extracted based on relevant GridSpec tile. If a custom 
+    Geometry object is passed in via `geom`, it will be returned as-is.
+    
+    (One of either option is required; `geom` will override `study_area`
+    if provided).
 
     Parameters
     ----------
-    study_area : int, str or Geometry
-        Study area polygon represented as either the ID of a tile grid
-        cell, or a `datacube.utils.geometry.Geometry` object defining
-        the spatial extent of interest.
-    config : dict
-        A loaded configuration file, used to obtain the path to the
-        study area grid ("grid_path").
-    id_col : str, optional
-        The name of the study area grid column containing each grid
-        cell ID. Defaults to "id".
+    study_area : str, optional
+        Tile ID string to process. This should be the ID of a GridSpec
+        analysis tile in the format "x143y56". If `geom` is provided,
+        this will have no effect.
+    geom : Geometry, optional
+        A datacube Geometry object defining a custom spatial extent of 
+        interest. If `geom` is provided, this will overrule any study
+        area ID passed to `study_area` and will be returned as-is.
 
     Returns
     -------
-    geom : datacube.utils.geometry.Geometry
-        A datacube Geometry object defining the spatial extent of
-        interest.
-    study_area : str
-        Returns either the previously provided `study_area` ID, or the
-        string "custom" if a custom Geometry object is passed in.
+    geom : datacube.utils.geometry.Geometry or odc.geo.geom.Geometry
+        A datacube Geometry object defining the spatial extent to process.
     """
-    # Load study area from tile grid if passed a string
-    if isinstance(study_area, (int, str)):
-        # Load study area
-        gridcell_gdf = gpd.read_file(config["Input files"]["grid_path"]).set_index(
-            id_col
+
+    def _id_to_tuple(id_str):
+        """
+        Converts a tile ID in form 'x143y56' to a ix, iy tuple so it
+        can be passed to a GridSpec (e.g. `gs[ix, iy]`)
+        """
+        try:
+            ix, iy = id_str.replace("x", "").split("y")
+            return int(ix), int(iy)
+        except ValueError:
+            raise ValueError(
+                "Supplied study area ID is not in the form 'x143y56'. If "
+                "you meant to provide an ID matching a feature from a "
+                "custom vector file, make sure you run the 'Optional: "
+                "load study area from vector file' notebook cell."
+            )
+
+    if study_area is None and geom is None:
+        raise ValueError(
+            "Please provide either a study area ID (using `study_area`), "
+            "or a datacube Geometry object (using `geom`)."
         )
-        gridcell_gdf.index = gridcell_gdf.index.astype(str)
-        gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
 
-        # Create geom as input for dc.load
-        geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=gridcell_gdf.crs)
-
-    # Otherwise, use supplied geom
-    elif isinstance(study_area, Geometry):
-        geom = study_area
-        study_area = "custom"
-
-    else:
-        raise Exception(
-            "Unsupported input type for `study_area`; please "
-            "provide either a string, integer or dataube Geometry "
-            "object."
+    # If custom geom is provided, verify it is a geometry
+    elif geom is not None and not isinstance(
+        geom, (odc.geo.geom.Geometry, datacube.utils.geometry._base.Geometry)
+    ):
+        raise ValueError(
+            "Unsupported input type for `geom`; please provide a "
+            "datacube Geometry object."
         )
 
-    return geom, study_area
+    # If no custom geom provided, load geom from GridSpec tile grid
+    elif geom is None:
+        # Create 32 km tile gridspec, using origin used by C3
+        # grid to preserve positive indices
+        gs_32km = GridSpec(
+            crs="EPSG:3577",
+            resolution=10,
+            tile_shape=(3200, 3200),
+            origin=xy_(-2688000, -5472000),
+        )
+
+        # Extract geom from geobox
+        gbox = gs_32km[_id_to_tuple(study_area)]
+        geom = gbox.extent
+
+    return geom
+
+
+# def extract_geom(study_area, config, id_col="id"):
+#     """
+#     Handles extraction of a datacube Geometry object from either a
+#     string or integer tile ID.
+
+#     If passed as a string or integer, a Geometry object will be
+#     extracted based on the extent of the relevant study area grid cell.
+#     If a Geometry object is passed in, it will be returned as-is.
+
+#     TODO: Refactor this func to use a Gridspec directly instead of a
+#     study area polygon dataset.
+
+#     Parameters
+#     ----------
+#     study_area : int, str or Geometry
+#         Study area polygon represented as either the ID of a tile grid
+#         cell, or a `datacube.utils.geometry.Geometry` object defining
+#         the spatial extent of interest.
+#     config : dict
+#         A loaded configuration file, used to obtain the path to the
+#         study area grid ("grid_path").
+#     id_col : str, optional
+#         The name of the study area grid column containing each grid
+#         cell ID. Defaults to "id".
+
+#     Returns
+#     -------
+#     geom : datacube.utils.geometry.Geometry
+#         A datacube Geometry object defining the spatial extent of
+#         interest.
+#     study_area : str
+#         Returns either the previously provided `study_area` ID, or the
+#         string "custom" if a custom Geometry object is passed in.
+#     """
+#     # Load study area from tile grid if passed a string
+#     if isinstance(study_area, (int, str)):
+#         # Load study area
+#         gridcell_gdf = gpd.read_file(config["Input files"]["grid_path"]).set_index(
+#             id_col
+#         )
+#         gridcell_gdf.index = gridcell_gdf.index.astype(str)
+#         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
+
+#         # Create geom as input for dc.load
+#         geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=gridcell_gdf.crs)
+
+#     # Otherwise, use supplied geom
+#     elif isinstance(study_area, Geometry):
+#         geom = study_area
+#         study_area = "custom"
+
+#     else:
+#         raise Exception(
+#             "Unsupported input type for `study_area`; please "
+#             "provide either a string, integer or dataube Geometry "
+#             "object."
+#         )
+
+#     return geom, study_area
 
 
 def load_data(
     dc,
     study_area,
+    geom=None,
     time_range=("2019", "2021"),
     resolution=10,
     crs="EPSG:3577",
@@ -112,10 +193,16 @@ def load_data(
     ----------
     dc : Datacube
         A datacube instance connected to a database.
-    study_area : int, str or Geometry
-        Study area polygon represented as either the ID of a tile grid
-        cell, or a `datacube.utils.geometry.Geometry` object defining
-        the spatial extent of interest.
+    study_area : str
+        ID or name of the study area to process. If no `geom` is
+        provided (the default), this should be the ID of a gridspec
+        analysis tile in the format "x143y56". If `geom` is provided,
+        this name will be used for logs and output files only.
+    geom : Geometry, optional
+        An optional datacube Geometry object defining the spatial extent
+        of interest. If `geom` is provided, this will overrule any study
+        area ID passed to `study_area` (`study_area` will be used only
+        to name logs and output files).
     time_range : tuple, optional
         A tuple containing the start and end date for the time range of
         interest, in the format (start_date, end_date). The default is
@@ -159,8 +246,7 @@ def load_data(
     catalog = catalog_from_file(config["Virtual product"]["virtual_product_path"])
 
     # Load study area geometry object, and project to match `crs`
-    geom, study_area = extract_geom(study_area, config)
-    geom = geom.to_crs(crs)
+    geom = extract_geom(study_area, geom).to_crs(crs)
 
     # Set up query params
     query_params = {
@@ -172,7 +258,7 @@ def load_data(
     load_params = {
         "resolution": (-resolution, resolution),
         "output_crs": crs,
-        "dask_chunks": {"time": 1, "x": 2048, "y": 2048},
+        "dask_chunks": {"time": 1, "x": 1600, "y": 1600},
         "resampling": {
             "*": "cubic",
             "oa_nbart_contiguity": "nearest",
