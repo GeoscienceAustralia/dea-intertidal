@@ -59,7 +59,7 @@ def extract_geom(study_area, config, id_col="id"):
     Returns
     -------
     geom : datacube.utils.geometry.Geometry
-        A datacube Geometry object defining the spatial extent of 
+        A datacube Geometry object defining the spatial extent of
         interest.
     study_area : str
         Returns either the previously provided `study_area` ID, or the
@@ -114,7 +114,7 @@ def load_data(
         A datacube instance connected to a database.
     study_area : int, str or Geometry
         Study area polygon represented as either the ID of a tile grid
-        cell, or a `datacube.utils.geometry.Geometry` object defining 
+        cell, or a `datacube.utils.geometry.Geometry` object defining
         the spatial extent of interest.
     time_range : tuple, optional
         A tuple containing the start and end date for the time range of
@@ -237,6 +237,52 @@ def load_data(
     return satellite_ds
 
 
+def load_topobathy(
+    dc,
+    satellite_ds,
+    product="ga_multi_ausbath_0",
+    resampling="bilinear",
+    mask_invalid=True,
+):
+    """
+    Loads a topo-bathymetric DEM for the extents of the loaded satellite
+    data. This is used as a coarse mask to constrain the analysis to the
+    coastal zone, improving run time and reducing clear false positives.
+
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    satellite_ds : ndarray
+        The loaded satellite data, used to obtain the spatial extents
+        of the data.
+    product : str, optional
+        The name of the topo-bathymetric DEM product to load from the
+        datacube. Defaults to "ga_multi_ausbath_0".
+    resampling : str, optional
+        The resampling method to use, by default "bilinear".
+    mask_invalid : bool, optional
+        Whether to mask invalid/nodata values in the array by setting
+        them to NaN, by default True.
+
+    Returns
+    -------
+    topobathy_ds : xarray.Dataset
+        The loaded topo-bathymetric DEM.
+    """
+    from datacube.utils.masking import mask_invalid_data
+
+    topobathy_ds = dc.load(
+        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
+    ).squeeze("time")
+
+    # Mask invalid data
+    if mask_invalid:
+        topobathy_ds = mask_invalid_data(topobathy_ds)
+
+    return topobathy_ds
+
+
 def ds_to_flat(
     satellite_ds,
     ndwi_thresh=0.0,
@@ -244,6 +290,7 @@ def ds_to_flat(
     min_freq=0.01,
     max_freq=0.99,
     min_correlation=0.2,
+    valid_mask=None,
 ):
     """
     Flattens a three-dimensional array (x, y, time) to a two-dimensional
@@ -273,6 +320,12 @@ def ds_to_flat(
         Minimum correlation between water index values and tide height
         required for a pixel to be included in the output. Default is
         0.2.
+    valid_mask : xr.DataArray, optional
+        A boolean mask used to optionally constrain the analysis area,
+        with the same spatial dimensions as `satellite_ds`. For example,
+        this could be a mask generated from a topo-bathy DEM, used to
+        limit the analysis to likely intertidal pixels. Default is None,
+        which will not apply a mask.
 
     Returns
     -------
@@ -289,8 +342,13 @@ def ds_to_flat(
         correlation thresholds.
     """
 
-    # Flatten satellite dataset by stacking "y" and "x" dimensions
-    flat_ds = satellite_ds.stack(z=("y", "x"))
+    # If an overall valid data mask is provided, apply to the data first
+    if valid_mask is not None:
+        satellite_ds = satellite_ds.where(valid_mask)
+
+    # Flatten satellite dataset by stacking "y" and "x" dimensions, then
+    # drop any pixels that are empty across all-of-time
+    flat_ds = satellite_ds.stack(z=("y", "x")).dropna(dim="time", how="all")
 
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
@@ -493,8 +551,9 @@ def pixel_rolling_median(
 def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
     """
     Calculates an estimate of intertidal elevation based on satellite
-    imagery and tide data. Elevation is calculated by identifying the
-    max tide per pixel where a rolling median of NDWI == land.
+    imagery and tide data. Elevation is modelled by identifying the
+    tide height at which a pixel transitions from dry to wet; calculated
+    here as the maximum tide at which a rolling median of NDWI == land.
 
     Parameters
     ----------
@@ -623,7 +682,7 @@ def pixel_uncertainty(
     if method == "mad":
         # Calculate median of absolute deviations
         # TODO: Account for large MAD on pixels with very few
-        # misclassified points. Set < X misclassified points to 0 MAD?
+        # misclassified points. Set < n misclassified points to 0 MAD?
         mad = abs(misclassified_ds.tide_m - flat_dem.elevation).median(dim="time")
 
         # Calculate low and high bounds
@@ -720,6 +779,7 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
 
 def elevation(
     satellite_ds,
+    valid_mask=None,
     ndwi_thresh=0.1,
     min_freq=0.01,
     max_freq=0.99,
@@ -742,6 +802,12 @@ def elevation(
     satellite_ds : xarray.Dataset
         A satellite data time series containing an "ndwi" water index
         variable.
+    valid_mask : xr.DataArray, optional
+        A boolean mask used to optionally constrain the analysis area,
+        with the same spatial dimensions as `satellite_ds`. For example,
+        this could be a mask generated from a topo-bathy DEM, used to
+        limit the analysis to likely intertidal pixels. Default is None,
+        which will not apply a mask.
     ndwi_thresh : float, optional
         A threshold value for the normalized difference water index
         (NDWI) above which pixels are considered water, by default 0.1.
@@ -763,8 +829,8 @@ def elevation(
         which uses built-in methods from `concurrent.futures` to
         determine workers.
     tide_model : str, optional
-        The tide model used to model tides, as supported by the `pyTMD`
-        Python package. Options include:
+        The tide model or a list of models used to model tides, as
+        supported by the `pyTMD` Python package. Options include:
         - "FES2014" (default; pre-configured on DEA Sandbox)
         - "TPXO8-atlas"
         - "TPXO9-atlas-v5"
@@ -812,7 +878,11 @@ def elevation(
     # time) satellite dataset
     log.info(f"{log_prefix}Modelling tide heights for each pixel")
     tide_m, _ = pixel_tides(
-        satellite_ds, resample=True, model=tide_model, directory=tide_model_dir
+        satellite_ds,
+        resample=True,
+        model=tide_model,
+        directory=tide_model_dir,
+        cutoff=np.inf,
     )
 
     # Set tide array pixels to nodata if the satellite data array pixels
@@ -833,11 +903,14 @@ def elevation(
     log.info(
         f"{log_prefix}Flattening satellite data array and filtering to intertidal candidate pixels"
     )
+    if valid_mask is not None:
+        log.info(f"{log_prefix}Applying valid data mask to constrain study area")
     flat_ds, freq, corr, intertidal_candidates = ds_to_flat(
         satellite_ds,
         min_freq=min_freq,
         max_freq=max_freq,
         min_correlation=min_correlation,
+        valid_mask=valid_mask,
     )
 
     # Calculate per-pixel rolling median.
@@ -972,10 +1045,13 @@ def elevation(
 @click.option(
     "--tide_model",
     type=str,
-    default="FES2014",
+    multiple=True,
+    default=["FES2014"],
     help="The tide model used to model tides, as supported by the "
     "`pyTMD` Python package. Options include 'FES2014' (default), "
-    "'TPXO8-atlas' and 'TPXO9-atlas-v5'.",
+    "'TPXO8-atlas' and 'TPXO9-atlas-v5'. This parameter can be "
+    "repeated to request multiple models, e.g.: "
+    "`--tide_model FES2014 --tide_model FES2012`.",
 )
 @click.option(
     "--tide_model_dir",
@@ -1081,10 +1157,16 @@ def intertidal_cli(
         satellite_ds.load()
         client.close()
 
+        # Load data from GA's Australian Bathymetry and Topography Grid 2009
+        topobathy_ds = load_topobathy(
+            dc, satellite_ds, product="ga_multi_ausbath_0", resampling="bilinear"
+        )
+
         # Calculate elevation
         log.info(f"Study area {study_area}: Calculating Intertidal Elevation")
         ds, ds_aux, tide_m = elevation(
             satellite_ds,
+            valid_mask=topobathy_ds.height_depth > -20,
             ndwi_thresh=ndwi_thresh,
             min_freq=min_freq,
             max_freq=max_freq,

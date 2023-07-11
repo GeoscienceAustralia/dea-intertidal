@@ -71,6 +71,7 @@ def exposure(
         times=time_range,
         model=tide_model,
         directory=tide_model_dir,
+        cutoff=np.inf,
     )
 
     # Calculate the tide-height difference between the elevation value and

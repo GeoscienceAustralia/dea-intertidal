@@ -23,7 +23,7 @@ REQUIRED = [
     "pandas",
     "pygeos",
     "pyproj",
-    "pyTMD",
+    "pyTMD>=2.0.0",
     "pytz",
     "rasterio",
     "setuptools-scm",
