@@ -181,7 +181,7 @@ products:
                      formula: nbart_swir_2
                      dtype: float32
                  swir2: 
-                     formula: nbart_swir_2
+                     formula: nbart_swir_3
                      dtype: float32
                  cloud_mask: oa_s2cloudless_mask
                  contiguity: oa_nbart_contiguity

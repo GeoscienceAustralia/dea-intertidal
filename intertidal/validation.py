@@ -1,4 +1,5 @@
 import numpy as np
+from odc.algo import mask_cleanup
 
 
 def eval_metrics(x, y, round=3, all_regress=False):
@@ -78,50 +79,47 @@ def map_raster(
     vmax=None,
     display_map=True,
     return_map=False,
-    backend="folium",
 ):
     """
     Plot raster data over an interactive map.
     """
+    import folium
     import odc.geo.xr
 
-    if backend == "folium":
+    # Turn item into a list if it isn't already
+    if not isinstance(ds, list):
+        ds = [ds]
 
-        # Create folium map
-        import folium
+    # Create folium map
+    m = folium.Map(control=True)
 
-        m = folium.Map()
+    # Add satellite imagery basemap
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Esri Satellite",
+        overlay=False,
+        control=True,
+    ).add_to(m)
 
-    elif backend == "ipyleaflet":
-
-        # Create ipyleaflet map
-        import ipyleaflet
-
-        m = ipyleaflet.Map(name="map")
-        lc = ipyleaflet.LayersControl(position="topright")
-        m.add_control(lc)
-
-    # If ds is a list, loop through all datasets and add to map
-    if isinstance(ds, list):
-
-        for i, ds_i in enumerate(ds):
-
-            # Reproject data to epsg:3857 and add to map
-            ds_i.odc.reproject("epsg:3857", dst_nodata=np.nan).odc.add_to(
-                m, opacity=1.0, name=f"layer {i + 1}", vmin=vmin, vmax=vmax
-            )
-            bounds = ds_i.odc.map_bounds()
-
-    # Else add single layer to the map
-    else:
-
-        # Reproject data to epsg:3857 and add to map
-        ds.odc.reproject("epsg:3857", dst_nodata=np.nan).odc.add_to(
-            m, opacity=1.0, name="layer 1", vmin=vmin, vmax=vmax
+    # Loop through each item in list
+    for i, ds_i in enumerate(ds):
+        # Reproject data to EPSG:3857 and add to map
+        layer = ds_i.odc.reproject("epsg:3857", dst_nodata=dst_nodata).odc.add_to(
+            m, opacity=1.0, vmin=vmin, vmax=vmax
         )
-        bounds = ds.odc.map_bounds()
 
-    # Snap map to data bounds
+        # Use name from dataset if available, otherwise "layer 1")
+        if ds_i.name is not None:
+            layer.layer_name = ds_i.name
+        else:
+            layer.layer_name = f"layer {i + 1}"
+
+    # Add a layer control
+    folium.LayerControl().add_to(m)
+
+    # Snap map to bounds of final dataset
+    bounds = ds_i.odc.map_bounds()
     m.fit_bounds(bounds)
 
     # Return map if requested
@@ -146,7 +144,7 @@ def preprocess_validation(modelled_ds, validation_ds, clean_validation=None):
     
     # Optionally clean validation dataset using mask_filters (e.g. `[('dilation', 1)]`)
     if clean_validation is not None:
-        validation_nodata = mask_cleanup(validation_nodata, mask_filters=clean_validation)
+        modelled_nodata = mask_cleanup(modelled_nodata, mask_filters=clean_validation)
         
     # Export 1D modelled and validation data for valid data area
     invalid_data = modelled_nodata | validation_nodata
