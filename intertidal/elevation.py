@@ -14,16 +14,23 @@ import click
 import datacube
 import odc.geo.xr
 from odc.geo.geom import Geometry
+from odc.geo.geobox import GeoBox
 from odc.geo.gridspec import GridSpec
 from odc.geo.types import xy_
-from odc.algo import mask_cleanup, xr_quantile
+from odc.algo import (
+    mask_cleanup,
+    xr_quantile,
+    enum_to_bool,
+    keep_good_only,
+    erase_bad,
+    to_f32,
+)
 from datacube.utils.aws import configure_s3_access
 
 from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.utils import (
-    load_config,
     configure_logging,
     round_date_strings,
     export_intertidal_rasters,
@@ -33,17 +40,25 @@ from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
 
 
-def extract_geom(study_area=None, geom=None):
+def extract_geobox(
+    study_area=None,
+    geom=None,
+    resolution=10,
+    crs="EPSG:3577",
+    tile_width=32000,
+    gridspec_origin_x=-2688000,
+    gridspec_origin_y=-5472000,
+):
     """
-    Handles extraction of a datacube Geometry object from either a
-    GridSpec tile ID (e.g. 'x143y56'), or a provided Geometry object.
+    Handles extraction of a GeoBox pixel grid from either a GridSpec
+    tile ID (in the form 'x143y56'), or a provided Geometry object.
 
-    If passed as a tile ID string via `study_area`, a Geometry object 
-    will be extracted based on relevant GridSpec tile. If a custom 
-    Geometry object is passed in via `geom`, it will be returned as-is.
-    
-    (One of either option is required; `geom` will override `study_area`
-    if provided).
+    If a tile ID string is passed to `study_area`, a GeoBox will be
+    extracted based on relevant GridSpec tile. If a custom Geometry
+    object is passed using `geom`, it will be converted to a GeoBox.
+
+    (Either `study_area` or `geom` is required; `geom` will override
+    `study_area` if provided).
 
     Parameters
     ----------
@@ -52,14 +67,30 @@ def extract_geom(study_area=None, geom=None):
         analysis tile in the format "x143y56". If `geom` is provided,
         this will have no effect.
     geom : Geometry, optional
-        A datacube Geometry object defining a custom spatial extent of 
+        A datacube Geometry object defining a custom spatial extent of
         interest. If `geom` is provided, this will overrule any study
         area ID passed to `study_area` and will be returned as-is.
+    resolution : int, optional
+        The desired resolution of the GeoBox grid, in units of the
+        coordinate reference system (CRS). Defaults to 10.
+    crs : str, optional
+        The coordinate reference system (CRS) to use for the GeoBox.
+        Defaults to "EPSG:3577".
+    tile_width : int, optional
+        The width of a GridSpec tile, in units of the coordinate
+        reference system (CRS). Defaults to 32000 metres.
+    gridspec_origin_x : int, optional
+        The x-coordinate of the origin (bottom-left corner) of the
+        GridSpec tile grid. Defaults to -2688000.
+    gridspec_origin_y : int, optional
+        The y-coordinate of the origin (bottom-left corner) of the
+        GridSpec tile grid. Defaults to -5472000.
 
     Returns
     -------
-    geom : datacube.utils.geometry.Geometry or odc.geo.geom.Geometry
-        A datacube Geometry object defining the spatial extent to process.
+    geobox : odc.geo.geobox.GeoBox
+        A GeoBox defining the pixel grid to use to load data (defining
+        the CRS, resolution, shape and extent of the study area).
     """
 
     def _id_to_tuple(id_str):
@@ -78,6 +109,10 @@ def extract_geom(study_area=None, geom=None):
                 "load study area from vector file' notebook cell."
             )
 
+    # List of valid input geometry types (from `odc-geo` or `datacube-core`)
+    GEOM_TYPES = (odc.geo.geom.Geometry, datacube.utils.geometry._base.Geometry)
+
+    # Either `study_area` or `geom` must be provided
     if study_area is None and geom is None:
         raise ValueError(
             "Please provide either a study area ID (using `study_area`), "
@@ -85,91 +120,96 @@ def extract_geom(study_area=None, geom=None):
         )
 
     # If custom geom is provided, verify it is a geometry
-    elif geom is not None and not isinstance(
-        geom, (odc.geo.geom.Geometry, datacube.utils.geometry._base.Geometry)
-    ):
+    elif geom is not None and not isinstance(geom, GEOM_TYPES):
         raise ValueError(
             "Unsupported input type for `geom`; please provide a "
             "datacube Geometry object."
         )
 
-    # If no custom geom provided, load geom from GridSpec tile grid
+    # Otherwise, extract GeoBox from geometry
+    elif geom is not None and isinstance(geom, GEOM_TYPES):
+        geobox = GeoBox.from_geopolygon(geom, crs=crs, resolution=resolution)
+
+    # If no custom geom provided, load tile from GridSpec tile grid
     elif geom is None:
-        # Create 32 km tile gridspec, using origin used by C3
-        # grid to preserve positive indices
-        gs_32km = GridSpec(
-            crs="EPSG:3577",
-            resolution=10,
-            tile_shape=(3200, 3200),
-            origin=xy_(-2688000, -5472000),
+        # Verify that resolution fits evenly inside tile width
+        if tile_width % resolution != 0:
+            raise ValueError(
+                "Ensure that `resolution` divides into `tile_width` evenly."
+            )
+
+        # Calculate tile pixels
+        n_pixels = tile_width / resolution
+
+        # Create GridSpec tile grid
+        gs = GridSpec(
+            crs=crs,
+            resolution=resolution,
+            tile_shape=(n_pixels, n_pixels),
+            origin=xy_(gridspec_origin_x, gridspec_origin_y),
         )
 
-        # Extract geom from geobox
-        gbox = gs_32km[_id_to_tuple(study_area)]
-        geom = gbox.extent
+        # Extract GeoBox from GridSpec
+        geobox = gs[_id_to_tuple(study_area)]
 
-    return geom
+    return geobox
 
 
-# def extract_geom(study_area, config, id_col="id"):
-#     """
-#     Handles extraction of a datacube Geometry object from either a
-#     string or integer tile ID.
+def glint_angle(solar_azimuth, solar_zenith, view_azimuth, view_zenith):
+    """
+    Calculates glint angles for each pixel in a satellite image based
+    on the relationship between the solar and sensor zenith and azimuth
+    viewing angles at the moment the image was acquired.
 
-#     If passed as a string or integer, a Geometry object will be
-#     extracted based on the extent of the relevant study area grid cell.
-#     If a Geometry object is passed in, it will be returned as-is.
+    Glint angle is considered a predictor of sunglint over water; small
+    glint angles (e.g. < 20 degrees) are associated with a high
+    probability of sunglint due to the viewing angle of the sensor
+    being aligned with specular reflectance of the sun from the water's
+    surface.
 
-#     TODO: Refactor this func to use a Gridspec directly instead of a
-#     study area polygon dataset.
+    Based on code from https://towardsdatascience.com/how-to-implement-
+    sunglint-detection-for-sentinel-2-images-in-python-using-metadata-
+    info-155e683d50
 
-#     Parameters
-#     ----------
-#     study_area : int, str or Geometry
-#         Study area polygon represented as either the ID of a tile grid
-#         cell, or a `datacube.utils.geometry.Geometry` object defining
-#         the spatial extent of interest.
-#     config : dict
-#         A loaded configuration file, used to obtain the path to the
-#         study area grid ("grid_path").
-#     id_col : str, optional
-#         The name of the study area grid column containing each grid
-#         cell ID. Defaults to "id".
+    Parameters
+    ----------
+    solar_azimuth : array-like
+        Array of solar azimuth angles in degrees. In DEA Collection 3,
+        this is contained in the "oa_solar_azimuth" band.
+    solar_zenith : array-like
+        Array of solar zenith angles in degrees. In DEA Collection 3,
+        this is contained in the "oa_solar_zenith" band.
+    view_azimuth : array-like
+        Array of sensor/viewing azimuth angles in degrees. In DEA
+        Collection 3, this is contained in the "oa_satellite_azimuth"
+        band.
+    view_zenith : array-like
+        Array of sensor/viewing zenith angles in degrees. In DEA
+        Collection 3, this is contained in the "oa_satellite_view" band.
 
-#     Returns
-#     -------
-#     geom : datacube.utils.geometry.Geometry
-#         A datacube Geometry object defining the spatial extent of
-#         interest.
-#     study_area : str
-#         Returns either the previously provided `study_area` ID, or the
-#         string "custom" if a custom Geometry object is passed in.
-#     """
-#     # Load study area from tile grid if passed a string
-#     if isinstance(study_area, (int, str)):
-#         # Load study area
-#         gridcell_gdf = gpd.read_file(config["Input files"]["grid_path"]).set_index(
-#             id_col
-#         )
-#         gridcell_gdf.index = gridcell_gdf.index.astype(str)
-#         gridcell_gdf = gridcell_gdf.loc[[str(study_area)]]
+    Returns
+    -------
+    glint_array : numpy.ndarray
+        Array of glint angles in degrees. Small values indicate higher
+        probabilities of sunglint.
+    """
 
-#         # Create geom as input for dc.load
-#         geom = Geometry(geom=gridcell_gdf.iloc[0].geometry, crs=gridcell_gdf.crs)
+    # Convert angle arrays to radians
+    solar_zenith_rad = np.deg2rad(solar_zenith)
+    solar_azimuth_rad = np.deg2rad(solar_azimuth)
+    view_zenith_rad = np.deg2rad(view_zenith)
+    view_azimuth_rad = np.deg2rad(view_azimuth)
 
-#     # Otherwise, use supplied geom
-#     elif isinstance(study_area, Geometry):
-#         geom = study_area
-#         study_area = "custom"
+    # Calculate sunglint angle
+    phi = solar_azimuth_rad - view_azimuth_rad
+    glint_angle = np.cos(view_zenith_rad) * np.cos(solar_zenith_rad) - np.sin(
+        view_zenith_rad
+    ) * np.sin(solar_zenith_rad) * np.cos(phi)
 
-#     else:
-#         raise Exception(
-#             "Unsupported input type for `study_area`; please "
-#             "provide either a string, integer or dataube Geometry "
-#             "object."
-#         )
+    # Convert to degrees
+    glint_array = np.degrees(np.arccos(glint_angle))
 
-#     return geom, study_area
+    return glint_array
 
 
 def load_data(
@@ -179,89 +219,67 @@ def load_data(
     time_range=("2019", "2021"),
     resolution=10,
     crs="EPSG:3577",
-    s2_prod="s2_nbart_ndwi",
-    ls_prod="ls_nbart_ndwi",
-    config_path="configs/dea_intertidal_config.yaml",
+    include_s2=True,
+    include_ls=True,
     filter_gqa=True,
+    ndwi=True,
+    mask_sunglint=None,
     log=None,
 ):
-    """
-    Load cloud-masked Landsat and Sentinel-2 NDWI data for a given
-    spatial and temporal extent.
+    # Set spectral bands to load
+    s2_spectral_bands = [
+        "nbart_blue",
+        "nbart_green",
+        "nbart_red",
+        "nbart_red_edge_1",
+        "nbart_red_edge_2",
+        "nbart_red_edge_3",
+        "nbart_nir_1",
+        "nbart_nir_2",
+        "nbart_swir_2",
+        "nbart_swir_3",
+    ]
+    ls_spectral_bands = [
+        "nbart_blue",
+        "nbart_green",
+        "nbart_red",
+        "nbart_nir",
+        "nbart_swir_1",
+        "nbart_swir_2",
+    ]
 
-    Parameters
-    ----------
-    dc : Datacube
-        A datacube instance connected to a database.
-    study_area : str
-        ID or name of the study area to process. If no `geom` is
-        provided (the default), this should be the ID of a gridspec
-        analysis tile in the format "x143y56". If `geom` is provided,
-        this name will be used for logs and output files only.
-    geom : Geometry, optional
-        An optional datacube Geometry object defining the spatial extent
-        of interest. If `geom` is provided, this will overrule any study
-        area ID passed to `study_area` (`study_area` will be used only
-        to name logs and output files).
-    time_range : tuple, optional
-        A tuple containing the start and end date for the time range of
-        interest, in the format (start_date, end_date). The default is
-        ("2019", "2021").
-    resolution : int or float, optional
-        The spatial resolution (in metres) to load data at. The default
-        is 10.
-    crs : str, optional
-        The coordinate reference system (CRS) to project data into. The
-        default is Australian Albers "EPSG:3577".
-    s2_prod : str, optional
-        The name of the virtual product to use for Sentinel-2 data. The
-        default is "s2_nbart_ndwi".
-    ls_prod : str, optional
-        The name of the virtual product to use for Landsat data. The
-        default is "ls_nbart_ndwi".
-    config_path : str, optional
-        Path to the configuration file, used to obtain the virtual
-        products config to load ("virtual_product_path").
-        Defaults to "configs/dea_intertidal_config.yaml".
-    filter_gqa : bool, optional
-        Whether or not to filter Sentinel-2 data using the GQA filter.
-        Defaults to True.
+    # Set masking bands to load
+    s2_masking_bands = ["oa_s2cloudless_mask", "oa_nbart_contiguity"]
+    ls_masking_bands = ["oa_fmask", "oa_nbart_contiguity"]
 
-    Returns
-    -------
-    satellite_ds : xarray.Dataset
-        An xarray dataset containing the loaded Landsat and Sentinel-2
-        data, converted to NDWI with cloud masking applied.
-    """
+    # Set sunglint bands to load
+    if mask_sunglint is not None:
+        sunglint_bands = [
+            "oa_solar_zenith",
+            "oa_solar_azimuth",
+            "oa_satellite_azimuth",
+            "oa_satellite_view",
+        ]
+    else:
+        sunglint_bands = []
 
-    from datacube.virtual import catalog_from_file
-    from datacube.utils.masking import mask_invalid_data
-    from datacube.utils.geometry import GeoBox, Geometry
-
-    if log is None:
-        log = configure_logging()
-
-    # Load product and virtual product catalogue configs
-    config = load_config(config_path)
-    catalog = catalog_from_file(config["Virtual product"]["virtual_product_path"])
-
-    # Load study area geometry object, and project to match `crs`
-    geom = extract_geom(study_area, geom).to_crs(crs)
+    # Load study area, defined as a GeoBox pixel grid
+    geobox = extract_geobox(
+        study_area=study_area, geom=geom, resolution=resolution, crs=crs
+    )
 
     # Set up query params
     query_params = {
-        "geopolygon": geom,
+        "like": geobox.compat,  # Load into the exact GeoBox pixel grid
         "time": time_range,
     }
 
     # Set up load params
     load_params = {
-        "resolution": (-resolution, resolution),
-        "output_crs": crs,
-        "dask_chunks": {"time": 1, "x": 1600, "y": 1600},
+        "group_by": "solar_day",
+        "dask_chunks": {"x": 1600, "y": 1600},
         "resampling": {
             "*": "cubic",
-            "oa_nbart_contiguity": "nearest",
             "oa_fmask": "nearest",
             "oa_s2cloudless_mask": "nearest",
         },
@@ -272,53 +290,131 @@ def load_data(
     if filter_gqa:
         query_params["gqa_iterative_mean_xy"] = (0, 1)
 
-    # Output list
+    # Output data
     data_list = []
 
     # If Sentinel-2 data is requested
-    if s2_prod is not None:
-        # Load Sentinel-2 data
-        product = catalog[s2_prod]
-        s2_ds = product.load(dc, **query_params, **load_params)
-
-        # Apply cloud mask and contiguity mask
-        s2_ds_masked = s2_ds.where(s2_ds.cloud_mask == 1 & s2_ds.contiguity)
-        data_list.append(s2_ds_masked)
-
-    # If Landsat data is requested
-    if ls_prod is not None:
-        # Load Landsat data
-        product = catalog[ls_prod]
-        ls_ds = product.load(dc, **query_params, **load_params)
-
-        # Clean cloud mask by applying morphological closing to all
-        # valid (non cloud, shadow or nodata) pixels. This removes
-        # long, narrow features like false positives over bright beaches.
-        good_data_cleaned = mask_cleanup(
-            mask=ls_ds.cloud_mask.isin([1, 4, 5]),
-            mask_filters=[("closing", 5)],
+    if include_s2:
+        ds_s2 = dc.load(
+            product=["ga_s2am_ard_3", "ga_s2bm_ard_3"],
+            measurements=s2_spectral_bands + s2_masking_bands + sunglint_bands,
+            s2cloudless_cloud=(0, 90),
+            **query_params,
+            **load_params,
         )
 
-        # Dilate cloud and shadow. To ensure that nodata areas (e.g.
-        # Landsat 7 SLC off stripes) are not also dilated, only dilate
-        # mask pixels (e.g. values 0 in `good_data_cleaned`) that are
-        # outside of the original nodata pixels (e.g. not 0 in
-        # `ls_ds.cloud_mask`)
-        good_data_mask = mask_cleanup(
-            mask=(good_data_cleaned == 0) & (ls_ds.cloud_mask != 0),
+        # Create cloud mask, treating nodata and clouds as bad pixels
+        cloud_mask = enum_to_bool(
+            mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
+        )
+
+        # Identify non-contiguous pixels
+        noncontiguous_mask = enum_to_bool(ds_s2.oa_nbart_contiguity, categories=[False])
+
+        # Set cloud mask and non-contiguous pixels to nodata
+        combined_mask = cloud_mask | noncontiguous_mask
+        ds_s2 = erase_bad(
+            x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
+        )
+
+        # Optionally, apply sunglint mask
+        if mask_sunglint is not None:
+            # Calculate glint angle
+            glint_array = glint_angle(
+                solar_azimuth=ds_s2.oa_solar_azimuth,
+                solar_zenith=ds_s2.oa_solar_zenith,
+                view_azimuth=ds_s2.oa_satellite_azimuth,
+                view_zenith=ds_s2.oa_satellite_view,
+            )
+
+            # Apply glint angle threshold and set affected pixels to nodata
+            glint_mask = glint_array > mask_sunglint
+            ds_s2 = keep_good_only(x=ds_s2[s2_spectral_bands], where=glint_mask)
+
+        # Convert to float, setting all nodata pixels to `np.nan`
+        # (required for band index calculation)
+        ds_s2 = to_f32(ds_s2)
+
+        # Convert to NDWI
+        if ndwi:
+            ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
+                ds_s2.nbart_green + ds_s2.nbart_nir_1
+            )
+            data_list.append(ds_s2[["ndwi"]])
+        else:
+            data_list.append(ds_s2)
+
+    # If Landsat data is requested
+    if include_ls:
+        ds_ls = dc.load(
+            product=[
+                "ga_ls5t_ard_3",
+                "ga_ls7e_ard_3",
+                "ga_ls8c_ard_3",
+                "ga_ls9c_ard_3",
+            ],
+            measurements=ls_spectral_bands + ls_masking_bands + sunglint_bands,
+            cloud_cover=(0, 90),
+            **query_params,
+            **load_params,
+        )
+
+        # First, we identify all bad pixels: nodata, cloud and shadow.
+        # We then apply morphological opening to clean up narrow false
+        # positive clouds (e.g. bright sandy beaches). By including
+        # nodata, we make sure that small areas of cloud next to Landsat
+        # 7 SLC-off nodata gaps are not accidently removed (at the cost
+        # of not being able to clean false positives next to SLC-off gaps)
+        bad_data = enum_to_bool(
+            ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
+        )
+        bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
+
+        # We now dilate ONLY pixels in our cleaned bad data dask that
+        # are outside of our iriginal nodata pixels. This ensures that
+        # Landsat 7 SLC-off nodata stripes are not also dilated.
+        nodata_mask = enum_to_bool(ds_ls.oa_fmask, categories=["nodata"])
+        bad_data_mask = mask_cleanup(
+            mask=bad_data_cleaned & ~nodata_mask,
             mask_filters=[("dilation", 5)],
         )
 
-        # Apply cloud mask and contiguity mask
-        ls_ds_masked = ls_ds.where(~good_data_mask & ls_ds.contiguity)
-        data_list.append(ls_ds_masked)
+        # Identify non-contiguous pixels
+        noncontiguous_mask = enum_to_bool(ds_ls.oa_nbart_contiguity, categories=[False])
+
+        # Set cleaned bad pixels and non-contiguous pixels to nodata
+        combined_mask = bad_data_mask | noncontiguous_mask
+        ds_ls = erase_bad(ds_ls[ls_spectral_bands + sunglint_bands], combined_mask)
+
+        # Optionally, apply sunglint mask
+        if mask_sunglint is not None:
+            # Calculate glint angle
+            glint_array = glint_angle(
+                solar_azimuth=ds_ls.oa_solar_azimuth,
+                solar_zenith=ds_ls.oa_solar_zenith,
+                view_azimuth=ds_ls.oa_satellite_azimuth,
+                view_zenith=ds_ls.oa_satellite_view,
+            )
+
+            # Apply glint angle threshold and set affected pixels to nodata
+            glint_mask = glint_array > mask_sunglint
+            ds_ls = keep_good_only(x=ds_ls[ls_spectral_bands], where=glint_mask)
+
+        # Convert to float, setting all nodata pixels to `np.nan`
+        # (required for band index calculation)
+        ds_ls = to_f32(ds_ls)
+
+        # Convert to NDWI
+        if ndwi:
+            ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
+                ds_ls.nbart_green + ds_ls.nbart_nir
+            )
+            data_list.append(ds_ls[["ndwi"]])
+        else:
+            data_list.append(ds_ls)
 
     # Combine into a single ds, sort and drop no longer needed bands
-    satellite_ds = (
-        xr.concat(data_list, dim="time")
-        .sortby("time")
-        .drop(["cloud_mask", "contiguity"])
-    )
+    satellite_ds = xr.concat(data_list, dim="time").sortby("time")
 
     return satellite_ds
 
@@ -875,7 +971,6 @@ def elevation(
     max_workers=None,
     tide_model="FES2014",
     tide_model_dir="/var/share/tide_models",
-    config_path="configs/dea_intertidal_config.yaml",
     study_area=None,
     log=None,
 ):
@@ -924,9 +1019,6 @@ def elevation(
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
         directory structure, refer to `dea_tools.coastal.model_tides`.
-    config_path : str, optional
-        Path to the configuration file, by default
-        "configs/dea_intertidal_config.yaml".
     study_area : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
@@ -1046,21 +1138,11 @@ def elevation(
 
 @click.command()
 @click.option(
-    "--config_path",
-    type=str,
-    required=True,
-    help="Path to the YAML config file defining inputs to "
-    "use for this analysis. These are typically located in "
-    "the `dea-intertidal/configs/` directory.",
-)
-@click.option(
     "--study_area",
     type=str,
     required=True,
-    help="A string providing a unique ID of an analysis "
-    "gridcell that will be used to run the analysis. This "
-    'should match a row in the "id" column of the provided '
-    "analysis gridcell vector file.",
+    help="A string providing a GridSpec tile ID (e.g. in the form "
+    "'x143y56') to run the analysis on.",
 )
 @click.option(
     "--start_date",
@@ -1190,7 +1272,6 @@ def elevation(
     "True; can be set to False by passing `--no-aws_unsigned`.",
 )
 def intertidal_cli(
-    config_path,
     study_area,
     start_date,
     end_date,
@@ -1233,11 +1314,10 @@ def intertidal_cli(
             time_range=(start_date, end_date),
             resolution=resolution,
             crs="EPSG:3577",
-            s2_prod="s2_nbart_ndwi",
-            ls_prod="ls_nbart_ndwi",
+            include_s2=True,
+            include_ls=True,
             filter_gqa=False,
-            config_path=config_path,
-        )[["ndwi"]]
+        )
 
         # Load data and close dask client
         satellite_ds.load()
@@ -1261,7 +1341,6 @@ def intertidal_cli(
             window_prop_tide=window_prop_tide,
             tide_model=tide_model,
             tide_model_dir=tide_model_dir,
-            config_path=config_path,
             study_area=study_area,
             log=log,
         )
