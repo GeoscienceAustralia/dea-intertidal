@@ -25,17 +25,6 @@ def configure_logging(name: str = "DEA Intertidal") -> logging.Logger:
     return logger
 
 
-def load_config(config_path: str) -> dict:
-    """
-    Loads a YAML config file and returns data as a nested dictionary.
-
-    config_path can be a path or URL to a web accessible YAML file
-    """
-    with fsspec.open(config_path, mode="r") as f:
-        config = yaml.safe_load(f)
-    return config
-
-
 def round_date_strings(date, round_type="end"):
     """
     Round a date string up or down to the start or end of a given time
@@ -223,8 +212,9 @@ def intertidal_hillshade(
     elevation_filled = xr.where(extents == 2, elevation.min(), elevation_filled)
     elevation_filled = xr.where(extents == 3, elevation.max(), elevation_filled)
     elevation_filled = xr.where(extents == 4, elevation.max(), elevation_filled)
-    
+
     from scipy.ndimage import gaussian_filter
+
     input_data = gaussian_filter(elevation_filled, sigma=1)
 
     # Create hillshade based on elevation data
@@ -495,3 +485,14 @@ def pixel_ebb_flow(satellite_ds, tide_m, offset_min=15):
 #     ds["tide_m"] = ds["tide_m"] + da_correction.tide_m
 
 #     return ds
+
+
+# def load_config(config_path: str) -> dict:
+#     """
+#     Loads a YAML config file and returns data as a nested dictionary.
+
+#     config_path can be a path or URL to a web accessible YAML file
+#     """
+#     with fsspec.open(config_path, mode="r") as f:
+#         config = yaml.safe_load(f)
+#     return config
