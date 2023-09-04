@@ -12,8 +12,8 @@ from datetime import timedelta
 import pytz
 from pyproj import CRS
 from pyproj import Transformer
-from scipy.signal import argrelmax 
-from scipy.signal import argrelmin 
+from scipy.signal import argrelmax, argrelmin
+
 from scipy.interpolate import interp1d 
 
 from dea_tools.coastal import pixel_tides, model_tides
@@ -113,6 +113,26 @@ def exposure(
                                       x=(['x'], dem.x.values)))
     ## Create an empty dict to store temporal `time_range` variables into
     timeranges = {}
+    
+    ## Create an empty dict to store filtered datetimes into for testing against mixed/semi/diurnal tideranges
+    filt_dt = {}
+    
+    ## For use with spatial filter options
+    #Run a full tidal model for each pixel
+    ModelledTides = pixel_tides(
+                                dem,#ds,
+                                times=time_range,
+                                model=tide_model,
+                                directory = tide_model_dir)
+    ## For use with spatial filter options
+    ## stack the y and x dimensions
+    stacked_everything = ModelledTides[0].stack(z=['y','x']).groupby('z') 
+    ## For use with spatial filter options
+    # # Extract the modelling freq units
+    order=(int(mod_timesteps[0]/2))
+
+    ## Temp: for tide-regime testing
+    filt_dt['modelledtides'] = ModelledTides
     
     # Filter the input timerange to include only dates or tide ranges of interest
     if filters is not None:
@@ -332,24 +352,27 @@ def exposure(
             
             elif x in spatial_filters:
                 
-                #Run a full tidal model for each pixel
-                modelledtides = pixel_tides(
-                                            dem,#ds,
-                                            times=time_range,
-                                            model=tide_model,
-                                            directory = tide_model_dir)
-                ## stack the y and x dimensions
-                stacked_everything = modelledtides[0].stack(z=['y','x']).groupby('z') 
-                # # Extract the modelling freq units
-                # freq_unit = modelled_freq.split()[0][-1]
-                # freq_value = modelled_freq.split()[0][:-1]
-                # # Extract the number of modelled timesteps per 14 days (half lunar cycle)
-                # mod_timesteps = np.timedelta64(14,'D') / np.timedelta64(freq_value,freq_unit)
-                ## Identify kwargs for peak detection algorithm
+#                 #Run a full tidal model for each pixel
+#                 ModelledTides = pixel_tides(
+#                                             dem,#ds,
+#                                             times=time_range,
+#                                             model=tide_model,
+#                                             directory = tide_model_dir)
+#                 ## stack the y and x dimensions
+#                 stacked_everything = ModelledTides[0].stack(z=['y','x']).groupby('z') 
+#                 # # Extract the modelling freq units
+#                 # freq_unit = modelled_freq.split()[0][-1]
+#                 # freq_value = modelled_freq.split()[0][:-1]
+#                 # # Extract the number of modelled timesteps per 14 days (half lunar cycle)
+#                 # mod_timesteps = np.timedelta64(14,'D') / np.timedelta64(freq_value,freq_unit)
+#                 ## Identify kwargs for peak detection algorithm
                 
-                # for x in mod_timesteps:
-                #     order=(int(x/2))
-                order=(int(mod_timesteps[0]/2))
+#                 # for x in mod_timesteps:
+#                 #     order=(int(x/2))
+#                 order=(int(mod_timesteps[0]/2))
+                
+#                 ## Temp: for tide-regime testing
+#                 filt_dt['modelledtides'] = ModelledTides
                 
                 ## Calculate the spring highest and spring lowest tides per 14 day half lunar cycle
                 if x == 'Spring_high':
@@ -369,9 +392,12 @@ def exposure(
                     ## Reorder the dims
                     springhighs_all = springhighs_all[['time','y','x']]
                     ## Select dates associated with detected peaks
-                    springhighs_all = modelledtides[0].to_dataset().isel(time=springhighs_all.time)
+                    springhighs_all = ModelledTides[0].to_dataset().isel(time=springhighs_all.time)
                     ## Extract the peak height dates
                     # time_range = test_mt[springhighs].time.values
+                    
+                    ## Temp: for tide-regime testing
+                    filt_dt['springhighs_all']=springhighs_all.tide_m
                     
                     tide_cq = springhighs_all.tide_m.quantile(q=calculate_quantiles,dim='time')
                     tide_cq_dict[str(x)]=tide_cq
@@ -390,6 +416,8 @@ def exposure(
 
                     ## Calculate the spring highest and spring lowest tides per 14 day half lunar cycle
                 if x == 'Spring_low':
+                    print ('Calculating Spring_low')
+                    
                     ## apply the peak detection routine
                     stacked_everything_low = stacked_everything.apply(lambda x: xr.DataArray(argrelmin(x.values, order=order)[0]))
                     ## Unstack
@@ -403,10 +431,13 @@ def exposure(
                     ## Reorder the dims
                     springlows_all = springlows_all[['time','y','x']]
                     ## Select dates associated with detected peaks
-                    springlows_all = modelledtides[0].to_dataset().isel(time=springlows_all.time)
+                    springlows_all = ModelledTides[0].to_dataset().isel(time=springlows_all.time)
                     ## Extract the peak height dates
                     # time_range = test_mt[springlows_all].time.values
 
+                    ## Temp: for tide-regime testing
+                    filt_dt['springlows_all'] = springlows_all.tide_m
+                    
                     tide_cq = springlows_all.tide_m.quantile(q=calculate_quantiles,dim='time')
                     tide_cq_dict[str(x)]=tide_cq
                     
@@ -422,7 +453,7 @@ def exposure(
                     exposure['springlow_exp'] = idxmin * 100
                     
                 if x == 'Neap_high':
-                    
+                    print ('Calculating Neap_high')
                     ## Calculate the number of spring high tides to support calculation of neap highs
                     ## apply the peak detection routine
                     stacked_everything_high = stacked_everything.apply(lambda x: xr.DataArray(argrelmax(x.values, order=order)[0]))
@@ -439,15 +470,15 @@ def exposure(
                                      [['time','y','x']]
                                     )
                     ## extract all hightide peaks
-                    Max_testarray = modelledtides[0].to_dataset().isel(time=Max_testarray.time)
+                    Max_testarray = ModelledTides[0].to_dataset().isel(time=Max_testarray.time)
 
                     ## repeat the peak detection to identify neap high tides (minima in the high tide maxima)
                     stacked_everything2 = Max_testarray.tide_m.stack(z=['y','x']).groupby('z')
                     ## extract neap high tides based on 14 day half lunar cycle - determined as the fraction of all high tide points
                     ## relative to the number of spring high tide values
-                    order = int(ceil((len(Max_testarray.time)/(len(springhighs_all.time))/2)))
+                    order_nh = int(ceil((len(Max_testarray.time)/(len(springhighs_all))/2)))
                     ## apply the peak detection routine to calculate all the neap high tide minima within the high tide peaks
-                    neaphighs_all = stacked_everything2.apply(lambda x: xr.DataArray(argrelmin(x.values, order=order)[0]))
+                    neaphighs_all = stacked_everything2.apply(lambda x: xr.DataArray(argrelmin(x.values, order=order_nh)[0]))
                     ## unstack and format as above                                    
                     neaphighs_all = neaphighs_all.unstack('z')
                     neaphighs_all = (
@@ -459,7 +490,10 @@ def exposure(
                                     )
                     ## extract neap high tides
                     neaphighs_all = Max_testarray.isel(time=neaphighs_all.time)
-                    
+                                        
+                    ## Temp: for tide-regime testing
+                    filt_dt['neaphighs_all'] = neaphighs_all.tide_m
+                
                     tide_cq = neaphighs_all.tide_m.quantile(q=calculate_quantiles,dim='time')
                     tide_cq_dict[str(x)]=tide_cq
                     
@@ -475,6 +509,7 @@ def exposure(
                     exposure['neaphigh_exp'] = idxmin * 100
 
                 if x == 'Neap_low':
+                    print ('Calculating Neap_low')
                     ## Calculate the number of spring low tides to support calculation of neap low tides
 ## apply the peak detection routine
                     stacked_everything_low = stacked_everything.apply(lambda x: xr.DataArray(argrelmin(x.values, order=order)[0]))
@@ -491,15 +526,15 @@ def exposure(
                                      [['time','y','x']]
                                     )
                     ## extract all lowtide peaks
-                    Min_testarray = modelledtides[0].to_dataset().isel(time=Min_testarray.time)
+                    Min_testarray = ModelledTides[0].to_dataset().isel(time=Min_testarray.time)
 
                     ## repeat the peak detection to identify neap low tides (maxima in the low tide maxima)
                     stacked_everything2 = Min_testarray.tide_m.stack(z=['y','x']).groupby('z')
                     ## extract neap high tides based on 14 day half lunar cycle - determined as the fraction of all high tide points
                     ## relative to the number of spring high tide values
-                    order = int(ceil((len(Min_testarray.time)/(len(springlows_all.time))/2)))
+                    order_nl = int(ceil((len(Min_testarray.time)/(len(springlows_all))/2)))
                     ## apply the peak detection routine to calculate all the neap high tide minima within the high tide peaks
-                    neaplows_all = stacked_everything2.apply(lambda x: xr.DataArray(argrelmax(x.values, order=order)[0]))
+                    neaplows_all = stacked_everything2.apply(lambda x: xr.DataArray(argrelmax(x.values, order=order_nl)[0]))
                     ## unstack and format as above                                    
                     neaplows_all = neaplows_all.unstack('z')
                     neaplows_all = (
@@ -511,6 +546,9 @@ def exposure(
                                     )
                     ## extract neap high tides
                     neaplows_all = Min_testarray.isel(time=neaplows_all.time)
+                    
+                    ## Temp: for tide-regime testing
+                    filt_dt['neaplows_all']=neaplows_all.tide_m
                     
                     tide_cq = neaplows_all.tide_m.quantile(q=calculate_quantiles,dim='time')
                     tide_cq_dict[str(x)]=tide_cq
@@ -528,6 +566,7 @@ def exposure(
                     
                     
                 if x == 'Hightide':
+                    print ('Calculating Hightide')
                     def lowesthightides(x):
                         '''
                         x is a grouping of x and y pixels from the peaks_array (labelled as 'z')
@@ -572,6 +611,9 @@ def exposure(
                                          [['tide_m','time','y','x']]
                                         )
 
+                    ## Temp: for tide-regime testing
+                    filt_dt['hightides'] = lowhighs_all_unstacked.tide_m
+                    
                     tide_cq = lowhighs_all_unstacked.tide_m.quantile(q=calculate_quantiles,dim='time')
 
                     tide_cq_dict[str(x)]=tide_cq
@@ -590,6 +632,7 @@ def exposure(
                     # return hightide_exposure
 
                 if x == 'Lowtide':
+                    print ('Calculating Lowtide')
                     def highestlowtides(x):
                         '''
                         x is a grouping of x and y pixels from the peaks_array (labelled as 'z')
@@ -623,7 +666,7 @@ def exposure(
                         neap_low_testline = neap_low_linear(count)
 
                         # # Extract hightides as all tides higher than/equal to the extrapolated lowest high tide line
-                        lowtide = x.squeeze(['z']).where(x.squeeze(['z']) >= neap_low_testline, drop=True)
+                        lowtide = x.squeeze(['z']).where(x.squeeze(['z']) <= neap_low_testline, drop=True)
 
                         return lowtide 
 
@@ -639,6 +682,9 @@ def exposure(
                                          [['tide_m','time','y','x']]
                                         )
 
+                    ## Temp: for tide-regime testing
+                    filt_dt['lowtides'] = highlows_all_unstacked.tide_m
+                    
                     tide_cq = highlows_all_unstacked.tide_m.quantile(q=calculate_quantiles,dim='time')
 
                     tide_cq_dict[str(x)]=tide_cq
@@ -713,7 +759,7 @@ def exposure(
         # Convert to percentage
         exposure['all_epoch_exp'] = idxmin * 100
 
-    return exposure, tide_cq_dict
+    return exposure, tide_cq_dict, filt_dt #filt_dt is temp and only works with spatial customs
             # return exposure
 
 #     # Run the pixel_tides function with the calculate_quantiles option.
