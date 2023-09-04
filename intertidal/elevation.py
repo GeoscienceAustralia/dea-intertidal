@@ -214,7 +214,7 @@ def glint_angle(solar_azimuth, solar_zenith, view_azimuth, view_zenith):
 
 def load_data(
     dc,
-    study_area,
+    study_area=None,
     geom=None,
     time_range=("2019", "2021"),
     resolution=10,
@@ -224,8 +224,72 @@ def load_data(
     filter_gqa=True,
     ndwi=True,
     mask_sunglint=None,
+    dask_chunks=None,
+    dtype="float32",
     log=None,
 ):
+    """
+    Loads cloud-masked Sentinel-2 and Landsat satellite data for a given
+    study area/geom and time range.
+
+    Supports optionally converting to Normalised Difference Water Index
+    and masking sunglinted pixels.
+
+    Parameters
+    ----------
+    dc : datacube.Datacube()
+        A datacube instance to load data from.
+    study_area : str, optional
+        Tile ID string to process. This should be the ID of a GridSpec
+        analysis tile in the format "x143y56". If `geom` is provided,
+        this will have no effect.
+    geom : Geometry, optional
+        A datacube Geometry object defining a custom spatial extent of
+        interest. If `geom` is provided, this will overrule any study
+        area ID passed to `study_area` and will be returned as-is.
+    time_range : tuple, optional
+        A tuple containing the start and end date for the time range of
+        interest, in the format (start_date, end_date). The default is
+        ("2019", "2021").
+    resolution : int or float, optional
+        The spatial resolution (in metres) to load data at. The default
+        is 10.
+    crs : str, optional
+        The coordinate reference system (CRS) to project data into. The
+        default is Australian Albers "EPSG:3577".
+    include_s2 : bool, optional
+        Whether to load Sentinel-2 data.
+    include_ls : bool, optional
+        Whether to load Landsat data.
+    filter_gqa : bool, optional
+        Whether or not to filter Sentinel-2 data using the GQA filter.
+        Defaults to True.
+    ndwi : bool, optional
+        Whether to convert spectral bands to Normalised Difference Water
+        Index values before returning them. Note that this must be set
+        to True if both `include_s2` and `include_ls` are True.
+    mask_sunglint : int, optional
+        EXPERIMENTAL: Whether to mask out pixels that are likely to be
+        affected by sunglint using glint angles. Low glint angles
+        (e.g. < 20) often correspond with sunglint. Defaults to None;
+        set to e.g. "20" to mask out all pixels with a glint angle of
+        less than 20.
+    dask_chunks : dict, optional
+        Optional custom Dask chunks to load data with. Defaults to None,
+        which will use '{"x": 1600, "y": 1600}'.
+    dtype : str, optional
+        Desired data type for output data. Valid values are "int16"
+        (default) and "float32". If `ndwi=True`, then "float32" will be
+        used regardless of what is set here (as nodata values must be
+        set to 'NaN' before calculating NDWI).
+
+    Returns
+    -------
+    satellite_ds : xarray.Dataset
+        An xarray dataset containing the loaded Landsat or Sentinel-2
+        data.
+    """
+
     # Set spectral bands to load
     s2_spectral_bands = [
         "nbart_blue",
@@ -277,7 +341,7 @@ def load_data(
     # Set up load params
     load_params = {
         "group_by": "solar_day",
-        "dask_chunks": {"x": 1600, "y": 1600},
+        "dask_chunks": {"x": 1600, "y": 1600} if dask_chunks is None else dask_chunks,
         "resampling": {
             "*": "cubic",
             "oa_fmask": "nearest",
@@ -331,12 +395,14 @@ def load_data(
             glint_mask = glint_array > mask_sunglint
             ds_s2 = keep_good_only(x=ds_s2[s2_spectral_bands], where=glint_mask)
 
-        # Convert to float, setting all nodata pixels to `np.nan`
-        # (required for band index calculation)
-        ds_s2 = to_f32(ds_s2)
+        # Optionally convert to float, setting all nodata pixels to `np.nan`
+        # (required for NDWI, so will be applied even if `dtype="int16"`)
+        if (dtype == "float32") or ndwi:
+            ds_s2 = to_f32(ds_s2)
 
         # Convert to NDWI
         if ndwi:
+            # Calculate NDWI
             ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
                 ds_s2.nbart_green + ds_s2.nbart_nir_1
             )
@@ -400,12 +466,14 @@ def load_data(
             glint_mask = glint_array > mask_sunglint
             ds_ls = keep_good_only(x=ds_ls[ls_spectral_bands], where=glint_mask)
 
-        # Convert to float, setting all nodata pixels to `np.nan`
-        # (required for band index calculation)
-        ds_ls = to_f32(ds_ls)
+        # Optionally convert to float, setting all nodata pixels to `np.nan`
+        # (required for NDWI, so will be applied even if `dtype="int16"`)
+        if (dtype == "float32") or ndwi:
+            ds_ls = to_f32(ds_ls)
 
         # Convert to NDWI
         if ndwi:
+            # Calculate NDWI
             ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
                 ds_ls.nbart_green + ds_ls.nbart_nir
             )

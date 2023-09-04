@@ -12,7 +12,6 @@ import odc.geo.xr
 from odc.algo import (
     int_geomedian,
     enum_to_bool,
-    erase_bad,
     keep_good_only,
 )
 from datacube.utils.aws import configure_s3_access
@@ -268,6 +267,7 @@ def intertidal_composites_cli(
             include_ls=False,
             filter_gqa=False,
             ndwi=False,
+            dtype="int16",
         )
 
         # Create local dask cluster to improve data load time
