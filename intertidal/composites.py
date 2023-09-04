@@ -97,24 +97,41 @@ def intertidal_composites(
     else:
         log_prefix = ""
 
-    # Model tides into every pixel in the three-dimensional (x by y by
-    # time) satellite dataset
-    log.info(f"Study area {study_area}: Modelling tide heights for each pixel")
-    tides_highres, tides_lowres = pixel_tides(
+    # Model tides into for spatial extent and timesteps in satellite data
+    log.info(f"Study area {study_area}: Modelling tide heights")
+    tides_lowres = pixel_tides(
         satellite_ds,
-        resample=True,
+        resample=False,
         model=tide_model,
         directory=tide_model_dir,
         cutoff=np.inf,
     )
 
-    # Convert tides to a Dask array so we can use it in `keep_good_only`
-    tides_highres_dask = tides_highres.chunk(chunks=satellite_ds.nbart_red.data.chunks)
+    # TODO: Move this code into pixel_tides by allowing .compute() to be
+    # turned off and custom chunks specified
+
+    # Convert array to Dask, using no chunking along y and x dims,
+    # and a single chunk for each timestep/quantile and tide model
+    tides_lowres_dask = tides_lowres.chunk(
+        {d: None if d in ["y", "x"] else 1 for d in tides_lowres.dims}
+    )
+
+    # Reproject tides into GeoBox of `satellite_ds` using odc.geo and Dask.
+    # Specify custom chunks so we don't end up with hundreds of tiny x and
+    # y chunks due to the small size of `tides_lowres` (possible odc.geo bug?)
+    tides_highres_dask = tides_lowres_dask.odc.reproject(
+        how=satellite_ds.odc.geobox,
+        chunks=(satellite_ds.chunks["y"], satellite_ds.chunks["x"]),
+        resampling="bilinear",
+    )
+
+    # Start processing tide data, using .persist so we can re-use our results
+    tides_highres_dask.persist()
 
     # Calculate low and high tide height thresholds using quantile of
     # all tide observations.
     log.info(f"Study area {study_area}: Calculate low and high tide height thresholds")
-    threshhold_ds = (
+    threshold_ds = (
         tides_lowres.quantile(q=[threshold_lowtide, threshold_hightide], dim="time")
         .odc.assign_crs(satellite_ds.odc.geobox.crs)
         .odc.reproject(satellite_ds.odc.geobox, resampling="bilinear")
@@ -124,8 +141,8 @@ def intertidal_composites(
     # Apply threshold to keep only pixels with tides less or greater than
     # than tide height threshold
     log.info(f"Study area {study_area}: Masking to low and high tide observations")
-    low_mask = tides_highres_dask <= threshhold_ds.isel(quantile=0)
-    high_mask = tides_highres_dask >= threshhold_ds.isel(quantile=-1)
+    low_mask = tides_highres_dask <= threshold_ds.isel(quantile=0)
+    high_mask = tides_highres_dask >= threshold_ds.isel(quantile=-1)
 
     # Mask out pixels outside of selected tides. Drop fully empty scenes
     # to speed up geomedian
@@ -253,6 +270,9 @@ def intertidal_composites_cli(
             ndwi=False,
         )
 
+        # Create local dask cluster to improve data load time
+        client = create_local_dask_cluster(return_client=True)
+
         # Calculate high and low tide geomedian composites
         log.info(f"Study area {study_area}: Running geomedians")
         ds_lowtide, ds_hightide = intertidal_composites(
@@ -263,9 +283,6 @@ def intertidal_composites_cli(
             study_area=study_area,
             log=log,
         )
-
-        # Create local dask cluster to improve data load time
-        client = create_local_dask_cluster(return_client=True)
 
         # Process and load low and high tide composites using Dask
         log.info(f"Study area {study_area}: Processing low tide composite")
