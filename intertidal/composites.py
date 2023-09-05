@@ -64,8 +64,11 @@ def intertidal_composites(
         The tide model or a list of models used to model tides, as
         supported by the `pyTMD` Python package. Options include:
         - "FES2014" (default; pre-configured on DEA Sandbox)
-        - "TPXO8-atlas"
         - "TPXO9-atlas-v5"
+        - "TPXO8-atlas"
+        - "EOT20"
+        - "HAMTIDE11"
+        - "GOT4.10"
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
@@ -98,34 +101,16 @@ def intertidal_composites(
 
     # Model tides into for spatial extent and timesteps in satellite data
     log.info(f"Study area {study_area}: Modelling tide heights")
-    tides_lowres = pixel_tides(
+    tides_highres, tides_lowres = pixel_tides(
         satellite_ds,
-        resample=False,
         model=tide_model,
         directory=tide_model_dir,
         cutoff=np.inf,
-    )
-
-    # TODO: Move this code into pixel_tides by allowing .compute() to be
-    # turned off and custom chunks specified
-
-    # Convert array to Dask, using no chunking along y and x dims,
-    # and a single chunk for each timestep/quantile and tide model
-    tides_lowres_dask = tides_lowres.chunk(
-        {d: None if d in ["y", "x"] else 1 for d in tides_lowres.dims}
-    )
-
-    # Reproject tides into GeoBox of `satellite_ds` using odc.geo and Dask.
-    # Specify custom chunks so we don't end up with hundreds of tiny x and
-    # y chunks due to the small size of `tides_lowres` (possible odc.geo bug?)
-    tides_highres_dask = tides_lowres_dask.odc.reproject(
-        how=satellite_ds.odc.geobox,
-        chunks=(satellite_ds.chunks["y"], satellite_ds.chunks["x"]),
-        resampling="bilinear",
+        dask_compute=False,
     )
 
     # Start processing tide data, using .persist so we can re-use our results
-    tides_highres_dask.persist()
+    tides_highres.persist()
 
     # Calculate low and high tide height thresholds using quantile of
     # all tide observations.
@@ -140,8 +125,8 @@ def intertidal_composites(
     # Apply threshold to keep only pixels with tides less or greater than
     # than tide height threshold
     log.info(f"Study area {study_area}: Masking to low and high tide observations")
-    low_mask = tides_highres_dask <= threshold_ds.isel(quantile=0)
-    high_mask = tides_highres_dask >= threshold_ds.isel(quantile=-1)
+    low_mask = tides_highres <= threshold_ds.isel(quantile=0)
+    high_mask = tides_highres >= threshold_ds.isel(quantile=-1)
 
     # Mask out pixels outside of selected tides. Drop fully empty scenes
     # to speed up geomedian
@@ -208,11 +193,11 @@ def intertidal_composites(
     type=str,
     multiple=True,
     default=["FES2014"],
-    help="The tide model used to model tides, as supported by the "
+    help="The model used for tide modelling, as supported by the "
     "`pyTMD` Python package. Options include 'FES2014' (default), "
-    "'TPXO8-atlas' and 'TPXO9-atlas-v5'. This parameter can be "
-    "repeated to request multiple models, e.g.: "
-    "`--tide_model FES2014 --tide_model TPXO9-atlas-v5`.",
+    "'TPXO9-atlas-v5', 'TPXO8-atlas', 'EOT20', 'HAMTIDE11', 'GOT4.10'. "
+    "This parameter can be repeated to request multiple models, e.g.: "
+    "`--tide_model FES2014 --tide_model FES2012`.",
 )
 @click.option(
     "--tide_model_dir",
