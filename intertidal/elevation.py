@@ -1333,9 +1333,8 @@ def intertidal_cli(
             filter_gqa=False,
         )
 
-        # Load data and close dask client
+        # Load data 
         satellite_ds.load()
-        client.close()
 
         # Load data from GA's Australian Bathymetry and Topography Grid 2009
         topobathy_ds = load_topobathy(
@@ -1451,7 +1450,8 @@ def intertidal_cli(
                 prefix=f"{output_dir}/DEV_{study_area}_{start_date}_{end_date}_debug",
             )
 
-        # Workflow completed
+        # Workflow completed; close Dask client
+        client.close()
         log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
 
     except Exception as e:
