@@ -29,6 +29,7 @@ from datacube.utils.aws import configure_s3_access
 
 from dea_tools.coastal import pixel_tides, glint_angle
 from dea_tools.dask import create_local_dask_cluster
+from dea_tools.spatial import interpolate_2d
 
 from intertidal.utils import (
     configure_logging,
@@ -165,11 +166,13 @@ def load_data(
     include_s2=True,
     include_ls=True,
     filter_gqa=True,
+    max_cloudcover=90,
     ndwi=True,
     mask_sunglint=None,
     dask_chunks=None,
     dtype="float32",
     log=None,
+    **query,
 ):
     """
     Loads cloud-masked Sentinel-2 and Landsat satellite data for a given
@@ -207,6 +210,9 @@ def load_data(
     filter_gqa : bool, optional
         Whether or not to filter Sentinel-2 data using the GQA filter.
         Defaults to True.
+    max_cloudcover : float, optional
+        The maximum cloud cover metadata value used to load data.
+        Defaults to 90 (i.e. 90% cloud cover).
     ndwi : bool, optional
         Whether to convert spectral bands to Normalised Difference Water
         Index values before returning them. Note that this must be set
@@ -225,6 +231,9 @@ def load_data(
         (default) and "float32". If `ndwi=True`, then "float32" will be
         used regardless of what is set here (as nodata values must be
         set to 'NaN' before calculating NDWI).
+    **query :
+        Optional datacube.load keyword argument parameters used to
+        query data.
 
     Returns
     -------
@@ -279,6 +288,7 @@ def load_data(
     query_params = {
         "like": geobox.compat,  # Load into the exact GeoBox pixel grid
         "time": time_range,
+        **query,  # Optional additional query parameters
     }
 
     # Set up load params
@@ -305,7 +315,7 @@ def load_data(
         ds_s2 = dc.load(
             product=["ga_s2am_ard_3", "ga_s2bm_ard_3"],
             measurements=s2_spectral_bands + s2_masking_bands + sunglint_bands,
-            s2cloudless_cloud=(0, 90),
+            s2cloudless_cloud=(0, max_cloudcover),
             **query_params,
             **load_params,
         )
@@ -363,7 +373,7 @@ def load_data(
                 "ga_ls9c_ard_3",
             ],
             measurements=ls_spectral_bands + ls_masking_bands + sunglint_bands,
-            cloud_cover=(0, 90),
+            cloud_cover=(0, max_cloudcover),
             **query_params,
             **load_params,
         )
@@ -476,6 +486,94 @@ def load_topobathy(
     return topobathy_ds
 
 
+def pixel_tides_ensemble(
+    satellite_ds,
+    directory,
+    correlation_file,
+    interp_method="nearest",
+):
+    models = [
+        "FES2014",
+        "FES2012",
+        "TPXO8-atlas-v1",
+        "TPXO9-atlas-v5",
+        "EOT20",
+        "HAMTIDE11",
+        "GOT4.10",
+    ]
+
+    # Model tides into every pixel in the three-dimensional
+    # (x by y by time) satellite dataset
+    tide_lowres = pixel_tides(
+        satellite_ds,
+        resample=False,
+        model=models,
+        directory=directory,
+    )
+
+    # Load point correlations from file, reproject to match satellite
+    # data, and drop empty points
+    print("Generating ensemble model from point inputs")
+    corr_gdf = (
+        gpd.read_file(correlation_file)[models + ["geometry"]]
+        .to_crs(satellite_ds.odc.crs)
+        .dropna()
+    )
+
+    # Loop through each model, interpolating correlations into
+    # low-res tide grid
+    out_list = []
+
+    for model in models:
+        out = interpolate_2d(
+            tide_lowres,
+            x_coords=corr_gdf.geometry.x,
+            y_coords=corr_gdf.geometry.y,
+            z_coords=corr_gdf[model],
+            method=interp_method,
+        ).expand_dims({"tide_model": [model]})
+
+        out_list.append(out)
+
+    # Combine along tide model dimension into a single xarray.Dataset
+    weights_ds = xr.concat(out_list, dim="tide_model")
+
+    # Mask out all but the top 3 models, then take median of remaining
+    # to produce a single ensemble output for each time/x/y
+    tide_lowres_ensemble = tide_lowres.where(
+        (weights_ds.rank(dim="tide_model") >= 5)
+    ).median("tide_model")
+
+    print("Reprojecting tides into original array")
+    # Convert array to Dask, using no chunking along y and x dims,
+    # and a single chunk for each timestep/quantile and tide model
+    tides_lowres_dask = tide_lowres_ensemble.chunk(
+        {d: None if d in ["y", "x"] else 1 for d in tide_lowres_ensemble.dims}
+    )
+
+    # Automatically set Dask chunks for reprojection.
+    # This will either use x/y chunks if they exist in `ds`, else
+    # will cover the entire x and y dims) so we don't end up with
+    # hundreds of tiny x and y chunks due to the small size of
+    # `tides_lowres` (possible odc.geo bug?)
+    if ("y" in satellite_ds.chunks) & ("x" in satellite_ds.chunks):
+        dask_chunks = (satellite_ds.chunks["y"], satellite_ds.chunks["x"])
+    else:
+        dask_chunks = satellite_ds.odc.geobox.shape
+
+    # Reproject into the GeoBox of `ds` using odc.geo and Dask
+    tides_highres = tides_lowres_dask.odc.reproject(
+        how=satellite_ds.odc.geobox,
+        chunks=dask_chunks,
+        resampling="bilinear",
+    ).rename("tide_m")
+
+    # Load into memory
+    tide_m = tides_highres.compute()
+
+    return tide_m, weights_ds
+
+
 def ds_to_flat(
     satellite_ds,
     ndwi_thresh=0.0,
@@ -549,7 +647,6 @@ def ds_to_flat(
         (flat_ds[index] > ndwi_thresh)
         .where(~flat_ds[index].isnull())
         .mean(dim="time")
-        .drop_vars("variable")
         .rename("ndwi_wet_freq")
     )
     freq_mask = (freq >= min_freq) & (freq <= max_freq)
@@ -783,7 +880,10 @@ def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
     """
 
     # TODO: Implement interpolation of intervals
-    # interval_ds = interval_ds.interp(interval=np.linspace(0, 56, 100), method="linear")
+    intervals_n = len(interval_ds.interval)
+    interval_ds = interval_ds.interp(
+        interval=np.linspace(0, intervals_n, intervals_n * 2), method="linear"
+    )
 
     # Smooth tidal intervals using a rolling mean
     if smooth_radius > 1:
@@ -802,7 +902,7 @@ def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
     # Remove any pixel where tides max out (i.e. always land)
     tide_max = smoothed_ds.tide_m.max(dim="interval")
     always_dry = tide_thresh >= tide_max
-    dem_flat = tide_thresh.where(~always_dry).drop("variable")
+    dem_flat = tide_thresh.where(~always_dry)
 
     # Export as xr.Dataset
     return dem_flat.to_dataset(name="elevation")
@@ -868,7 +968,7 @@ def pixel_uncertainty(
         flat_ds.tide_m > flat_dem.elevation
     )
     misclassified_all = misclassified_wet | misclassified_dry
-    misclassified_ds = flat_ds.where(misclassified_all).drop("variable")
+    misclassified_ds = flat_ds.where(misclassified_all)
 
     # Calculate uncertainty by taking the Median Absolute Deviation of
     # all misclassified points.
@@ -1029,6 +1129,7 @@ def elevation(
         - "EOT20"
         - "HAMTIDE11"
         - "GOT4.10"
+        - "ensemble" (experimental: combine all above into single ensemble)
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
@@ -1066,16 +1167,25 @@ def elevation(
     else:
         log_prefix = ""
 
-    # Model tides into every pixel in the three-dimensional (x by y by
-    # time) satellite dataset
+    # Model tides into every pixel in the three-dimensional satellite
+    # dataset (x by y by time)
     log.info(f"{log_prefix}Modelling tide heights for each pixel")
-    tide_m, _ = pixel_tides(
-        satellite_ds,
-        resample=True,
-        model=tide_model,
-        directory=tide_model_dir,
-        cutoff=np.inf,
-    )
+    if tide_model[0] == "ensemble":
+        # Use ensemble model combining multiple input ocean tide models
+        tide_m, _ = pixel_tides_ensemble(
+            satellite_ds,
+            directory=tide_model_dir,
+            correlation_file="data/raw/corr_points.geojson",
+        )
+
+    else:
+        # Use single input ocean tide model
+        tide_m, _ = pixel_tides(
+            satellite_ds,
+            resample=True,
+            model=tide_model,
+            directory=tide_model_dir,
+        )
 
     # Set tide array pixels to nodata if the satellite data array pixels
     # contain nodata. This ensures that we ignore any tide observations
@@ -1084,7 +1194,7 @@ def elevation(
         f"{log_prefix}Masking nodata and adding tide heights to satellite data array"
     )
     satellite_ds["tide_m"] = tide_m.where(
-        ~satellite_ds.to_array().isel(variable=0).isnull()
+        ~satellite_ds.to_array().isel(variable=0).isnull().drop("variable")
     )
 
     # Flatten array from 3D (time, y, x) to 2D (time, z) and drop pixels
@@ -1186,7 +1296,7 @@ def elevation(
     default=0.1,
     help="NDWI threshold used to identify the transition from dry to "
     "wet in the intertidal elevation calculation. Defaults to 0.1, "
-    "which appears to more reliably capture this transition than 0.0.",
+    "which typically captures this transition more reliably than 0.0.",
 )
 @click.option(
     "--min_freq",
@@ -1231,9 +1341,7 @@ def elevation(
     default=["FES2014"],
     help="The model used for tide modelling, as supported by the "
     "`pyTMD` Python package. Options include 'FES2014' (default), "
-    "'TPXO9-atlas-v5', 'TPXO8-atlas', 'EOT20', 'HAMTIDE11', 'GOT4.10'. "
-    "This parameter can be repeated to request multiple models, e.g.: "
-    "`--tide_model FES2014 --tide_model FES2012`.",
+    "'TPXO9-atlas-v5', 'TPXO8-atlas-v1', 'EOT20', 'HAMTIDE11', 'GOT4.10'. ",
 )
 @click.option(
     "--tide_model_dir",
@@ -1330,11 +1438,18 @@ def intertidal_cli(
             crs="EPSG:3577",
             include_s2=True,
             include_ls=True,
-            filter_gqa=False,
+            filter_gqa=True,
+            max_cloudcover=80,
+            skip_broken_datasets=True,
         )
 
-        # Load data 
+        # Load data
         satellite_ds.load()
+
+        # Experiment of removing mostly empty scenes
+        satellite_ds = satellite_ds.sel(
+            time=satellite_ds.ndwi.notnull().mean(dim=["y", "x"]) > 0.2
+        )
 
         # Load data from GA's Australian Bathymetry and Topography Grid 2009
         topobathy_ds = load_topobathy(
@@ -1437,7 +1552,7 @@ def intertidal_cli(
         # Export layers as GeoTIFFs with optimised data types
         log.info(f"Study area {study_area}: Exporting output GeoTIFFs to {output_dir}")
         export_intertidal_rasters(
-            ds, prefix=f"{output_dir}/DEV_{study_area}_{start_date}_{end_date}"
+            ds, prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}"
         )
 
         if output_auxiliaries:
@@ -1447,7 +1562,7 @@ def intertidal_cli(
             )
             export_intertidal_rasters(
                 ds_aux,
-                prefix=f"{output_dir}/DEV_{study_area}_{start_date}_{end_date}_debug",
+                prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}_debug",
             )
 
         # Workflow completed; close Dask client
