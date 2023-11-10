@@ -1446,7 +1446,7 @@ def intertidal_cli(
         # Load data
         satellite_ds.load()
 
-        # Experiment of removing mostly empty scenes
+        # Experimental: remove mostly empty scenes to reduce memory/speed up
         satellite_ds = satellite_ds.sel(
             time=satellite_ds.ndwi.notnull().mean(dim=["y", "x"]) > 0.2
         )
