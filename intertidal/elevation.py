@@ -27,9 +27,10 @@ from odc.algo import (
 )
 from datacube.utils.aws import configure_s3_access
 
-from dea_tools.coastal import pixel_tides, glint_angle
+from dea_tools.coastal import pixel_tides, glint_angle, _pixel_tides_resample
 from dea_tools.dask import create_local_dask_cluster
 from dea_tools.spatial import interpolate_2d
+from dea_tools.temporal import lag_linregress_3D
 
 from intertidal.utils import (
     configure_logging,
@@ -489,18 +490,65 @@ def load_topobathy(
 def pixel_tides_ensemble(
     satellite_ds,
     directory,
-    correlation_file,
+    ancillary_points,
+    top_n=3,
+    models=None,
     interp_method="nearest",
 ):
-    models = [
-        "FES2014",
-        "FES2012",
-        "TPXO8-atlas-v1",
-        "TPXO9-atlas-v5",
-        "EOT20",
-        "HAMTIDE11",
-        "GOT4.10",
-    ]
+    """
+    Generate an ensemble tide model, choosing the best three tide models
+    for any coastal location using ancillary point data (e.g. altimetry
+    observations or NDWI correlations along the coastline).
+
+    This function generates an ensemble of tidal height predictions for
+    each pixel in a satellite dataset. Firstly, tides from multiple tide
+    models are modelled into a low resolution grid using `pixel_tides`.
+    Ancillary point data is then loaded and interpolated to the same
+    grid to serve as weightings. These weightings are used to retain
+    only the top three tidal models, and remaining top models are
+    combined into a single ensemble output for each time/x/y.
+    The resulting ensemble tides are then resampled and reprojected to
+    match the high-resolution satellite data.
+
+    Parameters:
+    -----------
+    satellite_ds : xarray.Dataset
+        Three-dimensional dataset containing satellite-derived
+        information (x by y by time).
+    directory : str
+        Directory containing tidal model data; see `pixel_tides`.
+    ancillary_points : str
+        Path to a file containing point correlations for different tidal
+        models.
+    top_n : integer, optional
+        The number of top models to use in the ensemble calculation.
+        Default is 3, which will calculate a median of the top 3 models.
+    models : list or None, optional
+        An optional list of tide models to use for the ensemble model.
+        Default is None, which will use "FES2014", "FES2012", "EOT20",
+        "TPXO8-atlas-v1", "TPXO9-atlas-v5", "HAMTIDE11", "GOT4.10".
+    interp_method : str, optional
+        Interpolation method used to interpolate correlations onto the
+        low-resolution tide grid. Default is "nearest".
+
+    Returns:
+    --------
+    tides_highres : xarray.Dataset
+        High-resolution ensemble tidal heights dataset.
+    weights_ds : xarray.Dataset
+        Dataset containing weights for each tidal model used in the ensemble.
+    """
+    # Use default models if none provided
+    if models is None:
+        models = [
+            "FES2014",
+            "FES2012",
+            "TPXO8-atlas-v1",
+            "TPXO9-atlas-v5",
+            "EOT20",
+            "HAMTIDE11",
+            "GOT4.10",
+        ]
 
     # Model tides into every pixel in the three-dimensional
     # (x by y by time) satellite dataset
@@ -511,11 +559,11 @@ def pixel_tides_ensemble(
         directory=directory,
     )
 
-    # Load point correlations from file, reproject to match satellite
+    # Load ancillary points from file, reproject to match satellite
     # data, and drop empty points
-    print("Generating ensemble model from point inputs")
+    print("Generating ensemble tide model from point inputs")
     corr_gdf = (
-        gpd.read_file(correlation_file)[models + ["geometry"]]
+        gpd.read_file(ancillary_points)[models + ["geometry"]]
         .to_crs(satellite_ds.odc.crs)
         .dropna()
     )
@@ -538,40 +586,19 @@ def pixel_tides_ensemble(
     # Combine along tide model dimension into a single xarray.Dataset
     weights_ds = xr.concat(out_list, dim="tide_model")
 
-    # Mask out all but the top 3 models, then take median of remaining
+    # Mask out all but the top N models, then take median of remaining
     # to produce a single ensemble output for each time/x/y
     tide_lowres_ensemble = tide_lowres.where(
-        (weights_ds.rank(dim="tide_model") >= 5)
+        (weights_ds.rank(dim="tide_model") > (len(models) - top_n))
     ).median("tide_model")
 
-    print("Reprojecting tides into original array")
-    # Convert array to Dask, using no chunking along y and x dims,
-    # and a single chunk for each timestep/quantile and tide model
-    tides_lowres_dask = tide_lowres_ensemble.chunk(
-        {d: None if d in ["y", "x"] else 1 for d in tide_lowres_ensemble.dims}
+    # Resample/reproject ensemble tides to match high-res satellite data
+    tides_highres, tides_lowres = _pixel_tides_resample(
+        tides_lowres=tide_lowres_ensemble,
+        ds=satellite_ds,
     )
 
-    # Automatically set Dask chunks for reprojection.
-    # This will either use x/y chunks if they exist in `ds`, else
-    # will cover the entire x and y dims) so we don't end up with
-    # hundreds of tiny x and y chunks due to the small size of
-    # `tides_lowres` (possible odc.geo bug?)
-    if ("y" in satellite_ds.chunks) & ("x" in satellite_ds.chunks):
-        dask_chunks = (satellite_ds.chunks["y"], satellite_ds.chunks["x"])
-    else:
-        dask_chunks = satellite_ds.odc.geobox.shape
-
-    # Reproject into the GeoBox of `ds` using odc.geo and Dask
-    tides_highres = tides_lowres_dask.odc.reproject(
-        how=satellite_ds.odc.geobox,
-        chunks=dask_chunks,
-        resampling="bilinear",
-    ).rename("tide_m")
-
-    # Load into memory
-    tide_m = tides_highres.compute()
-
-    return tide_m, weights_ds
+    return tides_highres, weights_ds
 
 
 def ds_to_flat(
@@ -580,7 +607,7 @@ def ds_to_flat(
     index="ndwi",
     min_freq=0.01,
     max_freq=0.99,
-    min_correlation=0.2,
+    min_correlation=0.15,
     valid_mask=None,
 ):
     """
@@ -610,7 +637,7 @@ def ds_to_flat(
     min_correlation : float, optional
         Minimum correlation between water index values and tide height
         required for a pixel to be included in the output. Default is
-        0.2.
+        0.15.
     valid_mask : xr.DataArray, optional
         A boolean mask used to optionally constrain the analysis area,
         with the same spatial dimensions as `satellite_ds`. For example,
@@ -661,7 +688,7 @@ def ds_to_flat(
     # correlation. This prevents small changes in NDWI beneath the water
     # surface from producing correlations with tide height.
     wet_dry = flat_ds[index] > ndwi_thresh
-    corr = xr.corr(wet_dry, flat_ds.tide_m, dim="time").rename("ndwi_tide_corr")
+    corr = lag_linregress_3D(x=flat_ds.tide_m, y=wet_dry).cor.rename("ndwi_tide_corr")
 
     # Keep only pixels with correlations that meet min threshold
     corr_mask = corr >= min_correlation
@@ -721,7 +748,6 @@ def rolling_tide_window(
         Aggregated dataset of the selected statistic and additional
         information on the window. The returned dataset includes the
         aggregated NDWI values within the window.
-
     """
 
     # Set min and max thresholds to filter dataset
@@ -1076,7 +1102,7 @@ def elevation(
     ndwi_thresh=0.1,
     min_freq=0.01,
     max_freq=0.99,
-    min_correlation=0.2,
+    min_correlation=0.15,
     windows_n=100,
     window_prop_tide=0.15,
     max_workers=None,
@@ -1108,7 +1134,7 @@ def elevation(
         be included in the analysis, by default 0.01 and 0.99.
     min_correlation : float, optional
         Minimum correlation between water index and tide height required
-        for a pixel to be included in the analysis, by default 0.2.
+        for a pixel to be included in the analysis, by default 0.15.
     windows_n : int, optional
         Number of rolling windows to iterate over in the per-pixel
         rolling median calculation, by default 100
@@ -1175,7 +1201,7 @@ def elevation(
         tide_m, _ = pixel_tides_ensemble(
             satellite_ds,
             directory=tide_model_dir,
-            correlation_file="data/raw/corr_points.geojson",
+            ancillary_points="data/raw/corr_points.geojson",
         )
 
     else:
@@ -1315,10 +1341,10 @@ def elevation(
 @click.option(
     "--min_correlation",
     type=float,
-    default=0.2,
+    default=0.15,
     help="Minimum correlation between water index and tide height "
     "required for a pixel to be included in the analysis, by default "
-    "0.2.",
+    "0.15.",
 )
 @click.option(
     "--windows_n",
@@ -1439,17 +1465,12 @@ def intertidal_cli(
             include_s2=True,
             include_ls=True,
             filter_gqa=True,
-            max_cloudcover=80,
+            max_cloudcover=90,
             skip_broken_datasets=True,
         )
 
         # Load data
         satellite_ds.load()
-
-        # Experimental: remove mostly empty scenes to reduce memory/speed up
-        satellite_ds = satellite_ds.sel(
-            time=satellite_ds.ndwi.notnull().mean(dim=["y", "x"]) > 0.2
-        )
 
         # Load data from GA's Australian Bathymetry and Topography Grid 2009
         topobathy_ds = load_topobathy(
