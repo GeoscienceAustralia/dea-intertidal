@@ -806,9 +806,10 @@ def pixel_rolling_median(
 
     Returns
     -------
-    xarray.Dataset
-        An two dimensional (interval, z) xarray.Dataset containing the
-        rolling median for each pixel from low to high tide.
+    interval_ds : xarray.Dataset
+        An two dimensional (interval, z) xarray.Dataset containing
+        rolling medians for each pixel along intervals from low to high
+        tide.
     """
 
     # First obtain some required statistics on the satellite-observed
@@ -864,12 +865,17 @@ def pixel_rolling_median(
     return interval_ds
 
 
-def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
+def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=10):
     """
     Calculates an estimate of intertidal elevation based on satellite
     imagery and tide data. Elevation is modelled by identifying the
     tide height at which a pixel transitions from dry to wet; calculated
-    here as the maximum tide at which a rolling median of NDWI == land.
+    here as the maximum tide at which a rolling median of NDWI is
+    characterised as land (e.g. NDWI <= `ndwi_thresh`).
+
+    This function can additionally interpolate to a higher number of
+    intertidal intervals and/or apply a rolling mean to smooth data
+    before the elevation extraction. This can produce a cleaner output.
 
     Parameters
     ----------
@@ -877,44 +883,45 @@ def pixel_dem(interval_ds, flat_ds, ndwi_thresh=0.1, smooth_radius=20):
         A flattened 2D xarray Dataset containing the rolling median for
         each pixel from low to high tide for the given area, with
         variables 'tide_m' and 'ndwi'.
-    flat_ds : xarray.Dataset
-        A flattened two dimensional (time, z) xr.Dataset containing
-        variables "ndwi" and "tide_height", as produced by the
-        `ds_to_flat` function
     ndwi_thresh : float, optional
         A threshold value for the normalized difference water index
         (NDWI), above which pixels are considered water. Defaults to
         0.1, which appears to more reliably capture the transition from
         dry to wet pixels than 0.0.
+    interp_intervals : int, optional
+        Whether to interpolate to an increased density of intervals.
+        This can be useful for reducing the impact of "terrace"-like
+        artefacts across very low sloping intertidal flats where we have
+        minimal satellite observations. Defaults to 200; set to None to
+        deactivate.
     smooth_radius : int, optional
         A rolling mean filter can be applied to smooth data along the
         tide interval dimension. This produces smoother DEM surfaces
-        than using the rolling median directly. Defaults to 20; set to
-        0 to deactivate.
+        than using the rolling median directly. Defaults to 10; set to
+        None to deactivate.
 
     Returns
     -------
     xarray.Dataset
         An xarray Dataset containing the DEM for the given area, with
         a single variable 'elevation'.
-
-    Notes
-    -----
-    This function can additionally apply a rolling mean to smooth the
-    interval data before identifying the max tide per pixel where
-    NDWI == land. This produces a cleaner and less noisy output.
     """
 
-    # TODO: Implement interpolation of intervals
-    intervals_n = len(interval_ds.interval)
-    interval_ds = interval_ds.interp(
-        interval=np.linspace(0, intervals_n, intervals_n * 2), method="linear"
-    )
+    # Apply optional interval interpolation
+    if interp_intervals is not None:
+        print(f"Applying tidal interval interpolation to {interp_intervals} intervals")
+        interval_ds = interval_ds.interp(
+            interval=np.linspace(0, interval_ds.interval.max(), interp_intervals),
+            method="linear",
+        )
 
     # Smooth tidal intervals using a rolling mean
-    if smooth_radius > 1:
+    if smooth_radius is not None:
+        print(f"Applying rolling mean smoothing with radius {smooth_radius}")
         smoothed_ds = interval_ds.rolling(
-            interval=smooth_radius, center=False, min_periods=1
+            interval=smooth_radius,
+            center=True,
+            min_periods=int(smooth_radius / 2.0),
         ).mean()
     else:
         smoothed_ds = interval_ds
@@ -1096,6 +1103,96 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
     return unstacked_ds
 
 
+def pixel_dem_debug(
+    x,
+    y,
+    flat_ds,
+    interval_ds,
+    ndwi_thresh=0.1,
+    interp_intervals=200,
+    smooth_radius=20,
+    certainty_method="mad",
+):
+    # Unstack data back to x, y so we can select pixels by their coordinates
+    flat_unstacked = flat_ds[["tide_m", "ndwi"]].unstack().sortby(["time", "x", "y"])
+    interval_unstacked = (
+        interval_ds[["tide_m", "ndwi"]].unstack().sortby(["interval", "x", "y"])
+    )
+
+    # Extract nearest pixel to x and y coords
+    flat_pixel = flat_unstacked.sel(x=x, y=y, method="nearest")
+    interval_pixel = interval_unstacked.sel(x=x, y=y, method="nearest")
+
+    # Apply interval interpolation and rolling mean
+    interval_clean_pixel = (
+        interval_pixel.interp(
+            interval=np.linspace(0, interval_ds.interval.max(), interp_intervals),
+            method="linear",
+        )[["tide_m", "ndwi"]]
+        .rolling(
+            interval=smooth_radius,
+            center=False,
+            min_periods=int(smooth_radius / 2.0),
+        )
+        .mean()
+    )
+
+    if not isinstance(ndwi_thresh, float):
+        # Experiment with variable threshold
+        ndwi_thresh = xr.DataArray(
+            np.linspace(ndwi_thresh[0], ndwi_thresh[-1], interp_intervals),
+            coords={"interval": interval_clean_pixel.interval},
+        )
+
+    # Calculate DEM
+    flat_dem_pixel = pixel_dem(
+        interval_clean_pixel,
+        ndwi_thresh=ndwi_thresh,
+        interp_intervals=None,
+        smooth_radius=None,
+    )
+
+    # Calculate certainty
+    elev_low_mad, elev_high_mad, _, _ = pixel_uncertainty(
+        flat_pixel,
+        flat_dem_pixel,
+        ndwi_thresh,
+        method=certainty_method,
+    )
+
+    # Plot
+    flat_pixel.to_dataframe().plot.scatter(x="tide_m", y="ndwi", color="black", s=3)
+    interval_pixel.to_dataframe().rename({"ndwi": "rolling median"}, axis=1).plot(
+        x="tide_m", y="rolling median", ax=plt.gca()
+    )
+    interval_clean_pixel.to_dataframe().rename({"ndwi": "smoothed"}, axis=1).plot(
+        x="tide_m", y="smoothed", ax=plt.gca()
+    )
+
+    if not isinstance(ndwi_thresh, float):
+        plt.plot(
+            interval_clean_pixel.tide_m.sel(
+                interval=~interval_clean_pixel.tide_m.isnull()
+            ),
+            ndwi_thresh.sel(interval=~interval_clean_pixel.tide_m.isnull()),
+            color="black",
+            linestyle="--",
+            lw=1,
+            alpha=1,
+        )
+    else:
+        plt.gca().axvspan(
+            elev_low_mad.item(), elev_high_mad.item(), color="lightgrey", alpha=0.3
+        )
+        plt.gca().axhline(ndwi_thresh, color="black", linestyle="--", lw=1, alpha=1)
+
+    plt.gca().axvline(
+        flat_dem_pixel.elevation, color="black", linestyle="--", lw=1, alpha=1
+    )
+    plt.gca().set_ylim(-1, 1)
+
+
+
 def elevation(
     satellite_ds,
     valid_mask=None,
@@ -1252,7 +1349,7 @@ def elevation(
 
     # Model intertidal elevation
     log.info(f"{log_prefix}Modelling intertidal elevation")
-    flat_dem = pixel_dem(interval_ds, flat_ds, ndwi_thresh)
+    flat_dem = pixel_dem(interval_ds, ndwi_thresh)
 
     # Model intertidal elevation uncertainty
     log.info(f"{log_prefix}Modelling intertidal uncertainty")
