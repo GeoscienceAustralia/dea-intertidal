@@ -1,4 +1,0 @@
-Virtual product:
-    virtual_product_path: configs/dea_virtual_product_landsat_s2.yaml
-Input files:
-    grid_path: https://data.dea.ga.gov.au/derivative/dea_coastlines/supplementary/albers_grids/ga_summary_grid_c3_32km_coastal_clipped.geojson
