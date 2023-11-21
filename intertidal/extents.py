@@ -133,16 +133,20 @@ def extents(freq,
     ##### Separate intermittent_tidal (intertidal)
     intertidal = freq.where(
                         (freq==intermittent)
-                        &(corr>=0.2),
+                        &(corr>=0.15),
                         drop=True
                         )
 
     ##### Separate intermittent_nontidal
     intermittent_nontidal = freq.where(
                         (freq==intermittent)
-                        &(corr<0.2),
+                        &(corr<0.15),
                         drop=False
                         )
+        
+    ##### Separate high and low confidence intertidal pixels
+    intertidal_hc = intertidal.where(dem.notnull(),drop=True)
+    intertidal_lc = intertidal.where(dem.isnull(),drop=True)
     '''--------------------------------------------------------------------'''
     ##### Classify 'wet' pixels based on connectivity to intertidal pixels (into 'wet_ocean' and 'wet_inland')
 
@@ -202,22 +206,36 @@ def extents(freq,
     # ## distinguish intermittent inland from intermittent-other (intertidal_fringe) pixels
     intermittent_inland = int_nt.where((int_nt==0) & (intertidal_mask == False))#, drop=True) ## Weird artefacts when drop=True
     intertidal_fringe = int_nt.where((int_nt==0) & (intertidal_mask == True), drop=True)
+    
+    ## Isolate mostly dry pixels from intertidal_fringe class
+    mostly_dry = intertidal_fringe.where(freq < 0.05, drop=True)
+    ## Isolate mostly wet pixels from intertidal fringe class
+    mostly_wet = intertidal_fringe.where(freq >= 0.05, drop=True)
     '''--------------------------------------------------------------------'''
+    ## Combine wet_ocean and intertidal_fringe pixels
+    wet_ocean = wet_ocean.combine_first(mostly_wet)
+    
     ## Relabel pixels
     dry = dry.where(dry.isnull(), 0)
     wet_ocean = wet_ocean.where(wet_ocean.isnull(),3)
     wet_inland = wet_inland.where(wet_inland.isnull(),2)
     intermittent_inland = intermittent_inland.where(intermittent_inland.isnull(),1)
-    intertidal = intertidal.where(intertidal.isnull(),4)
-    intertidal_fringe = intertidal_fringe.where(intertidal_fringe.isnull(),5)
+    intertidal_hc = intertidal_hc.where(intertidal_hc.isnull(),4)
+    intertidal_lc = intertidal_lc.where(intertidal_lc.isnull(),5)
+    # Add intertidal_fringe pixels to wet_ocean class
+    # intertidal_fringe = intertidal_fringe.where(intertidal_fringe.isnull(),6)
+    mostly_dry = mostly_dry.where(mostly_dry.isnull(),6)
+    
 
     ## Combine
     extents = dry.combine_first(wet_ocean)
     extents = extents.combine_first(wet_inland)
+    extents = extents.combine_first(intertidal_hc)
     extents = extents.combine_first(intermittent_inland)
-    extents = extents.combine_first(intertidal_fringe)
-    extents = extents.combine_first(intertidal)
+    # extents = extents.combine_first(intertidal_fringe)
+    extents = extents.combine_first(intertidal_lc)
+    extents = extents.combine_first(mostly_dry)
+
+    
     
     return extents
-
-
