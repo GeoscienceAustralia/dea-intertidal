@@ -1323,7 +1323,7 @@ def elevation(
     # Model tides into every pixel in the three-dimensional satellite
     # dataset (x by y by time)
     log.info(f"{log_prefix}Modelling tide heights for each pixel")
-    if tide_model[0] == "ensemble":
+    if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
         # Use ensemble model combining multiple input ocean tide models
         tide_m, _ = pixel_tides_ensemble(
             satellite_ds,
