@@ -870,8 +870,8 @@ def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=
     Calculates an estimate of intertidal elevation based on satellite
     imagery and tide data. Elevation is modelled by identifying the
     tide height at which a pixel transitions from dry to wet; calculated
-    here as the maximum tide at which a rolling median of NDWI is
-    characterised as land (e.g. NDWI <= `ndwi_thresh`).
+    here as the first/minimum tide height at which a rolling median of
+    NDWI becomes characterised as water (e.g. NDWI > `ndwi_thresh`).
 
     This function can additionally interpolate to a higher number of
     intertidal intervals and/or apply a rolling mean to smooth data
@@ -926,11 +926,11 @@ def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=
     else:
         smoothed_ds = interval_ds
 
-    # Identify the max tide per pixel where rolling median NDWI == land.
-    # This represents the tide height at which the pixel transitions from
-    # dry to wet as it gets inundated by tidal waters.
-    tide_dry = smoothed_ds.tide_m.where(smoothed_ds.ndwi <= ndwi_thresh)
-    tide_thresh = tide_dry.max(dim="interval")
+    # Identify the first/minimum tide per pixel where rolling median
+    # NDWI becomes water. This represents the tide height at which the
+    # pixel transitions from dry to wet as it gets tidally inundated.
+    tide_dry = smoothed_ds.tide_m.where(smoothed_ds.ndwi > ndwi_thresh)
+    tide_thresh = tide_dry.min(dim="interval")
 
     # Remove any pixel where tides max out (i.e. always land)
     tide_max = smoothed_ds.tide_m.max(dim="interval")
@@ -1112,6 +1112,7 @@ def pixel_dem_debug(
     interp_intervals=200,
     smooth_radius=20,
     certainty_method="mad",
+    plot_seasons=False,
 ):
     # Unstack data back to x, y so we can select pixels by their coordinates
     flat_unstacked = flat_ds[["tide_m", "ndwi"]].unstack().sortby(["time", "x", "y"])
@@ -1161,7 +1162,37 @@ def pixel_dem_debug(
     )
 
     # Plot
-    flat_pixel.to_dataframe().plot.scatter(x="tide_m", y="ndwi", color="black", s=3)
+    flat_pixel_df = flat_pixel.to_dataframe()
+    flat_pixel_df["season"] = flat_pixel.time.dt.season
+
+    if plot_seasons:
+        from matplotlib.lines import Line2D
+
+        colors = {
+            "DJF": "tab:blue",
+            "MAM": "tab:orange",
+            "JJA": "tab:green",
+            "SON": "tab:red",
+        }
+        flat_pixel_df.plot.scatter(
+            x="tide_m", y="ndwi", color=flat_pixel_df["season"].map(colors), s=3
+        )
+        handles = [
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="w",
+                markerfacecolor=v,
+                label=k,
+                markersize=8,
+            )
+            for k, v in colors.items()
+        ]
+        plt.gca().legend(title="Season", handles=handles)
+    else:
+        flat_pixel_df.plot.scatter(x="tide_m", y="ndwi", color="black", s=3)
+
     interval_pixel.to_dataframe().rename({"ndwi": "rolling median"}, axis=1).plot(
         x="tide_m", y="rolling median", ax=plt.gca()
     )
@@ -1190,7 +1221,6 @@ def pixel_dem_debug(
         flat_dem_pixel.elevation, color="black", linestyle="--", lw=1, alpha=1
     )
     plt.gca().set_ylim(-1, 1)
-
 
 
 def elevation(
