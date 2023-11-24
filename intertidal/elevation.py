@@ -7,7 +7,7 @@ import geopandas as gpd
 from glob import glob
 import matplotlib.pyplot as plt
 from concurrent.futures import ProcessPoolExecutor
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from itertools import repeat
 import click
 
@@ -688,7 +688,11 @@ def ds_to_flat(
     # correlation. This prevents small changes in NDWI beneath the water
     # surface from producing correlations with tide height.
     wet_dry = flat_ds[index] > ndwi_thresh
-    corr = lag_linregress_3D(x=flat_ds.tide_m, y=wet_dry).cor.rename("ndwi_tide_corr")
+    corr = xr.corr(wet_dry, flat_ds.tide_m, dim="time").rename("ndwi_tide_corr")
+    
+    # TODO: investigate alternative function from DEA Tools 
+    # (doesn't currently handle multiple tide models)
+    # corr = lag_linregress_3D(x=flat_ds.tide_m, y=wet_dry).cor.rename("ndwi_tide_corr")
 
     # Keep only pixels with correlations that meet min threshold
     corr_mask = corr >= min_correlation
