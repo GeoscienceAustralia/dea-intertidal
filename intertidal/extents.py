@@ -180,7 +180,7 @@ def extents(freq,
 
     ## Erode the intensive urban land use class by one pixel to remove extents-class overlaps from 
     ## the native 50m CLUM pixel resolution dataset
-    reclassified = mask_cleanup(mask=reclassified, mask_filters=[("erosion",1)])
+    reclassified = mask_cleanup(mask=reclassified, mask_filters=[("erosion",10)])
     '''--------------------------------------------------------------------'''
     ## Set the upper and lower freq thresholds
     upper, lower = 0.99, 0.01
@@ -316,4 +316,4 @@ def extents(freq,
     extents = extents.combine_first(mostly_dry)
     extents = extents.combine_first(urban_dry)    
     
-    return extents
+    return extents, reclassified#, intertidal_mask1, wet_bool, intertidal_mask2
