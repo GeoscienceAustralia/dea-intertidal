@@ -178,9 +178,7 @@ def extents(freq,
 
     reclassified = xr.where(reclassified==16,True,False)
 
-    ## Erode the intensive urban land use class by one pixel to remove extents-class overlaps from 
-    ## the native 50m CLUM pixel resolution dataset
-    reclassified = mask_cleanup(mask=reclassified, mask_filters=[("erosion",10)])
+
     '''--------------------------------------------------------------------'''
     ## Set the upper and lower freq thresholds
     upper, lower = 0.99, 0.01
@@ -208,6 +206,13 @@ def extents(freq,
     ##### Separate high and low confidence intertidal pixels
     intertidal_hc = intertidal.where(dem.notnull(),drop=True)
     intertidal_lc = intertidal.where(dem.isnull(),drop=True)
+    '''--------------------------------------------------------------------'''
+    ## Clean up the urban land masking class by removing high confidence intertidal areas
+    reclassified = reclassified.where(~dem.notnull(),False)
+    
+    ## Erode the intensive urban land use class to remove extents-class overlaps from 
+    ## the native 50m CLUM pixel resolution dataset
+    reclassified = mask_cleanup(mask=reclassified, mask_filters=[("erosion",5)])
     '''--------------------------------------------------------------------'''
     ##### Classify 'wet' pixels based on connectivity to intertidal pixels (into 'wet_ocean' and 'wet_inland')
 
@@ -316,4 +321,4 @@ def extents(freq,
     extents = extents.combine_first(mostly_dry)
     extents = extents.combine_first(urban_dry)    
     
-    return extents, reclassified#, intertidal_mask1, wet_bool, intertidal_mask2
+    return extents
