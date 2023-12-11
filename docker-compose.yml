@@ -1,0 +1,80 @@
+version: "3.6"
+
+services:
+  public_odc:
+    image: postgres:11.5-alpine
+    ports:
+      - "5436:5432"
+    environment:
+      - POSTGRES_DB=public-odc
+      - POSTGRES_PASSWORD=opendatacubepassword
+      - POSTGRES_USER=public-odc
+    expose:
+      - 5432
+    restart: always
+
+  private_odc:
+    image: postgres:11.5-alpine
+    ports:
+      - "5435:5432"
+    environment:
+      - POSTGRES_DB=private-odc
+      - POSTGRES_PASSWORD=opendatacubepassword
+      - POSTGRES_USER=private-odc
+    expose:
+      - 5432
+    restart: always
+
+  burn_cube_app:
+    build:
+      context: .
+      args:
+        - ENVIRONMENT=dev
+    environment:
+      - ODC_DB_HOSTNAME=public_odc
+      - HNRS_DB_HOSTNAME=private_odc
+      - HNRS_DC_DB_USERNAME=private-odc
+      - ODC_DB_USERNAME=public-odc
+      - HNRS_DC_DB_PASSWORD=opendatacubepassword
+      - ODC_DB_PASSWORD=opendatacubepassword
+      - HNRS_DC_DB_DATABASE=private-odc
+      - ODC_DB_DATABASE=public-odc
+      - AWS_DEFAULT_REGION=ap-southeast-2
+      - AWS_ACCESS_KEY_ID=fake_id
+      - AWS_SECRET_ACCESS_KEY=fake_key
+      - AWS_NO_SIGN_REQUEST=YES
+      - SQLALCHEMY_SILENCE_UBER_WARNING=1
+    volumes:
+      - .:/code
+    depends_on:
+      - public_odc
+      - private_odc
+    command: ["/bin/sh", "-ec", "while :; do echo '.'; sleep 180 ; done"]
+
+  public_index:
+     image: opendatacube/datacube-index:latest
+     environment:
+        - DB_HOSTNAME=public_odc
+        - DB_USERNAME=public-odc
+        - DB_PASSWORD=opendatacubepassword
+        - DB_DATABASE=public-odc
+        - DB_PORT=5432
+        - AWS_DEFAULT_REGION=ap-southeast-2
+        - SQLALCHEMY_SILENCE_UBER_WARNING=1
+     depends_on:
+        - public_odc
+     entrypoint: bash -c 'sleep infinity'
+
+  private_index:
+     image: opendatacube/datacube-index:latest
+     environment:
+        - DB_HOSTNAME=private_odc
+        - DB_USERNAME=private-odc
+        - DB_PASSWORD=opendatacubepassword
+        - DB_DATABASE=private-odc
+        - DB_PORT=5432
+        - AWS_DEFAULT_REGION=ap-southeast-2
+        - SQLALCHEMY_SILENCE_UBER_WARNING=1
+     depends_on:
+        - private_odc
+     entrypoint: bash -c 'sleep infinity'
