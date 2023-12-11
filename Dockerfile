@@ -22,7 +22,7 @@ RUN apt-get update && \
 
 # Pip installation
 RUN mkdir -p /conf
-COPY requirements.txt /conf/
+RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt requirements.in
 RUN pip install -r /conf/requirements.txt
 
 # Copy source code and install it
@@ -36,4 +36,4 @@ RUN pip install --extra-index-url="https://packages.dea.ga.gov.au" .
 RUN pip freeze && pip check
 
 # Make sure it's working
-RUN dea-burn-cube --version
+RUN dea-intertidal --version
