@@ -30,57 +30,41 @@ def load_reproject(
     return ds
 
 
-def intertidal_connection(ds, ocean_da, connectivity=1, dilation=None):
+def intertidal_connection(water_intertidal, intertidal, connectivity=1):
     """
+
+    Identifies areas of water pixels that are adjacent to or directly 
+    connected to intertidal pixels.
     
-    Identifies ocean by selecting regions of water that overlap
-    with ocean pixels. This region can be optionally dilated to
-    ensure that the sub-pixel algorithm has pixels on either side
-    of the water index threshold.
     Parameters:
     -----------
-    ds : xarray.DataArray
-        An array containing True for land pixels, and False for water.
-        This can be obtained by thresholding a water index
-        array (e.g. MNDWI < 0).
-    ocean_da : xarray.DataArray
-        A supplementary static dataset used to separate ocean waters
-        from other inland water. The array should contain values of 1
-        for high certainty ocean pixels, and 0 for all other pixels
-        (land, inland water etc). For Australia, we use the  Geodata
-        100K coastline dataset, rasterized as the "geodata_coast_100k"
-        product on the DEA datacube.
+    water_intertidal : xarray.DataArray
+        An array containing True for pixels that are either water or
+        intertidal pixels.
+    intertidal : xarray.DataArray
+        An array containing True for intertidal pixels. 
     connectivity : integer, optional
         An integer passed to the 'connectivity' parameter of the
         `skimage.measure.label` function.
-    dilation : integer, optional
-        The number of pixels to dilate ocean pixels to ensure than
-        adequate land pixels are included for subpixel waterline
-        extraction. Defaults to None.
+    
     Returns:
     --------
     intertidal_connection : xarray.DataArray
-        An array containing the a mask consisting of identified ocean
-        pixels as True.
+        An array containing the a mask consisting of identified 
+        intertidally-connected pixels as True.
     """
 
-    # First, break all time array into unique, discrete regions/blobs.
-    # Fill NaN with 1 so it is treated as a background pixel
-    blobs = xr.apply_ufunc(label, ds.fillna(1), 1, False, connectivity)
+    # First, break `water_intertidal` array into unique, discrete 
+    # regions/blobs.
+    blobs = xr.apply_ufunc(label, water_intertidal, 0, False, connectivity)
 
     # For each unique region/blob, use region properties to determine
-    # whether it overlaps with a water feature from `water_mask`. If
-    # it does, then it is considered to be directly connected with the
-    # ocean; if not, then it is an inland waterbody.
+    # whether it overlaps with a feature from `intertidal`. If
+    # it does, then it is considered to be adjacent or directly connected
+    # to intertidal pixels
     intertidal_connection = blobs.isin(
-        [i.label for i in regionprops(blobs.values, ocean_da.values) if i.max_intensity]
+        [i.label for i in regionprops(blobs.values, intertidal.values) if i.max_intensity]
     )
-
-    # Dilate mask so that we include land pixels on the inland side
-    # of each shoreline to ensure contour extraction accurately
-    # seperates land and water spectra
-    if dilation:
-        intertidal_connection = xr.apply_ufunc(binary_dilation, intertidal_connection, disk(dilation))
 
     return intertidal_connection
 
