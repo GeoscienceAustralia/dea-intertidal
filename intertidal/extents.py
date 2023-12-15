@@ -72,7 +72,7 @@ def intertidal_connection(water_intertidal, intertidal, connectivity=1):
 def extents(freq,
            dem,
            corr,
-           land_use_mask,
+           land_use_mask="/gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/clum_50m1220m.tif",
            ):
     '''
     Classify coastal ecosystems into broad classes based 
