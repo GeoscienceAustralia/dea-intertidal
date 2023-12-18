@@ -10,4 +10,4 @@
 !*.in
 !*.gitignore
 !*.dockerignore
-!*.Dockerfile
+!*Dockerfile
