@@ -13,7 +13,7 @@ services:
       - 5432
     restart: always
 
-  dea_intertidal_app:
+  dea_intertidal:
     build:
       context: .
       args:
