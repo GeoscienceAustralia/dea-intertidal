@@ -27,7 +27,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build DEA Intertidal App image
+      - name: Build DEA Intertidal image
         timeout-minutes: 20
         shell: bash
         run: |
