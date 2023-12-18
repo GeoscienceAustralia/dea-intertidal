@@ -25,7 +25,8 @@ RUN pip install pip-tools
 
 # Pip installation
 RUN mkdir -p /conf
-RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt requirements.in
+COPY requirements.in /conf/
+RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt /conf/requirements.in
 RUN pip install -r /conf/requirements.txt
 
 # Copy source code and install it
