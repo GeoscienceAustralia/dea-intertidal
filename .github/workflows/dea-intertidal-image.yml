@@ -6,9 +6,10 @@ env:
 on:
   push:
     branches:
-      - main
+      - develop
     paths:
       - 'intertidal/**'
+      - 'data/**'
       - '.github/workflows/dea-intertidal-image.yml'
       - 'Dockerfile'
 
