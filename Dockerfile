@@ -30,7 +30,7 @@ RUN mkdir -p /code
 WORKDIR /code
 ADD . /code
 
-RUN echo "Installing dea-burn-cube through the Dockerfile."
+RUN echo "Installing dea-intertidal through the Dockerfile."
 RUN pip install --extra-index-url="https://packages.dea.ga.gov.au" .
 
 RUN pip freeze && pip check
