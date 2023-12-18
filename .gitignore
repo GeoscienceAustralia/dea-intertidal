@@ -6,4 +6,7 @@
 !*.ipynb
 !*.sh
 !*.yaml
+!*.yml
+!*.in
 !*.gitignore
+!*.dockerignore
