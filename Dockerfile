@@ -20,6 +20,9 @@ RUN apt-get update && \
     apt-get autoremove && \
     rm -rf /var/lib/{apt,dpkg,cache,log}
 
+# Install pip-tools
+RUN pip install pip-tools
+
 # Pip installation
 RUN mkdir -p /conf
 RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt requirements.in
