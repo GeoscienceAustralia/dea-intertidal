@@ -28,7 +28,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=fake_key
       - AWS_NO_SIGN_REQUEST=YES
       - SQLALCHEMY_SILENCE_UBER_WARNING=1
-      - GDAL_HTTP_MAX_RETRY=5
+      - GDAL_HTTP_MAX_RETRY=10
     volumes:
       - .:/code
       - ./tide_models/:/var/share/tide_models
