@@ -12,6 +12,7 @@ on:
       - 'data/**'
       - '.github/workflows/dea-intertidal-image.yml'
       - 'Dockerfile'
+      - 'requirements.in'
 
   release:
     types: [created, edited, published]
