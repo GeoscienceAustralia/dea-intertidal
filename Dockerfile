@@ -36,4 +36,4 @@ RUN pip install --extra-index-url="https://packages.dea.ga.gov.au" .
 RUN pip freeze && pip check
 
 # Make sure it's working
-RUN dea-intertidal --version
+RUN dea-intertidal --help
