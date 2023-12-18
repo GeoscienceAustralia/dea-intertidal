@@ -1,7 +1,7 @@
 name: DEA Intertidal Image Push
 
 env:
-  IMAGE_NAME: geoscienceaustralia/dea-intertidal-app
+  IMAGE_NAME: geoscienceaustralia/dea-intertidal
 
 on:
   push:
