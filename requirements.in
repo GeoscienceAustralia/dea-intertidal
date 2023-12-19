@@ -9,7 +9,7 @@ matplotlib==3.7.1
 numpy==1.24.3
 odc-algo==0.2.3
 odc-geo==0.4.0
-odc-ui==0.2.1
+odc-ui
 pyTMD==2.0.5
 pandas==1.5.3
 pygeos==0.14
