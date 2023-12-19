@@ -29,6 +29,7 @@ REQUIRED = [
     "rasterio",
     "setuptools-scm",
     "seaborn",
+    "sunriset",
     "scikit-image",
     "scikit-learn",
     "scipy",
