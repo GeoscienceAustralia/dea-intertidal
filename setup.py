@@ -13,9 +13,8 @@ tests_require = [
 ]
 
 extras = {
-    'test': tests_require,
+    "test": tests_require,
 }
-
 
 # What packages are required for this module to be executed?
 REQUIRED = [
