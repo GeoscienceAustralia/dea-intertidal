@@ -20,7 +20,7 @@ REQUIRED = [
     "numpy",
     "odc-geo", 
     "odc-ui",
-    "odc-algo"
+    "odc-algo",
     "pandas",
     "pygeos",
     "pyproj",
