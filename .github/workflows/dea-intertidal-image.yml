@@ -16,6 +16,7 @@ on:
       - 'requirements.in'
       - 'setup.py'
       - 'docker-compose.yml'
+      - 'tests/run_tests'
 
   release:
     types: [created, edited, published]
