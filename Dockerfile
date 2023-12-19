@@ -20,14 +20,23 @@ RUN apt-get update && \
     apt-get autoremove && \
     rm -rf /var/lib/{apt,dpkg,cache,log}
 
-# Install pip-tools
-RUN pip install pip-tools
+# # Install pip-tools
+# RUN pip install pip-tools
+
+# # Pip installation
+# RUN mkdir -p /conf
+# COPY requirements.in /conf/
+# RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt /conf/requirements.in
+# RUN pip install -r /conf/requirements.txt
+
+#### TEMPORARY TEST
 
 # Pip installation
 RUN mkdir -p /conf
-COPY requirements.in /conf/
-RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt /conf/requirements.in
-RUN pip install -r /conf/requirements.txt
+COPY requirements-testing.txt /conf/
+RUN pip install -r /conf/requirements-testing.txt
+
+#### TEMPORARY TEST
 
 # Copy source code and install it
 RUN mkdir -p /code
