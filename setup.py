@@ -26,6 +26,8 @@ REQUIRED = [
     "pyproj",
     "pyTMD>=2.0.0",
     "pytest",
+    "pytest-dependency",
+    "pytest-cov",
     "pytz",
     "rasterio",
     "setuptools-scm",
