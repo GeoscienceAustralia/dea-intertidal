@@ -6,7 +6,7 @@ env:
 on:
   push:
     branches:
-      - workflow
+      - main
     paths:
       - 'intertidal/**'
       - 'data/**'
