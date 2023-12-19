@@ -1,4 +1,4 @@
 #!/bin/sh
 
 # Run integration tests and generate code coverage
-pytest --cov=coastlines --cov-report=xml tests/integration
+pytest --cov=intertidal --cov-report=xml tests/integration
