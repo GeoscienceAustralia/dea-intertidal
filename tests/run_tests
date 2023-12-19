@@ -2,3 +2,7 @@
 
 # Run integration tests and generate code coverage
 pytest --cov=intertidal --cov-report=xml tests/integration
+
+# Copy code coverage to artifacts directory so they are 
+# accessible outside docker container via mounted volume
+cp coverage.xml /mnt/artifacts/
