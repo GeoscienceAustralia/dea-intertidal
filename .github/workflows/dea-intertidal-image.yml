@@ -8,15 +8,15 @@ on:
     branches:
       - main
       - tests
-    paths:
-      - 'intertidal/**'
-      - 'data/**'
-      - '.github/workflows/dea-intertidal-image.yml'
-      - 'Dockerfile'
-      - 'requirements.in'
-      - 'setup.py'
-      - 'docker-compose.yml'
-      - 'tests/run_tests'
+    # paths:
+    #   - 'intertidal/**'
+    #   - 'data/**'
+    #   - '.github/workflows/dea-intertidal-image.yml'
+    #   - 'Dockerfile'
+    #   - 'requirements.in'
+    #   - 'setup.py'
+    #   - 'docker-compose.yml'
+    #   - 'tests/run_tests'
 
   release:
     types: [created, edited, published]
