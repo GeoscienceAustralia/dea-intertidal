@@ -53,8 +53,8 @@ REQUIRED = [
 NAME = "dea_intertidal"
 DESCRIPTION = "Tools for running Digital Earth Australia Intertidal"
 URL = "https://github.com/GeoscienceAustralia/dea-intertidal"
-EMAIL = "Robbi.BishopTaylor@ga.gov.au"
-AUTHOR = "Robbi Bishop-Taylor"
+EMAIL = "earth.observation@ga.gov.au"
+AUTHOR = "Geoscience Australia"
 REQUIRES_PYTHON = ">=3.8.0"
 
 # Setup kwargs
