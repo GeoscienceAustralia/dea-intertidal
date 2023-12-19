@@ -19,7 +19,8 @@ REQUIRED = [
     "matplotlib",
     "numpy",
     "odc-geo", 
-    "odc_ui",
+    "odc-ui",
+    "odc-algo"
     "pandas",
     "pygeos",
     "pyproj",
@@ -27,12 +28,15 @@ REQUIRED = [
     "pytz",
     "rasterio",
     "setuptools-scm",
-    "scikit_image",
-    "scikit_learn",
+    "seaborn",
+    "sunriset",
+    "scikit-image",
+    "scikit-learn",
     "scipy",
     "shapely",
     "tqdm",
     "xarray",
+    "xskillscore",
 ]
 
 # Package metadata

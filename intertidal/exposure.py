@@ -26,7 +26,6 @@ def exposure(
     time_range,
     tide_model="FES2014",
     tide_model_dir="/var/share/tide_models",
-    ancillary_points="data/raw/corr_points.geojson"
 ):
     """
     Calculate exposure percentage for each pixel based on tide-height
@@ -42,11 +41,15 @@ def exposure(
         Tuple containing start and end time of time range to be used for
         tide model in the format of "YYYY-MM-DD".
     tide_model : str, optional
-        The tide model used to model tides, as supported by the `pyTMD`
-        Python package. Options include:
+        The tide model or a list of models used to model tides, as
+        supported by the `pyTMD` Python package. Options include:
         - "FES2014" (default; pre-configured on DEA Sandbox)
-        - "TPXO8-atlas"
         - "TPXO9-atlas-v5"
+        - "TPXO8-atlas"
+        - "EOT20"
+        - "HAMTIDE11"
+        - "GOT4.10"
+        - "ensemble" (experimental: combine all above into single ensemble)
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
@@ -79,19 +82,32 @@ def exposure(
     pc_range = np.linspace(0, 1, 101)
 
     # Run the pixel_tides function with the calculate_quantiles option.
-    # For each pixel, an array of tideheights is returned, corresponding
+    # For each pixel, an array of tide heights is returned, corresponding
     # to the percentiles from pc_range of the timerange-tide model that
     # each tideheight appears in the model.
-    tide_cq, _ = pixel_tides_ensemble(
-        dem,
-        resample=True,
-        ancillary_points=ancillary_points,
-        calculate_quantiles=pc_range,
-        times=time_range,
-        model=tide_model,
-        directory=tide_model_dir,
-        cutoff=np.inf,
-    )
+    if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
+        # Use ensemble model combining multiple input ocean tide models
+        tide_cq, _ = pixel_tides_ensemble(
+            dem,
+            calculate_quantiles=pc_range,
+            times=time_range,
+            directory=tide_model_dir,
+            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+            top_n=3,
+            reduce_method='mean',
+            resolution=3000,
+        )
+
+    else:
+        # Use single input ocean tide model
+        tide_cq, _ = pixel_tides(
+            dem,
+            calculate_quantiles=pc_range,
+            times=time_range,
+            resample=True,
+            model=tide_model,
+            directory=tide_model_dir,
+        )
 
     # Calculate the tide-height difference between the elevation value and
     # each percentile value per pixel

@@ -7,26 +7,25 @@ from skimage.morphology import binary_erosion, disk
 
 from odc.algo import mask_cleanup
 from odc.geo.geom import Geometry
-import rioxarray
 import odc.geo.xr
 
 
 def load_reproject(
-    path, gbox, name=None, chunks={"x": 2048, "y": 2048}, **reproj_kwargs
+    path, gbox, chunks={"x": 2048, "y": 2048}, masked=True, **reproj_kwargs
 ):
     """
     Load and reproject part of a raster dataset into a given GeoBox.
     """
     ds = (
-        rioxarray.open_rasterio(
+        xr.open_dataset(
             path,
-            masked=True,
+            engine="rasterio",
+            masked=masked,
             chunks=chunks,
         )
         .squeeze("band")
         .odc.reproject(how=gbox, **reproj_kwargs)
     )
-    ds.name = name
 
     return ds
 
@@ -152,18 +151,49 @@ def extents(
     dc = datacube.Datacube(app="ocean_masking")
 
     # Load the land use dataset to mask out misclassified extents classes caused by urban land class
-    landuse_ds = load_reproject(
+    landuse_da = load_reproject(
         path=land_use_mask,
         gbox=dem.odc.geobox,
         resampling="nearest",
-    ).compute()
+    ).band_data.compute()
 
     # Separate out the 'intensive urban' land use summary class and set
     # all other pixels to False
-    reclassified = landuse_ds.isin(
-        [500, 530, 531, 532, 533, 534, 535, 536, 537, 538, 540, 541, 
-        550, 551, 552, 553, 554, 555, 560, 561, 562, 563, 564, 565, 
-        566, 567, 570, 571, 572, 573, 574, 575]
+    reclassified = landuse_da.isin(
+        [
+            500,
+            530,
+            531,
+            532,
+            533,
+            534,
+            535,
+            536,
+            537,
+            538,
+            540,
+            541,
+            550,
+            551,
+            552,
+            553,
+            554,
+            555,
+            560,
+            561,
+            562,
+            563,
+            564,
+            565,
+            566,
+            567,
+            570,
+            571,
+            572,
+            573,
+            574,
+            575,
+        ]
     )
 
     """--------------------------------------------------------------------"""
