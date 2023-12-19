@@ -22,3 +22,4 @@ sunriset==1.0
 Shapely==2.0.1
 tqdm==4.65.0
 xarray==2023.1.0
+rioxarray==0.15.0
