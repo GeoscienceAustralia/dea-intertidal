@@ -29,15 +29,6 @@ COPY requirements.in /conf/
 RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt /conf/requirements.in
 RUN pip install -r /conf/requirements.txt
 
-# #### TEMPORARY TEST
-
-# # Pip installation
-# RUN mkdir -p /conf
-# COPY requirements-testing.txt /conf/
-# RUN pip install -r /conf/requirements-testing.txt
-
-# #### TEMPORARY TEST
-
 # Copy source code and install it
 RUN mkdir -p /code
 WORKDIR /code
