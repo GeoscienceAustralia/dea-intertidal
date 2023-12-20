@@ -15,14 +15,16 @@ def test_intertidal_cli():
     result = runner.invoke(
         intertidal_cli,
         [
-            "--help",
+            "--study_area",
+            "testing",
+            "--modelled_freq",
+            "3h",
         ],
     )
     assert result.exit_code == 0
-    
+
 
 def test_elevation(satellite_ds):
-    
     ds, ds_aux, tide_m = elevation(
         satellite_ds,
         valid_mask=None,
@@ -38,7 +40,10 @@ def test_elevation(satellite_ds):
         study_area=None,
         log=None,
     )
-    
+
+    # Verify that ds contains correct variables
+    assert "elevation" in ds.data_vars
+    assert "elevation_uncertainty" in ds.data_vars
+
+    # Verify that ds is a single layer
     assert "time" not in ds.dims
-    assert "elevation" in ds.data_vars 
-    assert "elevation_uncertainty" in ds.data_vars 

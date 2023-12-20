@@ -14,8 +14,6 @@ import geopandas as gpd
 # from pyproj import Transformer
 # from scipy.signal import argrelmax, argrelmin
 
-from scipy.interpolate import interp1d 
-
 from dea_tools.coastal import pixel_tides, model_tides
 from intertidal.tide_modelling import pixel_tides_ensemble
 # from intertidal.elevation import pixel_tides_ensemble
