@@ -1348,14 +1348,14 @@ def elevation(
 @click.option(
     "--start_date",
     type=str,
-    default="2020",
+    default="2019",
     help="The start date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
 @click.option(
     "--end_date",
     type=str,
-    default="2022",
+    default="2021",
     help="The end date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
@@ -1495,7 +1495,7 @@ def intertidal_cli(
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
     # Create output folder. If it doesn't exist, create it
-    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}-spearman"
+    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
     os.makedirs(output_dir, exist_ok=True)
 
     try:
