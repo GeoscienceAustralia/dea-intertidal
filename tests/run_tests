@@ -2,5 +2,3 @@
 
 # Run integration tests and generate code coverage
 pytest --cov=intertidal --cov-report=xml tests/integration
-find / -name "coverage.xml"
-ls
