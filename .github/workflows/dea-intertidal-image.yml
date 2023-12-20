@@ -53,6 +53,11 @@ jobs:
           docker-compose exec -T dea_intertidal /bin/sh -c "sh ./tests/run_tests"
           # docker-compose down
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: false
+
       - name: Setup upterm session
         uses: lhotari/action-upterm@v1
 
