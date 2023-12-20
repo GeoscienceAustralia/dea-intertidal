@@ -1,6 +1,7 @@
 import pytest
 from click.testing import CliRunner
-from intertidal.elevation import intertidal_cli
+from intertidal.elevation import intertidal_cli, test_func
+
 
 @pytest.mark.dependency()
 def test_intertidal_cli():
@@ -12,3 +13,7 @@ def test_intertidal_cli():
         ],
     )
     assert result.exit_code == 0
+
+
+def test_test_func():
+    assert test_func(1) == 1

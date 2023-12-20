@@ -46,6 +46,10 @@ from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
 
 
+def test_func(a)
+    return a
+
+
 def extract_geobox(
     study_area=None,
     geom=None,

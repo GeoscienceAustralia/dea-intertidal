@@ -1,4 +1,4 @@
-name: DEA Intertidal Image Push
+name: Image build and test
 
 env:
   IMAGE_NAME: geoscienceaustralia/dea-intertidal
@@ -43,11 +43,12 @@ jobs:
 
       - name: Run dockerized integration tests and copy outputs
         run: |
+          # TEMPORARY: Download tide modelling files and unzip
+          wget --no-verbose https://www.dropbox.com/s/ivx93rcdl9yfdaf/tide_models.zip?dl=1 -O tide_models.zip
+          unzip -q tide_models.zip
+
           # Run integration tests using Docker
-          docker compose run dea_intertidal pytest --cov=intertidal --cov-report=xml tests/integration
-          # docker-compose up -d
-          # docker-compose exec -T dea_intertidal /bin/sh -c "sh ./tests/run_tests"
-          # docker-compose down
+          docker compose run dea_intertidal pytest --cov=intertidal --cov-report=xml tests
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
