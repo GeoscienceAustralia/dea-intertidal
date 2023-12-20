@@ -147,9 +147,6 @@ def extents(
           crosses zero)
 
     """
-    ## Connect to datacube to load `ocean_da`
-    dc = datacube.Datacube(app="ocean_masking")
-
     # Load the land use dataset to mask out misclassified extents classes caused by urban land class
     landuse_da = load_reproject(
         path=land_use_mask,
