@@ -46,7 +46,7 @@ from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
 
 
-def test_func(a):
+def sample_func(a):
     return a
 
 
