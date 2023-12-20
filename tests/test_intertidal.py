@@ -17,6 +17,10 @@ def test_intertidal_cli():
         [
             "--study_area",
             "testing",
+            "--start_date",
+            "2020",
+            "--start_date",
+            "2022",
             "--modelled_freq",
             "3h",
         ],
