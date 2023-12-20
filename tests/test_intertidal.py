@@ -1,6 +1,7 @@
 import pytest
 from click.testing import CliRunner
-from intertidal.elevation import intertidal_cli
+from intertidal.elevation import intertidal_cli, elevation
+import pickle
 
 
 @pytest.fixture()
