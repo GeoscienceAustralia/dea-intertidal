@@ -43,14 +43,10 @@ jobs:
 
       - name: Run dockerized integration tests and copy outputs
         run: |
-          # Set up artifacts directory to house outputs from integration tests,
-          # giving all users read and write permissions
-          mkdir artifacts
-          chmod a+rw artifacts
-
           # Run integration tests using Docker
-          docker-compose up -d
-          docker-compose exec -T dea_intertidal /bin/sh -c "sh ./tests/run_tests"
+          docker compose run dea_intertidal pytest --cov=intertidal --cov-report=xml tests/integration
+          # docker-compose up -d
+          # docker-compose exec -T dea_intertidal /bin/sh -c "sh ./tests/run_tests"
           # docker-compose down
 
       - name: Upload coverage reports to Codecov
@@ -58,8 +54,8 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Setup upterm session
-        uses: lhotari/action-upterm@v1
+      # - name: Setup upterm session
+      #   uses: lhotari/action-upterm@v1
 
   # push_ecr:
   #   needs: [test]
