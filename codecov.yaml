@@ -1,6 +1,6 @@
-# sample regex patterns
 ignore:
   - "intertidal/validation.py"
+  - "intertidal/composites.py"
   
 coverage:
   precision: 1
