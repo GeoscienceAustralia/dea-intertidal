@@ -41,14 +41,14 @@ jobs:
         run: |
           docker-compose build
 
-      - name: Run dockerized integration tests and copy outputs
+      - name: Run dockerized integration tests
         run: |
           # TEMPORARY: Download tide modelling files and unzip
           wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
           unzip -q tide_models.zip
 
           # Run integration tests using Docker
-          docker compose run dea_intertidal pytest --debug=trace --cov=intertidal --cov-report=xml tests
+          docker compose run dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
