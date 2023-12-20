@@ -1,13 +1,13 @@
-# # Ignore all
-# *.*
+# Ignore all
+*.*
 
-# # Except for
-# !*.py
-# !*.ipynb
-# !*.sh
-# !*.yaml
-# !*.yml
-# !*.in
-# !*.gitignore
-# !*.dockerignore
-# !*Dockerfile
+# Except for
+!*.py
+!*.ipynb
+!*.sh
+!*.yaml
+!*.yml
+!*.in
+!*.gitignore
+!*.dockerignore
+!*Dockerfile
