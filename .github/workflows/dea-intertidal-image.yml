@@ -8,15 +8,15 @@ on:
     branches:
       - main
       - tests
-    # paths:
-    #   - 'intertidal/**'
-    #   - 'data/**'
-    #   - '.github/workflows/dea-intertidal-image.yml'
-    #   - 'Dockerfile'
-    #   - 'requirements.in'
-    #   - 'setup.py'
-    #   - 'docker-compose.yml'
-    #   - 'tests/run_tests'
+    paths:
+      - 'intertidal/**'
+      - 'data/**'
+      - 'tests/**'
+      - '.github/workflows/dea-intertidal-image.yml'
+      - 'Dockerfile'
+      - 'requirements.in'
+      - 'setup.py'
+      - 'docker-compose.yml'
 
   release:
     types: [created, edited, published]
@@ -41,9 +41,10 @@ jobs:
         run: |
           docker-compose build
 
-      - name: Run dockerized integration tests
+      - name: Run tests
         run: |
-          # TEMPORARY: Download tide modelling files and unzip
+          # Download tide modelling files and unzip
+          # TODO: Replace with S3 sync from dea-non-public-data
           wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
           unzip -q tide_models.zip
 
@@ -58,42 +59,42 @@ jobs:
       # - name: Setup upterm session
       #   uses: lhotari/action-upterm@v1
 
-  # push_ecr:
-  #   needs: [test]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v3
+  push_ecr:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v1
-  #       with:
-  #         role-to-assume: arn:aws:iam::538673716275:role/github-actions-role
-  #         aws-region: ap-southeast-2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::538673716275:role/github-actions-role
+          aws-region: ap-southeast-2
 
-  #     - name: Get tag for this build if it exists
-  #       if: github.event_name == 'release'
-  #       run: |
-  #         echo "RELEASE=${GITHUB_REF/refs\/tags\/}" >> $GITHUB_ENV
+      - name: Get tag for this build if it exists
+        if: github.event_name == 'release'
+        run: |
+          echo "RELEASE=${GITHUB_REF/refs\/tags\/}" >> $GITHUB_ENV
 
-  #     - name: Push release image to ECR
-  #       uses: whoan/docker-build-with-cache-action@master
-  #       if: github.event_name == 'release'
-  #       with:
-  #         registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
-  #         image_name: ${{ env.IMAGE_NAME }}
-  #         image_tag: ${{ env.RELEASE }}
+      - name: Push release image to ECR
+        uses: whoan/docker-build-with-cache-action@master
+        if: github.event_name == 'release'
+        with:
+          registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
+          image_name: ${{ env.IMAGE_NAME }}
+          image_tag: ${{ env.RELEASE }}
 
-  #     - name: Get git commit hash for push to main
-  #       if: github.event_name != 'release'
-  #       run: |
-  #         echo "TAG=dev$(git rev-parse --short HEAD)" \
-  #         >> $GITHUB_ENV
+      - name: Get git commit hash for push to main
+        if: github.event_name != 'release'
+        run: |
+          echo "TAG=dev$(git rev-parse --short HEAD)" \
+          >> $GITHUB_ENV
 
-  #     - name: Push unstable image to ECR
-  #       uses: whoan/docker-build-with-cache-action@master
-  #       if: github.event_name != 'release'
-  #       with:
-  #         registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
-  #         image_name: ${{ env.IMAGE_NAME }}
-  #         image_tag: latest,${{ env.TAG }}
+      - name: Push unstable image to ECR
+        uses: whoan/docker-build-with-cache-action@master
+        if: github.event_name != 'release'
+        with:
+          registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
+          image_name: ${{ env.IMAGE_NAME }}
+          image_tag: latest,${{ env.TAG }}
