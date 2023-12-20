@@ -51,7 +51,10 @@ jobs:
           # Run integration tests using Docker
           docker-compose up -d
           docker-compose exec -T dea_intertidal /bin/sh -c "sh ./tests/run_tests"
-          docker-compose down
+          # docker-compose down
+
+      - name: Setup upterm session
+        uses: lhotari/action-upterm@v1
 
   # push_ecr:
   #   needs: [test]
