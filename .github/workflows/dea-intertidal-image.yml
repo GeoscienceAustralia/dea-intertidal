@@ -17,6 +17,7 @@ on:
       - 'requirements.in'
       - 'setup.py'
       - 'docker-compose.yml'
+      - 'codecov.yaml'
 
   release:
     types: [created, edited, published]
