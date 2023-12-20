@@ -15,5 +15,5 @@ def test_intertidal_cli():
     assert result.exit_code == 0
 
 
-def test_test_func():
-    assert test_func(1) == 1
+def test_sample_func():
+    assert sample_func(1) == 1
