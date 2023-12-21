@@ -56,6 +56,7 @@ jobs:
           # in correct output locations so they can be committed back into the repository
           cp ./artifacts/validation.jpg ./tests/validation.jpg
           cp ./artifacts/validation.csv ./tests/validation.csv
+          cp ./artifacts/README.md ./tests/README.md
 
       # - name: Setup upterm session
       #   uses: lhotari/action-upterm@v1
@@ -64,7 +65,7 @@ jobs:
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Automatically update integration test validation results
-          file_pattern: 'tests/validation.jpg tests/validation.csv'
+          file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
 
       # Add output data to Actions artifact so it can be downloaded
       - uses: actions/upload-artifact@v3
