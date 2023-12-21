@@ -113,7 +113,6 @@ def test_dem_accuracy(
     )
 
     plt.savefig(f"artifacts/validation.jpg", dpi=150, bbox_inches="tight")
-    plt.savefig(f"mnt/artifacts/validation.jpg", dpi=150, bbox_inches="tight")
 
 
 def test_elevation(satellite_ds):
