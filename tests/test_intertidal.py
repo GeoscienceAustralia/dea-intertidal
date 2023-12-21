@@ -40,6 +40,8 @@ def test_intertidal_cli():
             "2022",
             "--modelled_freq",
             "3h",
+            "--windows_n",
+            50,
         ],
     )
     assert result.exit_code == 0
