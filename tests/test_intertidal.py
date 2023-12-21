@@ -47,13 +47,14 @@ def test_intertidal_cli():
 def test_dem_accuracy(
     val_path="tests/data/lidar_10m_tests.tif",
     mod_path="data/interim/testing/2020-2022/testing_2020_2022_elevation.tif",
+    output_plot="artifacts/validation.jpg",
+    output_csv="artifacts/validation.csv",
 ):
     """
     Compares elevation outputs of the previous CLI step against
     validation data, and calculates and evaluates a range of accuracy
     metrics.
     """
-
     # Load validation data
     validation_da = rioxarray.open_rasterio(val_path, masked=True).squeeze("band")
 
@@ -66,63 +67,116 @@ def test_dem_accuracy(
 
     # Preprocess and calculate accuracy statistics
     validation_z, modelled_z = preprocess_validation(modelled_da, validation_da, None)
-    accuracy_df = eval_metrics(x=validation_z, y=modelled_z, round=3)
+    accuracy_metrics = eval_metrics(x=validation_z, y=modelled_z, round=3)
 
     # Assert accuracy is within tolerance
-    assert accuracy_df.Correlation > 0.9
-    assert accuracy_df.RMSE < 0.25
-    assert accuracy_df.MAE < 0.2
-    assert accuracy_df["R-squared"] > 0.8
-    assert accuracy_df.Bias < 0.2
-    assert abs(accuracy_df["Regression slope"] - 1) < 0.1
+    assert accuracy_metrics.Correlation > 0.9
+    assert accuracy_metrics.RMSE < 0.25
+    assert accuracy_metrics.MAE < 0.2
+    assert accuracy_metrics["R-squared"] > 0.8
+    assert accuracy_metrics.Bias < 0.2
+    assert abs(accuracy_metrics["Regression slope"] - 1) < 0.1
 
-    # Plot and compare - heatmap
-    plt.figure(figsize=(5, 5))
+    #########
+    # Plots #
+    #########
+
+    # Transpose and add index time and prefix name
+    accuracy_df = pd.DataFrame({pd.to_datetime("now", utc=True): accuracy_metrics}).T
+    accuracy_df.index.name = "time"
+
+    # Append results to file, and re-read stats from disk to ensure we get
+    # older results
+    accuracy_df.to_csv(
+        output_csv,
+        mode="a",
+        header=(not os.path.exists(output_csv)),
+    )
+    accuracy_df = pd.read_csv(output_csv, index_col=0, parse_dates=True)
+
+    # Extract integration test run times and convert to local time
+    times_local = accuracy_df.index.tz_convert(tz="Australia/Canberra")
+    accuracy_df.index = times_local
+
+    # Get latest stats
+    corr, rmse, mae, r2, bias, slope = accuracy_df.iloc[-1]
+
+    # Create plot and add overall title
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7.5))
+    latest_time = times_local[-1].strftime("%Y-%m-%d %H:%M")
+    plt.suptitle(
+        f"Latest DEA Intertial Elevation integration test validation ({latest_time})",
+        size=14,
+        fontweight="bold",
+        y=1.0,
+    )
+
+    ################
+    # Heatmap plot #
+    ################
+
     lim_min, lim_max = np.percentile(
         np.concatenate([validation_z, modelled_z]), [1, 99]
     )
-    lim_min -= 0.1
-    lim_max += 0.1
+    lim_min -= 0.2
+    lim_max += 0.2
     sns.kdeplot(
         x=validation_z,
         y=modelled_z,
         cmap="inferno",
         fill=True,
-        ax=plt.gca(),
+        ax=ax1,
         thresh=0,
         bw_adjust=0.4,
         levels=30,
     )
-    plt.gca().set_facecolor("black")
-    plt.plot([lim_min, lim_max], [lim_min, lim_max], "--", c="white")
-    plt.margins(x=0, y=0)
-    plt.xlim(lim_min, lim_max)
-    plt.ylim(lim_min, lim_max)
-    plt.xlabel("Validation (m)")
-    plt.ylabel("Modelled (m)")
 
-    # Add title
-    current_time = datetime.datetime.now(pytz.timezone("Australia/Canberra")).strftime(
-        "%Y-%m-%d %H:%M"
-    )
-    plt.title(f"DEA Intertidal Elevation validation\n(Last run: {current_time})")
-
-    # Add stats annotation
-    plt.gca().annotate(
-        f'Correlation: {accuracy_df["Correlation"]:.2f}\n'
-        f'R-squared: {accuracy_df["R-squared"]:.2f}\n'
-        f'RMSE: {accuracy_df["RMSE"]:.2f} m\n'
-        f'MAE: {accuracy_df["MAE"]:.2f} m\n'
-        f'Bias: {accuracy_df["Bias"]:.2f} m\n'
-        f'Slope: {accuracy_df["Regression slope"]:.2f}\n',
-        xy=(0.04, 0.7),
-        fontsize=9,
+    # Add text
+    ax1.annotate(
+        f"Correlation: {corr:.2f}\n"
+        f"R-squared: {r2:.2f}\n"
+        f"RMSE: {rmse:.2f} m\n"
+        f"MAE: {mae:.2f} m\n"
+        f"Bias: {bias:.2f} m\n"
+        f"Slope: {slope:.2f}\n",
+        xy=(0.04, 0.75),
+        fontsize=10,
         xycoords="axes fraction",
         color="white",
     )
+    ax1.set_xlabel("Validation (m)")
+    ax1.set_ylabel("Modelled (m)")
+    ax1.set_title(f"Modelled vs. validation elevation")
+
+    # Formatting
+    ax1.set_facecolor("black")
+    ax1.plot([lim_min, lim_max], [lim_min, lim_max], "--", c="white")
+    ax1.margins(x=0, y=0)
+    ax1.set_xlim(lim_min, lim_max)
+    ax1.set_ylim(lim_min, lim_max)
+
+    ###################
+    # Timeseries plot #
+    ###################
+
+    # Plot all integration test accuracies and biases over time
+    accuracy_df.RMSE.plot(ax=ax2, style=".-", legend=True)
+    min_q, max_q = accuracy_df.RMSE.quantile((0.1, 0.9)).values
+    ax2.fill_between(accuracy_df.index, min_q, max_q, alpha=0.2)
+
+    accuracy_df.MAE.plot(ax=ax2, style=".-", legend=True)
+    min_q, max_q = accuracy_df.MAE.quantile((0.1, 0.9)).values
+    ax2.fill_between(accuracy_df.index, min_q, max_q, alpha=0.2)
+
+    accuracy_df.Bias.plot(ax=ax2, style=".-", legend=True)
+    min_q, max_q = accuracy_df.Bias.quantile((0.1, 0.9)).values
+    ax2.fill_between(accuracy_df.index, min_q, max_q, alpha=0.2)
+    ax2.set_title("Accuracy and bias across test runs")
+    ax2.set_ylabel("Metres (m)")
+    ax2.set_xlabel(None)
 
     # Write into mounted artifacts directory
-    plt.savefig(f"artifacts/validation.jpg", dpi=150, bbox_inches="tight")
+    plt.savefig(output_plot, dpi=100, bbox_inches="tight")
 
 
 def test_elevation(satellite_ds):
