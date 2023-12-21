@@ -55,13 +55,12 @@ def test_dem_accuracy(
     # Load modelled elevation and uncertainty data
     modelled_da = load_reproject(
         path=mod_path,
-        gbox=validation_ds.odc.geobox,
-        name="modelled_ds",
+        gbox=validation_da.odc.geobox,
         resampling="average",
     ).band_data
 
     # Preprocess and calculate accuracy statistics
-    validation_z, modelled_z = preprocess_validation(modelled_ds, validation_ds, None)
+    validation_z, modelled_z = preprocess_validation(modelled_da, validation_da, None)
     accuracy_df = eval_metrics(x=validation_z, y=modelled_z, round=3)
 
     # Assert accuracy is within tolerance
