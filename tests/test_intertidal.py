@@ -50,6 +50,7 @@ def test_dem_accuracy(
     val_path="tests/data/lidar_10m_tests.tif",
     mod_path="data/interim/testing/2020-2022/testing_2020_2022_elevation.tif",
     output_plot="artifacts/validation.jpg",
+    input_csv="tests/validation.csv",
     output_csv="artifacts/validation.csv",
 ):
     """
@@ -90,11 +91,11 @@ def test_dem_accuracy(
     # Append results to file, and re-read stats from disk to ensure we get
     # older results
     accuracy_df.to_csv(
-        output_csv,
+        input_csv,
         mode="a",
-        header=(not os.path.exists(output_csv)),
+        header=(not os.path.exists(input_csv)),
     )
-    accuracy_df = pd.read_csv(output_csv, index_col=0, parse_dates=True)
+    accuracy_df = pd.read_csv(input_csv, index_col=0, parse_dates=True)
 
     # Extract integration test run times and convert to local time
     times_local = accuracy_df.index.tz_convert(tz="Australia/Canberra")
@@ -176,6 +177,7 @@ def test_dem_accuracy(
     ax2.set_xlabel(None)
 
     # Write into mounted artifacts directory
+    accuracy_df.to_csv(output_csv)
     plt.savefig(output_plot, dpi=100, bbox_inches="tight")
 
 
