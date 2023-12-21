@@ -55,6 +55,7 @@ jobs:
           # Copy out validation outputs produced by the integration tests and place them
           # in correct output locations so they can be committed back into the repository
           cp ./artifacts/validation.jpg ./tests/validation.jpg
+          cp ./artifacts/validation.csv ./tests/validation.csv
 
       # - name: Setup upterm session
       #   uses: lhotari/action-upterm@v1
@@ -63,9 +64,9 @@ jobs:
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Automatically update integration test validation results
-          file_pattern: 'tests/validation.jpg'
+          file_pattern: 'tests/validation.jpg tests/validation.csv'
 
-      # Add output GeoPackage data to Actions artifact so it can be downloaded
+      # Add output data to Actions artifact so it can be downloaded
       - uses: actions/upload-artifact@v3
         with:
           name: validation_plot
