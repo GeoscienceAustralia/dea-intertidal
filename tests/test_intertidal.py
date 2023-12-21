@@ -1,6 +1,8 @@
 import pytest
 import pickle
 import rioxarray
+import numpy as np
+import matplotlib.pyplot as plt
 from click.testing import CliRunner
 
 from intertidal.elevation import intertidal_cli, elevation
@@ -70,6 +72,46 @@ def test_dem_accuracy(
     assert accuracy_df["R-squared"] > 0.8
     assert accuracy_df.Bias < 0.2
     assert abs(accuracy_df["Regression slope"] - 1) < 0.1
+
+    # Plot and compare - heatmap
+    plt.figure(figsize=(5, 5))
+    lim_min, lim_max = np.percentile(np.concatenate([validation_z, modelled_z]), [1, 99])
+    lim_min -= 0.2
+    lim_max += 0.2
+    sns.kdeplot(
+        x=validation_z,
+        y=modelled_z,
+        cmap="inferno",
+        fill=True,
+        ax=plt.gca(),
+        thresh=0,
+        bw_adjust=0.4,
+        levels=30,
+    )
+    plt.gca().set_facecolor("black")
+    plt.plot([lim_min, lim_max], [lim_min, lim_max], "--", c="white")
+    plt.margins(x=0, y=0)
+    plt.xlim(lim_min, lim_max)
+    plt.ylim(lim_min, lim_max)
+    plt.xlabel("Validation (m)")
+    plt.ylabel("Modelled (m)")
+    plt.title("Modelled vs validation elevation")
+
+    # Add stats annotation
+    plt.gca().annotate(
+        f'Correlation: {accuracy_df["Correlation"]:.2f}\n' \
+        f'R-squared: {accuracy_df["R-squared"]:.2f}\n' \
+        f'RMSE: {accuracy_df["RMSE"]:.2f} m\n' \
+        f'MAE: {accuracy_df["MAE"]:.2f} m\n' \
+        f'Bias: {accuracy_df["Bias"]:.2f} m\n' \
+        f'Slope: {accuracy_df["Regression slope"]:.2f}\n',    
+        xy=(0.04, 0.7),
+        fontsize=9,
+        xycoords="axes fraction",
+        color="white",
+    )
+
+    plt.savefig(f"validation.jpg", dpi=150, bbox_inches="tight")
 
 
 def test_elevation(satellite_ds):
