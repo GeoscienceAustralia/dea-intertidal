@@ -32,6 +32,7 @@ services:
     volumes:
       - .:/code
       - ./tide_models/:/var/share/tide_models
+      - ./artifacts:/mnt/artifacts
     depends_on:
       - public_odc
     command: ["/bin/sh", "-ec", "while :; do echo '.'; sleep 180 ; done"]
