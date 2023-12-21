@@ -77,7 +77,7 @@ def extents(
     freq,
     dem,
     corr,
-    land_use_mask="/gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/clum_50m1220m.tif",
+    land_use_mask="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/abares_clum_2020/clum_50m1220m.tiff",
 ):
     """
     Classify coastal ecosystems into broad classes based
@@ -147,9 +147,6 @@ def extents(
           crosses zero)
 
     """
-    ## Connect to datacube to load `ocean_da`
-    dc = datacube.Datacube(app="ocean_masking")
-
     # Load the land use dataset to mask out misclassified extents classes caused by urban land class
     landuse_da = load_reproject(
         path=land_use_mask,

@@ -1,0 +1,8 @@
+ignore:
+  - "intertidal/validation.py"
+  - "intertidal/composites.py"
+  
+coverage:
+  precision: 1
+  round: down
+  range: "50...90"

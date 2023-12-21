@@ -820,7 +820,7 @@ def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=
         smoothed_ds = interval_ds.rolling(
             interval=smooth_radius,
             center=False,
-            min_periods=1,  #int(smooth_radius / 2.0),
+            min_periods=1,  # int(smooth_radius / 2.0),
         ).mean()
     else:
         smoothed_ds = interval_ds
@@ -843,6 +843,7 @@ def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=
 
     # Export as xr.Dataset
     return dem_flat.to_dataset(name="elevation")
+
 
 def pixel_dem_debug(
     x,
@@ -1113,7 +1114,7 @@ def clean_edge_pixels(ds):
     effects mean that modelled elevations are likely to be inaccurate.
 
     This function uses binary dilation to identify the edges of
-    intertidal elevation data with greater than 0 elevation. The 
+    intertidal elevation data with greater than 0 elevation. The
     resulting mask is applied to the elevation dataset to remove upper
     intertidal edge pixels from both elevation and uncertainty datasets.
 
@@ -1247,7 +1248,7 @@ def elevation(
             ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
             # ancillary_points="data/raw/tide_correlation_points_spearmanndwi_nt.geojson",
             top_n=3,
-            reduce_method='mean',
+            reduce_method="mean",
             resolution=3000,
         )
 
@@ -1347,14 +1348,14 @@ def elevation(
 @click.option(
     "--start_date",
     type=str,
-    default="2020",
+    default="2019",
     help="The start date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
 @click.option(
     "--end_date",
     type=str,
-    default="2022",
+    default="2021",
     help="The end date of satellite data to load from the "
     "datacube. This can be any date format accepted by datacube. ",
 )
@@ -1494,44 +1495,55 @@ def intertidal_cli(
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
     # Create output folder. If it doesn't exist, create it
-    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}-spearman"
+    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
     os.makedirs(output_dir, exist_ok=True)
 
     try:
         log.info(f"Study area {study_area}: Loading satellite data")
-
-        # Connect to datacube to load data
-        dc = datacube.Datacube(app="Intertidal_CLI")
-
+        
         # Create local dask cluster to improve data load time
         client = create_local_dask_cluster(return_client=True)
 
-        satellite_ds = load_data(
-            dc=dc,
-            study_area=study_area,
-            time_range=(start_date, end_date),
-            resolution=resolution,
-            crs="EPSG:3577",
-            include_s2=True,
-            include_ls=True,
-            filter_gqa=True,
-            max_cloudcover=90,
-            skip_broken_datasets=True,
-        )
+        if study_area == "testing":
+            log.info(f"Running in testing mode")
+            import pickle
 
-        # Load data
-        satellite_ds.load()
+            with open("tests/data/satellite_ds.pickle", "rb") as handle:
+                satellite_ds = pickle.load(handle)
+            valid_mask = None
 
-        # Load data from GA's Australian Bathymetry and Topography Grid 2009
-        topobathy_ds = load_topobathy(
-            dc, satellite_ds, product="ga_multi_ausbath_0", resampling="bilinear"
-        )
+        else:
+            
+            # Connect to datacube to load data
+            dc = datacube.Datacube(app="Intertidal_CLI")
+
+            satellite_ds = load_data(
+                dc=dc,
+                study_area=study_area,
+                time_range=(start_date, end_date),
+                resolution=resolution,
+                crs="EPSG:3577",
+                include_s2=True,
+                include_ls=True,
+                filter_gqa=True,
+                max_cloudcover=90,
+                skip_broken_datasets=True,
+            )
+
+            # Load data
+            satellite_ds.load()
+
+            # Load data from GA's Australian Bathymetry and Topography Grid 2009
+            topobathy_ds = load_topobathy(
+                dc, satellite_ds, product="ga_multi_ausbath_0", resampling="bilinear"
+            )
+            valid_mask = topobathy_ds.height_depth > -20
 
         # Calculate elevation
         log.info(f"Study area {study_area}: Calculating Intertidal Elevation")
         ds, ds_aux, tide_m = elevation(
             satellite_ds,
-            valid_mask=topobathy_ds.height_depth > -20,
+            valid_mask=valid_mask,
             ndwi_thresh=ndwi_thresh,
             min_freq=min_freq,
             max_freq=max_freq,

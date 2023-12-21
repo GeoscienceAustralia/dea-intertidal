@@ -1,4 +1,4 @@
-name: DEA Intertidal Image Push
+name: Image build and test
 
 env:
   IMAGE_NAME: geoscienceaustralia/dea-intertidal
@@ -11,11 +11,13 @@ on:
     paths:
       - 'intertidal/**'
       - 'data/**'
+      - 'tests/**'
       - '.github/workflows/dea-intertidal-image.yml'
       - 'Dockerfile'
       - 'requirements.in'
       - 'setup.py'
       - 'docker-compose.yml'
+      - 'codecov.yaml'
 
   release:
     types: [created, edited, published]
@@ -31,12 +33,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Build DEA Intertidal image
         timeout-minutes: 20
         shell: bash
         run: |
           docker-compose build
+
+      - name: Run tests
+        run: |
+          # Download tide modelling files and unzip
+          # TODO: Replace with S3 sync from dea-non-public-data
+          wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
+          unzip -q tide_models.zip
+
+          # Run integration tests using Docker
+          docker compose run dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      # - name: Setup upterm session
+      #   uses: lhotari/action-upterm@v1
 
   push_ecr:
     needs: [test]
