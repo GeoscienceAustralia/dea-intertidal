@@ -2,6 +2,7 @@ import pytest
 import pickle
 import rioxarray
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 from click.testing import CliRunner
 
