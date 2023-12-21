@@ -85,7 +85,7 @@ def test_dem_accuracy(
     #########
     # Plots #
     #########
-
+    
     # Transpose and add index time and prefix name
     accuracy_df = pd.DataFrame({pd.to_datetime("now", utc=True): accuracy_metrics}).T
     accuracy_df.index.name = "time"
@@ -99,13 +99,12 @@ def test_dem_accuracy(
     )
     accuracy_df = pd.read_csv(input_csv, index_col=0, parse_dates=True)
 
-    # Extract integration test run times and convert to local time
-    times_local = accuracy_df.index.tz_convert(tz="Australia/Canberra")
-    accuracy_df.index = times_local
+    # Convert dataframe to local time
+    accuracy_df_local = accuracy_df.tz_convert(tz="Australia/Canberra")
 
     # Create plot and add overall title
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7.5))
-    latest_time = times_local[-1].strftime("%Y-%m-%d %H:%M")
+    latest_time = accuracy_df_local.index[-1].strftime("%Y-%m-%d %H:%M")
     plt.suptitle(
         f"Latest DEA Intertial Elevation integration test validation ({latest_time})",
         size=14,
@@ -134,7 +133,7 @@ def test_dem_accuracy(
     )
 
     # Add text (including latest accuracy annotations)
-    corr, rmse, mae, r2, bias, slope = accuracy_df.iloc[-1]
+    corr, rmse, mae, r2, bias, slope = accuracy_df_local.iloc[-1]
     ax1.annotate(
         f"Correlation: {corr:.2f}\n"
         f"R-squared: {r2:.2f}\n"
@@ -163,17 +162,17 @@ def test_dem_accuracy(
     ###################
 
     # Plot all integration test accuracies and biases over time
-    accuracy_df.RMSE.plot(ax=ax2, style=".-", legend=True)
-    min_q, max_q = accuracy_df.RMSE.quantile((0.1, 0.9)).values
-    ax2.fill_between(accuracy_df.index, min_q, max_q, alpha=0.2)
+    accuracy_df_local.RMSE.plot(ax=ax2, style=".-", legend=True)
+    min_q, max_q = accuracy_df_local.RMSE.quantile((0.1, 0.9)).values
+    ax2.fill_between(accuracy_df_local.index, min_q, max_q, alpha=0.2)
 
-    accuracy_df.MAE.plot(ax=ax2, style=".-", legend=True)
-    min_q, max_q = accuracy_df.MAE.quantile((0.1, 0.9)).values
-    ax2.fill_between(accuracy_df.index, min_q, max_q, alpha=0.2)
+    accuracy_df_local.MAE.plot(ax=ax2, style=".-", legend=True)
+    min_q, max_q = accuracy_df_local.MAE.quantile((0.1, 0.9)).values
+    ax2.fill_between(accuracy_df_local.index, min_q, max_q, alpha=0.2)
 
-    accuracy_df.Bias.plot(ax=ax2, style=".-", legend=True)
-    min_q, max_q = accuracy_df.Bias.quantile((0.1, 0.9)).values
-    ax2.fill_between(accuracy_df.index, min_q, max_q, alpha=0.2)
+    accuracy_df_local.Bias.plot(ax=ax2, style=".-", legend=True)
+    min_q, max_q = accuracy_df_local.Bias.quantile((0.1, 0.9)).values
+    ax2.fill_between(accuracy_df_local.index, min_q, max_q, alpha=0.2)
     ax2.set_title("Accuracy and bias across test runs")
     ax2.set_ylabel("Metres (m)")
     ax2.set_xlabel(None)
