@@ -62,16 +62,11 @@ jobs:
       #   uses: lhotari/action-upterm@v1
 
       # Commit validation results produced by integration tests back into repo
-      - uses: stefanzweifel/git-auto-commit-action@v4
+      - name: Commit validation results into repository
+        uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
-
-      # Add output data to Actions artifact so it can be downloaded
-      - uses: actions/upload-artifact@v3
-        with:
-          name: validation_plot
-          path: ./artifacts/validation.jpg
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
