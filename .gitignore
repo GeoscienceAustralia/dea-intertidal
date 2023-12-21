@@ -11,3 +11,4 @@
 !*.gitignore
 !*.dockerignore
 !*Dockerfile
+!tests/*.jpg
