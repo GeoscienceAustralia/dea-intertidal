@@ -77,8 +77,8 @@ def test_dem_accuracy(
     # Plot and compare - heatmap
     plt.figure(figsize=(5, 5))
     lim_min, lim_max = np.percentile(np.concatenate([validation_z, modelled_z]), [1, 99])
-    lim_min -= 0.2
-    lim_max += 0.2
+    lim_min -= 0.1
+    lim_max += 0.1
     sns.kdeplot(
         x=validation_z,
         y=modelled_z,
@@ -96,7 +96,7 @@ def test_dem_accuracy(
     plt.ylim(lim_min, lim_max)
     plt.xlabel("Validation (m)")
     plt.ylabel("Modelled (m)")
-    plt.title("Modelled vs validation elevation")
+    plt.title("Modelled vs. validation elevation")
 
     # Add stats annotation
     plt.gca().annotate(
