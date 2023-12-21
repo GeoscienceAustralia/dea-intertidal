@@ -1,5 +1,4 @@
 ignore:
-  - "intertidal/validation.py"
   - "intertidal/composites.py"
   
 coverage:
