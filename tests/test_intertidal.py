@@ -100,9 +100,6 @@ def test_dem_accuracy(
     times_local = accuracy_df.index.tz_convert(tz="Australia/Canberra")
     accuracy_df.index = times_local
 
-    # Get latest stats
-    corr, rmse, mae, r2, bias, slope = accuracy_df.iloc[-1]
-
     # Create plot and add overall title
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7.5))
     latest_time = times_local[-1].strftime("%Y-%m-%d %H:%M")
@@ -133,7 +130,8 @@ def test_dem_accuracy(
         levels=30,
     )
 
-    # Add text
+    # Add text (including latest accuracy annotations)
+    corr, rmse, mae, r2, bias, slope = accuracy_df.iloc[-1]
     ax1.annotate(
         f"Correlation: {corr:.2f}\n"
         f"R-squared: {r2:.2f}\n"

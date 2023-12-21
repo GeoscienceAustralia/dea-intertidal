@@ -2,4 +2,4 @@
 
 ### Accuracy results
 
-<img src="validation.jpg" width="500"/>
+<img src="validation.jpg" width="950"/>
