@@ -56,7 +56,8 @@ jobs:
           # in correct output locations so they can be committed back into the repository
           cp ./artifacts/validation.jpg ./tests/validation.jpg
 
-          git status
+      - name: Setup upterm session
+        uses: lhotari/action-upterm@v1
 
       # Commit validation results produced by integration tests back into repo
       - uses: stefanzweifel/git-auto-commit-action@v4
@@ -74,9 +75,6 @@ jobs:
         uses: codecov/codecov-action@v3
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-      # - name: Setup upterm session
-      #   uses: lhotari/action-upterm@v1
 
   push_ecr:
     needs: [test]
