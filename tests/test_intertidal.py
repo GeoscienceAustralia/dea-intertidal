@@ -1,5 +1,7 @@
+import pytz
 import pytest
 import pickle
+import datetime
 import rioxarray
 import numpy as np
 import seaborn as sns
@@ -48,10 +50,10 @@ def test_dem_accuracy(
 ):
     """
     Compares elevation outputs of the previous CLI step against
-    validation data, and calculates and evaluates a range of accuracy 
+    validation data, and calculates and evaluates a range of accuracy
     metrics.
     """
-    
+
     # Load validation data
     validation_da = rioxarray.open_rasterio(val_path, masked=True).squeeze("band")
 
@@ -76,7 +78,9 @@ def test_dem_accuracy(
 
     # Plot and compare - heatmap
     plt.figure(figsize=(5, 5))
-    lim_min, lim_max = np.percentile(np.concatenate([validation_z, modelled_z]), [1, 99])
+    lim_min, lim_max = np.percentile(
+        np.concatenate([validation_z, modelled_z]), [1, 99]
+    )
     lim_min -= 0.1
     lim_max += 0.1
     sns.kdeplot(
@@ -96,22 +100,28 @@ def test_dem_accuracy(
     plt.ylim(lim_min, lim_max)
     plt.xlabel("Validation (m)")
     plt.ylabel("Modelled (m)")
-    plt.title("Modelled vs. validation elevation")
+
+    # Add title
+    current_time = datetime.datetime.now(pytz.timezone("Australia/Canberra")).strftime(
+        "%Y-%m-%d %H:%M"
+    )
+    plt.title(f"DEA Intertidal Elevation validation\n(Last run: {current_time})")
 
     # Add stats annotation
     plt.gca().annotate(
-        f'Correlation: {accuracy_df["Correlation"]:.2f}\n' \
-        f'R-squared: {accuracy_df["R-squared"]:.2f}\n' \
-        f'RMSE: {accuracy_df["RMSE"]:.2f} m\n' \
-        f'MAE: {accuracy_df["MAE"]:.2f} m\n' \
-        f'Bias: {accuracy_df["Bias"]:.2f} m\n' \
-        f'Slope: {accuracy_df["Regression slope"]:.2f}\n',    
+        f'Correlation: {accuracy_df["Correlation"]:.2f}\n'
+        f'R-squared: {accuracy_df["R-squared"]:.2f}\n'
+        f'RMSE: {accuracy_df["RMSE"]:.2f} m\n'
+        f'MAE: {accuracy_df["MAE"]:.2f} m\n'
+        f'Bias: {accuracy_df["Bias"]:.2f} m\n'
+        f'Slope: {accuracy_df["Regression slope"]:.2f}\n',
         xy=(0.04, 0.7),
         fontsize=9,
         xycoords="axes fraction",
         color="white",
     )
 
+    # Write into mounted artifacts directory
     plt.savefig(f"artifacts/validation.jpg", dpi=150, bbox_inches="tight")
 
 
@@ -133,7 +143,7 @@ def test_elevation(satellite_ds):
     )
     """
     Verify that elevation code produces expected outputs.
-    """    
+    """
 
     # Verify that ds contains correct variables
     assert "elevation" in ds.data_vars
