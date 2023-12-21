@@ -56,6 +56,8 @@ jobs:
           # in correct output locations so they can be committed back into the repository
           cp ./artifacts/validation.jpg ./tests/validation.jpg
 
+          git status
+
       # Commit validation results produced by integration tests back into repo
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
