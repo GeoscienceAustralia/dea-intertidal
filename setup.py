@@ -17,6 +17,7 @@ REQUIRED = [
     "fiona",
     "geopandas",
     "matplotlib",
+    "mdutils",
     "numpy",
     "odc-geo", 
     "odc-ui",

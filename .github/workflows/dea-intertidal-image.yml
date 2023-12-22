@@ -25,7 +25,7 @@ on:
 
 permissions:
   id-token: write   # This is required for requesting the JWT
-  contents: read    # This is required for actions/checkout
+  contents: write    # This is required for actions/checkout
 
 jobs:
   test:
@@ -52,13 +52,26 @@ jobs:
           # Run integration tests using Docker
           docker compose run dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
+          # Copy out validation outputs produced by the integration tests and place them
+          # in correct output locations so they can be committed back into the repository
+          cp ./artifacts/validation.jpg ./tests/validation.jpg
+          cp ./artifacts/validation.csv ./tests/validation.csv
+          cp ./artifacts/README.md ./tests/README.md
+
+      # - name: Setup upterm session
+      #   uses: lhotari/action-upterm@v1
+
+      # Commit validation results produced by integration tests back into repo
+      - name: Commit validation results into repository
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Automatically update integration test validation results
+          file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-      # - name: Setup upterm session
-      #   uses: lhotari/action-upterm@v1
 
   push_ecr:
     needs: [test]
