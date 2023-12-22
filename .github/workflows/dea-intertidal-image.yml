@@ -19,6 +19,20 @@ on:
       - 'docker-compose.yml'
       - 'codecov.yaml'
 
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'intertidal/**'
+      - 'data/**'
+      - 'tests/**'
+      - '.github/workflows/dea-intertidal-image.yml'
+      - 'Dockerfile'
+      - 'requirements.in'
+      - 'setup.py'
+      - 'docker-compose.yml'
+      - 'codecov.yaml'
+
   release:
     types: [created, edited, published]
 
