@@ -19,6 +19,20 @@ on:
       - 'docker-compose.yml'
       - 'codecov.yaml'
 
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'intertidal/**'
+      - 'data/**'
+      - 'tests/**'
+      - '.github/workflows/dea-intertidal-image.yml'
+      - 'Dockerfile'
+      - 'requirements.in'
+      - 'setup.py'
+      - 'docker-compose.yml'
+      - 'codecov.yaml'
+
   release:
     types: [created, edited, published]
 
@@ -76,6 +90,10 @@ jobs:
   push_ecr:
     needs: [test]
     runs-on: ubuntu-latest
+
+    # Only run on a push to the main branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
