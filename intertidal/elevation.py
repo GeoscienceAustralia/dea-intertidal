@@ -1245,7 +1245,8 @@ def elevation(
         tide_m, _ = pixel_tides_ensemble(
             satellite_ds,
             directory=tide_model_dir,
-            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+            ancillary_points="data/raw/corr_points.geojson",
+            # ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
             # ancillary_points="data/raw/tide_correlation_points_spearmanndwi_nt.geojson",
             top_n=3,
             reduce_method="mean",
