@@ -4,6 +4,13 @@
 # Except for
 !*.py
 !*.ipynb
+!*.md
 !*.sh
 !*.yaml
+!*.yml
+!*.in
+!**.github/workflows
 !*.gitignore
+!*.dockerignore
+!*Dockerfile
+!tests/*.jpg

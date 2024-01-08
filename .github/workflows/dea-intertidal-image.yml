@@ -1,0 +1,132 @@
+name: Image build and test
+
+env:
+  IMAGE_NAME: geoscienceaustralia/dea-intertidal
+
+on:
+  push:
+    branches:
+      - main
+      - tests
+    paths:
+      - 'intertidal/**'
+      - 'data/**'
+      - 'tests/**'
+      - '.github/workflows/dea-intertidal-image.yml'
+      - 'Dockerfile'
+      - 'requirements.in'
+      - 'setup.py'
+      - 'docker-compose.yml'
+      - 'codecov.yaml'
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'intertidal/**'
+      - 'data/**'
+      - 'tests/**'
+      - '.github/workflows/dea-intertidal-image.yml'
+      - 'Dockerfile'
+      - 'requirements.in'
+      - 'setup.py'
+      - 'docker-compose.yml'
+      - 'codecov.yaml'
+
+  release:
+    types: [created, edited, published]
+
+
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  contents: write    # This is required for actions/checkout
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Build DEA Intertidal image
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          docker-compose build
+
+      - name: Run tests
+        run: |
+          # Download tide modelling files and unzip
+          # TODO: Replace with S3 sync from dea-non-public-data
+          wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
+          unzip -q tide_models.zip
+
+          # Run integration tests using Docker
+          docker compose run dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
+
+          # Copy out validation outputs produced by the integration tests and place them
+          # in correct output locations so they can be committed back into the repository
+          cp ./artifacts/validation.jpg ./tests/validation.jpg
+          cp ./artifacts/validation.csv ./tests/validation.csv
+          cp ./artifacts/README.md ./tests/README.md
+
+      # - name: Setup upterm session
+      #   uses: lhotari/action-upterm@v1
+
+      # Commit validation results produced by integration tests back into repo
+      - name: Commit validation results into repository
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Automatically update integration test validation results
+          file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v3
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  push_ecr:
+    needs: [test]
+    runs-on: ubuntu-latest
+
+    # Only run on a push to the main branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::538673716275:role/github-actions-role
+          aws-region: ap-southeast-2
+
+      - name: Get tag for this build if it exists
+        if: github.event_name == 'release'
+        run: |
+          echo "RELEASE=${GITHUB_REF/refs\/tags\/}" >> $GITHUB_ENV
+
+      - name: Push release image to ECR
+        uses: whoan/docker-build-with-cache-action@master
+        if: github.event_name == 'release'
+        with:
+          registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
+          image_name: ${{ env.IMAGE_NAME }}
+          image_tag: ${{ env.RELEASE }}
+
+      - name: Get git commit hash for push to main
+        if: github.event_name != 'release'
+        run: |
+          echo "TAG=dev$(git rev-parse --short HEAD)" \
+          >> $GITHUB_ENV
+
+      - name: Push unstable image to ECR
+        uses: whoan/docker-build-with-cache-action@master
+        if: github.event_name != 'release'
+        with:
+          registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
+          image_name: ${{ env.IMAGE_NAME }}
+          image_tag: latest,${{ env.TAG }}

@@ -4,6 +4,8 @@
 
 [![DOI](https://img.shields.io/badge/DOI-10.1016/j.ecss.2019.03.006-0e7fbf.svg)](https://doi.org/10.1016/j.ecss.2019.03.006)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![codecov](https://codecov.io/gh/GeoscienceAustralia/dea-intertidal/branch/main/graph/badge.svg?token=7HXSIPGT5I)](https://codecov.io/gh/GeoscienceAustralia/dea-intertidal)
+[![example workflow](https://github.com/GeoscienceAustralia/dea-intertidal/actions/workflows/dea-intertidal-image.yml/badge.svg)](https://github.com/GeoscienceAustralia/dea-intertidal/actions/workflows/dea-intertidal-image.yml)
 
 **License:** The code in this repository is licensed under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0). Digital Earth Australia data is licensed under the [Creative Commons by Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/).
 

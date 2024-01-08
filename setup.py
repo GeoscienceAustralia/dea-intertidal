@@ -17,30 +17,38 @@ REQUIRED = [
     "fiona",
     "geopandas",
     "matplotlib",
+    "mdutils",
     "numpy",
     "odc-geo", 
-    "odc_ui",
+    "odc-ui",
+    "odc-algo",
     "pandas",
     "pygeos",
     "pyproj",
     "pyTMD>=2.0.0",
+    "pytest",
+    "pytest-dependency",
+    "pytest-cov",
     "pytz",
     "rasterio",
     "setuptools-scm",
-    "scikit_image",
-    "scikit_learn",
+    "seaborn",
+    "sunriset",
+    "scikit-image",
+    "scikit-learn",
     "scipy",
     "shapely",
     "tqdm",
     "xarray",
+    "xskillscore",
 ]
 
 # Package metadata
 NAME = "dea_intertidal"
 DESCRIPTION = "Tools for running Digital Earth Australia Intertidal"
 URL = "https://github.com/GeoscienceAustralia/dea-intertidal"
-EMAIL = "Robbi.BishopTaylor@ga.gov.au"
-AUTHOR = "Robbi Bishop-Taylor"
+EMAIL = "earth.observation@ga.gov.au"
+AUTHOR = "Geoscience Australia"
 REQUIRES_PYTHON = ">=3.8.0"
 
 # Setup kwargs
