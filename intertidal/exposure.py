@@ -1,23 +1,23 @@
 import xarray as xr
 import numpy as np
 import geopandas as gpd
-# import pandas as pd
+import pandas as pd
 
-# from shapely.geometry import Point
-# from shapely.ops import unary_union
-# import sunriset
-# from math import ceil
-# import datetime
+from shapely.geometry import Point
+from shapely.ops import unary_union
+import sunriset
+from math import ceil
+import datetime
 # from datetime import timedelta
-# import pytz
-# from pyproj import CRS
-# from pyproj import Transformer
+import pytz
+from pyproj import CRS, Transformer
+# from pyproj import 
 # from scipy.signal import argrelmax, argrelmin
 
 from dea_tools.coastal import pixel_tides, model_tides
 from intertidal.tide_modelling import pixel_tides_ensemble
 # from intertidal.elevation import pixel_tides_ensemble
-# from intertidal.utils import round_date_strings
+from intertidal.utils import round_date_strings
 
 def exposure(
     dem,
@@ -210,8 +210,9 @@ def exposure1(
     spatial_filters = ['Spring_high', 'Spring_low', 'Neap_high', 'Neap_low', 'Hightide', 'Lowtide']
     
     ## Set the required range of tide-height percentiles for exposure calculation
-    calculate_quantiles = np.linspace(0, 1, 101)
-    
+    # calculate_quantiles = np.linspace(0, 1, 101)
+    calculate_quantiles = np.linspace(0, 1, 1001)#Temporary to separate exposure values
+        
     ## Create empty datasets to store outputs into
     exposure = xr.Dataset(coords=dict(y=(['y'], dem.y.values),
                                       x=(['x'], dem.x.values)))
@@ -234,33 +235,60 @@ def exposure1(
         # Model tides into every pixel in the three-dimensional satellite
     # dataset (x by y by time)
     # log.info(f"{log_prefix}Modelling tide heights for each pixel")
-    if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
-        # Use ensemble model combining multiple input ocean tide models
-        ModelledTides, _ = pixel_tides_ensemble(
-            dem,
-            times=time_range,
-            directory=tide_model_dir,
-            ancillary_points="data/raw/corr_points.geojson",
-        )
-
-    else:
-        # Use single input ocean tide model
-        ModelledTides, _ = pixel_tides(
-                                dem,#ds,
-                                times=time_range,
-                                model=tide_model,
-                                directory = tide_model_dir)
     
-    ## For use with spatial filter options
-    ## stack the y and x dimensions
-    stacked_everything = ModelledTides[0].stack(z=['y','x']).groupby('z') 
+#     if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
+#         # Use ensemble model combining multiple input ocean tide models
+#         ModelledTides, _ = pixel_tides_ensemble(
+#             dem,
+#             times=time_range,
+#             directory=tide_model_dir,
+#             ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+#         )
+
+#     else:
+#         # Use single input ocean tide model
+#         ModelledTides, _ = pixel_tides(
+#                                 dem,#ds,
+#                                 times=time_range,
+#                                 model=tide_model,
+#                                 directory = tide_model_dir)
+        
+    if any (x in spatial_filters for x in filters):
+        if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
+            # Use ensemble model combining multiple input ocean tide models
+            ModelledTides, _ = pixel_tides_ensemble(
+                dem,
+                calculate_quantiles=calculate_quantiles,
+                times=time_range,
+                directory=tide_model_dir,
+                # ancillary_points="data/raw/corr_points.geojson",
+                ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+                top_n=3,
+                reduce_method='mean',
+                resolution=3000,
+            )
+
+        else:
+            # Use single input ocean tide model
+            ModelledTides, _ = pixel_tides(
+                dem,
+                calculate_quantiles=calulate_quantiles,
+                times=time_range,
+                resample=True,
+                model=tide_model,
+                directory=tide_model_dir,
+            )
+
+        ## For use with spatial filter options
+        ## stack the y and x dimensions
+        stacked_everything = ModelledTides[0].stack(z=['y','x']).groupby('z') 
     
     # ## For use with spatial filter options ####TEMP: commented out to test ensemble tide modelling. No mod_timesteps var
     # # # Extract the modelling freq units
     # order=(int(mod_timesteps[0]/2))
 
-    ## Temp: for tide-regime testing
-    filt_dt['modelledtides'] = ModelledTides
+    # ## Temp: for tide-regime testing
+    # filt_dt['modelledtides'] = ModelledTides
     
     # Filter the input timerange to include only dates or tide ranges of interest
     if filters is not None:
@@ -268,7 +296,7 @@ def exposure1(
             if x in temporal_filters:             
                
                 if x == 'dry':
-                    timeranges['dry_exp'] = time_range.drop(time_range[(time_range.month == 10) ## Wet season: Oct-Mar
+                    timeranges['dry'] = time_range.drop(time_range[(time_range.month == 10) ## Wet season: Oct-Mar
                             |(time_range.month == 11)
                             |(time_range.month == 12)
                             |(time_range.month == 1)
@@ -276,7 +304,7 @@ def exposure1(
                             |(time_range.month == 3)
                             ])
                 elif x == 'wet':
-                    timeranges['wet_exp'] = time_range.drop(time_range[(time_range.month == 4) ## Dry season: Apr-Sep
+                    timeranges['wet'] = time_range.drop(time_range[(time_range.month == 4) ## Dry season: Apr-Sep
                             |(time_range.month == 5)
                             |(time_range.month == 6)
                             |(time_range.month == 7)
@@ -284,37 +312,37 @@ def exposure1(
                             |(time_range.month == 9)
                             ])
                 elif x == 'summer':
-                    timeranges['summer_exp'] = time_range.drop(time_range[time_range.quarter != 1])
+                    timeranges['summer'] = time_range.drop(time_range[time_range.quarter != 1])
                 elif x == 'autumn':
-                    timeranges['autumn_exp'] = time_range.drop(time_range[time_range.quarter != 2])
+                    timeranges['autumn'] = time_range.drop(time_range[time_range.quarter != 2])
                 elif x == 'winter':
-                    timeranges['winter_exp'] = time_range.drop(time_range[time_range.quarter != 3])
+                    timeranges['winter'] = time_range.drop(time_range[time_range.quarter != 3])
                 elif x == 'spring':
-                    timeranges['spring_exp'] = time_range.drop(time_range[time_range.quarter != 4])
+                    timeranges['spring'] = time_range.drop(time_range[time_range.quarter != 4])
                 elif x == 'Jan':
-                    timeranges['Jan_exp'] = time_range.drop(time_range[time_range.month != 1])
+                    timeranges['Jan'] = time_range.drop(time_range[time_range.month != 1])
                 elif x == 'Feb':
-                    timeranges['Feb_exp'] = time_range.drop(time_range[time_range.month != 2])
+                    timeranges['Feb'] = time_range.drop(time_range[time_range.month != 2])
                 elif x == 'Mar':
-                    timeranges['Mar_exp'] = time_range.drop(time_range[time_range.month != 3])
+                    timeranges['Mar'] = time_range.drop(time_range[time_range.month != 3])
                 elif x == 'Apr':
-                    timeranges['Apr_exp'] = time_range.drop(time_range[time_range.month != 4])
+                    timeranges['Apr'] = time_range.drop(time_range[time_range.month != 4])
                 elif x == 'May':
-                    timeranges['May_exp'] = time_range.drop(time_range[time_range.month != 5])
+                    timeranges['May'] = time_range.drop(time_range[time_range.month != 5])
                 elif x == 'Jun':
-                    timeranges['Jun_exp'] = time_range.drop(time_range[time_range.month != 6])
+                    timeranges['Jun'] = time_range.drop(time_range[time_range.month != 6])
                 elif x == 'Jul':
-                    timeranges['Jul_exp'] = time_range.drop(time_range[time_range.month != 7])
+                    timeranges['Jul'] = time_range.drop(time_range[time_range.month != 7])
                 elif x == 'Aug':
-                    timeranges['Aug_exp'] = time_range.drop(time_range[time_range.month != 8])
+                    timeranges['Aug'] = time_range.drop(time_range[time_range.month != 8])
                 elif x == 'Sep':
-                    timeranges['Sep_exp'] = time_range.drop(time_range[time_range.month != 9])
+                    timeranges['Sep'] = time_range.drop(time_range[time_range.month != 9])
                 elif x == 'Oct':
-                    timeranges['Oct_exp'] = time_range.drop(time_range[time_range.month != 10])
+                    timeranges['Oct'] = time_range.drop(time_range[time_range.month != 10])
                 elif x == 'Nov':
-                    timeranges['Nov_exp'] = time_range.drop(time_range[time_range.month != 11])
+                    timeranges['Nov'] = time_range.drop(time_range[time_range.month != 11])
                 elif x == 'Dec':
-                    timeranges['Dec_exp'] = time_range.drop(time_range[time_range.month != 12])
+                    timeranges['Dec'] = time_range.drop(time_range[time_range.month != 12])
                 elif x == 'Daylight' or 'Night': # or ('Daylight' and 'Night')
                     ## Pip install sunriset module for calculate local sunrise and sunset times
                     # !pip install sunriset
@@ -474,9 +502,9 @@ def exposure1(
                     all_timerange_night = pd.DatetimeIndex(SolarNightTides.index)
 
                     if x == 'Daylight':
-                        timeranges['Day_exp'] = all_timerange_day
+                        timeranges['Daylight'] = all_timerange_day
                     if x == 'Night':
-                        timeranges['Night_exp'] = all_timerange_night
+                        timeranges['Night'] = all_timerange_night
             
             elif x in spatial_filters:
                 
@@ -539,7 +567,7 @@ def exposure1(
                     idxmin = diff.idxmin(dim="quantile")
 
                     # Convert to percentage
-                    exposure['springhigh_exp'] = idxmin * 100
+                    exposure['springhigh'] = idxmin * 100
                     
 
                     ## Calculate the spring highest and spring lowest tides per 14 day half lunar cycle
@@ -578,7 +606,7 @@ def exposure1(
                     idxmin = diff.idxmin(dim="quantile")
 
                     # Convert to percentage
-                    exposure['springlow_exp'] = idxmin * 100
+                    exposure['springlow'] = idxmin * 100
                     
                 if x == 'Neap_high':
                     print ('Calculating Neap_high')
@@ -634,7 +662,7 @@ def exposure1(
                     idxmin = diff.idxmin(dim="quantile")
 
                     # Convert to percentage
-                    exposure['neaphigh_exp'] = idxmin * 100
+                    exposure['neaphigh'] = idxmin * 100
 
                 if x == 'Neap_low':
                     print ('Calculating Neap_low')
@@ -690,7 +718,7 @@ def exposure1(
                     idxmin = diff.idxmin(dim="quantile")
 
                     # Convert to percentage
-                    exposure['neaplow_exp'] = idxmin * 100
+                    exposure['neaplow'] = idxmin * 100
                     
                     
                 if x == 'Hightide':
@@ -755,9 +783,7 @@ def exposure1(
                     idxmin = diff.idxmin(dim="quantile")
 
                     # Convert to percentage
-                    exposure['hightide_exp'] = idxmin * 100
-
-                    # return hightide_exposure
+                    exposure['hightide'] = idxmin * 100
 
                 if x == 'Lowtide':
                     print ('Calculating Lowtide')
@@ -826,62 +852,65 @@ def exposure1(
                     idxmin = diff.idxmin(dim="quantile")
 
                     # Convert to percentage
-                    exposure['lowtide_exp'] = idxmin * 100
+                    exposure['lowtide'] = idxmin * 100
 
         for x in timeranges:
-                    
-                # Run the pixel_tides function with the calculate_quantiles option.
-                # For each pixel, an array of tideheights is returned, corresponding
-                # to the percentiles from `calculate_quantiles` of the timerange-tide model that
-                # each tideheight appears in the model.
-                # tide_cq, _ = pixel_tides(
-                #     dem,
-                #     resample=True,
-                #     calculate_quantiles=calculate_quantiles,
-                #     times=timeranges[str(x)],
-                #     model=tide_model,
-                #     directory=tide_model_dir,
-                #     cutoff=np.inf,
-                # )
-                
-                if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
-                    # Use ensemble model combining multiple input ocean tide models
-                    tide_cq, _ = pixel_tides_ensemble(
-                        dem,
-                        # resample=True,
-                        calculate_quantiles=calculate_quantiles,
-                        # times=timeranges[str(x)],
-                        times=time_range,
-                        # times=time_range,
-                        directory=tide_model_dir,
-                        cutoff=np.inf,
-                        ancillary_points="data/raw/corr_points.geojson",
-                    )
 
-                else:
-                    # Use single input ocean tide model
-                    tide_cq, _ = pixel_tides(
-                                            dem,
-                                            resample=True,
-                                            calculate_quantiles=calculate_quantiles,
-                                            # times=timeranges[str(x)],
-                                            times=time_range,
-                                            model=tide_model,
-                                            directory=tide_model_dir,
-                                            cutoff=np.inf,)
+            # Run the pixel_tides function with the calculate_quantiles option.
+            # For each pixel, an array of tideheights is returned, corresponding
+            # to the percentiles from `calculate_quantiles` of the timerange-tide model that
+            # each tideheight appears in the model.
+            # tide_cq, _ = pixel_tides(
+            #     dem,
+            #     resample=True,
+            #     calculate_quantiles=calculate_quantiles,
+            #     times=timeranges[str(x)],
+            #     model=tide_model,
+            #     directory=tide_model_dir,
+            #     cutoff=np.inf,
+            # )
 
-                tide_cq_dict[str(x)] = tide_cq
+            if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
+                # Use ensemble model combining multiple input ocean tide models
+                tide_cq, _ = pixel_tides_ensemble(
+                    dem,
+                    # resample=True,
+                    calculate_quantiles=calculate_quantiles,
+                    times=timeranges[str(x)],
+                    # times=time_range,
+                    # times=time_range,
+                    directory=tide_model_dir,
+                    cutoff=np.inf,
+                    ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+                    top_n=3,
+                    reduce_method='mean',
+                    resolution=3000,
+                )
 
-                # Calculate the tide-height difference between the elevation value and
-                # each percentile value per pixel
-                diff = abs(tide_cq - dem)
+            else:
+                # Use single input ocean tide model
+                tide_cq, _ = pixel_tides_ensemble(
+                                        dem,
+                                        resample=True,
+                                        calculate_quantiles=calculate_quantiles,
+                                        times=timeranges[str(x)],
+                                        # times=time_range,
+                                        model=tide_model,
+                                        directory=tide_model_dir,
+                                        cutoff=np.inf,)
 
-                # Take the percentile of the smallest tide-height difference as the
-                # exposure % per pixel
-                idxmin = diff.idxmin(dim="quantile")
+            tide_cq_dict[str(x)] = tide_cq
 
-                # Convert to percentage
-                exposure[str(x)] = idxmin * 100
+            # Calculate the tide-height difference between the elevation value and
+            # each percentile value per pixel
+            diff = abs(tide_cq - dem)
+
+            # Take the percentile of the smallest tide-height difference as the
+            # exposure % per pixel
+            idxmin = diff.idxmin(dim="quantile")
+
+            # Convert to percentage
+            exposure[str(x)] = idxmin * 100
 
         # return exposure, tide_cq
     
@@ -912,7 +941,10 @@ def exposure1(
                                     # times=time_range,
                                     directory=tide_model_dir,
                                     cutoff=np.inf,
-                                    ancillary_points="data/raw/corr_points.geojson",
+                                    ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+                                    top_n=3,
+                                    reduce_method='mean',
+                                    resolution=3000,
                                     )
 
         else:
@@ -926,7 +958,7 @@ def exposure1(
                                     model=tide_model,
                                     directory=tide_model_dir,
                                     cutoff=np.inf,
-                                    )
+                                    )       
         
         tide_cq_dict['all_epoch']=tide_cq
         # Calculate the tide-height difference between the elevation value and
@@ -938,7 +970,7 @@ def exposure1(
         idxmin = diff.idxmin(dim="quantile")
 
         # Convert to percentage
-        exposure['all_epoch_exp'] = idxmin * 100
+        exposure['all_epoch'] = idxmin * 100
 
     return exposure, tide_cq_dict, filt_dt #filt_dt is temp and only works with spatial customs
             # return exposure
