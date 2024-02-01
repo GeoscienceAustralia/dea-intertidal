@@ -21,7 +21,8 @@ from intertidal.utils import round_date_strings
 
 def exposure(
             dem,
-            time_range,
+            start_date,
+            end_date,
             modelled_freq = "30min",
             tide_model="ensemble",
             tide_model_dir="/var/share/tide_models",
@@ -97,6 +98,12 @@ def exposure(
     - if filters is set to `None`, no exposure will be calculated and
     the program will fail unless a tuple is nominated in `filters_combined`
     """
+    # Generate range of times covering entire period of satellite record for exposure and bias/offset calculation
+    time_range = pd.date_range(
+        start=round_date_strings(start_date, round_type="start"),
+        end=round_date_strings(end_date, round_type="end"),
+        freq=modelled_freq,
+    )
     
     # Separate 'filters' into spatial and temporal categories to define
     # which exposure workflow to use
