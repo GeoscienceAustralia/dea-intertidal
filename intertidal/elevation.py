@@ -1560,7 +1560,7 @@ def intertidal_cli(
         # Calculate extents
         log.info(f"Study area {study_area}: Calculating Intertidal Extents")
         ds["extents"] = extents(
-            ds_aux.ndwi_wet_freq, ds.elevation, ds_aux.ndwi_tide_corr
+            dc, ds_aux.ndwi_wet_freq, ds.elevation, ds_aux.ndwi_tide_corr
         )
 
         if exposure_offsets:
@@ -1573,13 +1573,25 @@ def intertidal_cli(
                 freq=modelled_freq,
             )
 
-            # Calculate exposure
+            # Calculate exposure (use only until exposure PR is accepted/merged)
             ds["exposure"], tide_cq = exposure(
                 dem=ds.elevation,
                 time_range=all_timerange,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
             )
+            
+#             # Calculate exposure (use the following 10 lines once the exposure PR is approved)
+#             exposure_filters, tide_cq = exposure(
+#                 dem=ds.elevation,
+#                 time_range=all_timerange,
+#                 modelled_freq = modelled_freq,
+#                 tide_model=tide_model,
+#                 tide_model_dir=tide_model_dir,
+#             )
+            
+#             for x in list(exposure_filters.keys()):
+#                 ds["exposure_"+str(x)]=exposure_filters[str(x)]
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(
@@ -1596,7 +1608,7 @@ def intertidal_cli(
                 ds["oa_offset_hightide"],
             ) = bias_offset(
                 tide_m=tide_m,
-                tide_cq=tide_cq,
+                tide_cq=tide_cq['unfiltered'],
                 extents=ds.extents,
                 lot_hot=True,
                 lat_hat=True,
