@@ -1,448 +1,35 @@
-import os
 import sys
 import numpy as np
 import pandas as pd
 import xarray as xr
 import seaborn as sns
-import geopandas as gpd
-from glob import glob
 import matplotlib.pyplot as plt
 from skimage.morphology import binary_dilation
 from concurrent.futures import ProcessPoolExecutor
 from tqdm.auto import tqdm
 from itertools import repeat
 import click
-import xskillscore
 
 import datacube
 import odc.geo.xr
-from odc.geo.geom import Geometry
-from odc.geo.geobox import GeoBox
-from odc.geo.gridspec import GridSpec
-from odc.geo.types import xy_
-from odc.algo import (
-    mask_cleanup,
-    xr_quantile,
-    enum_to_bool,
-    keep_good_only,
-    erase_bad,
-    to_f32,
-)
+from odc.algo import xr_quantile
 from datacube.utils.aws import configure_s3_access
-
-from dea_tools.coastal import pixel_tides, glint_angle, _pixel_tides_resample
+from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
-from dea_tools.spatial import interpolate_2d
-from dea_tools.temporal import lag_linregress_3D
 
+from intertidal.io import (
+    load_data,
+    prepare_for_export,
+    export_dataset_metadata,
+)
 from intertidal.utils import (
     configure_logging,
     round_date_strings,
-    export_intertidal_rasters,
 )
 from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.extents import extents
 from intertidal.exposure import exposure
-from intertidal.tidal_bias_offset import bias_offset, tidal_offset_tidelines
-
-
-def extract_geobox(
-    study_area=None,
-    geom=None,
-    resolution=10,
-    crs="EPSG:3577",
-    tile_width=32000,
-    gridspec_origin_x=-2688000,
-    gridspec_origin_y=-5472000,
-):
-    """
-    Handles extraction of a GeoBox pixel grid from either a GridSpec
-    tile ID (in the form 'x143y56'), or a provided Geometry object.
-
-    If a tile ID string is passed to `study_area`, a GeoBox will be
-    extracted based on relevant GridSpec tile. If a custom Geometry
-    object is passed using `geom`, it will be converted to a GeoBox.
-
-    (Either `study_area` or `geom` is required; `geom` will override
-    `study_area` if provided).
-
-    Parameters
-    ----------
-    study_area : str, optional
-        Tile ID string to process. This should be the ID of a GridSpec
-        analysis tile in the format "x143y56". If `geom` is provided,
-        this will have no effect.
-    geom : Geometry, optional
-        A datacube Geometry object defining a custom spatial extent of
-        interest. If `geom` is provided, this will overrule any study
-        area ID passed to `study_area` and will be returned as-is.
-    resolution : int, optional
-        The desired resolution of the GeoBox grid, in units of the
-        coordinate reference system (CRS). Defaults to 10.
-    crs : str, optional
-        The coordinate reference system (CRS) to use for the GeoBox.
-        Defaults to "EPSG:3577".
-    tile_width : int, optional
-        The width of a GridSpec tile, in units of the coordinate
-        reference system (CRS). Defaults to 32000 metres.
-    gridspec_origin_x : int, optional
-        The x-coordinate of the origin (bottom-left corner) of the
-        GridSpec tile grid. Defaults to -2688000.
-    gridspec_origin_y : int, optional
-        The y-coordinate of the origin (bottom-left corner) of the
-        GridSpec tile grid. Defaults to -5472000.
-
-    Returns
-    -------
-    geobox : odc.geo.geobox.GeoBox
-        A GeoBox defining the pixel grid to use to load data (defining
-        the CRS, resolution, shape and extent of the study area).
-    """
-
-    def _id_to_tuple(id_str):
-        """
-        Converts a tile ID in form 'x143y56' to a ix, iy tuple so it
-        can be passed to a GridSpec (e.g. `gs[ix, iy]`)
-        """
-        try:
-            ix, iy = id_str.replace("x", "").split("y")
-            return int(ix), int(iy)
-        except ValueError:
-            raise ValueError(
-                "Supplied study area ID is not in the form 'x143y56'. If "
-                "you meant to provide an ID matching a feature from a "
-                "custom vector file, make sure you run the 'Optional: "
-                "load study area from vector file' notebook cell."
-            )
-
-    # List of valid input geometry types (from `odc-geo` or `datacube-core`)
-    GEOM_TYPES = (odc.geo.geom.Geometry, datacube.utils.geometry._base.Geometry)
-
-    # Either `study_area` or `geom` must be provided
-    if study_area is None and geom is None:
-        raise ValueError(
-            "Please provide either a study area ID (using `study_area`), "
-            "or a datacube Geometry object (using `geom`)."
-        )
-
-    # If custom geom is provided, verify it is a geometry
-    elif geom is not None and not isinstance(geom, GEOM_TYPES):
-        raise ValueError(
-            "Unsupported input type for `geom`; please provide a "
-            "datacube Geometry object."
-        )
-
-    # Otherwise, extract GeoBox from geometry
-    elif geom is not None and isinstance(geom, GEOM_TYPES):
-        geobox = GeoBox.from_geopolygon(geom, crs=crs, resolution=resolution)
-
-    # If no custom geom provided, load tile from GridSpec tile grid
-    elif geom is None:
-        # Verify that resolution fits evenly inside tile width
-        if tile_width % resolution != 0:
-            raise ValueError(
-                "Ensure that `resolution` divides into `tile_width` evenly."
-            )
-
-        # Calculate tile pixels
-        n_pixels = tile_width / resolution
-
-        # Create GridSpec tile grid
-        gs = GridSpec(
-            crs=crs,
-            resolution=resolution,
-            tile_shape=(n_pixels, n_pixels),
-            origin=xy_(gridspec_origin_x, gridspec_origin_y),
-        )
-
-        # Extract GeoBox from GridSpec
-        geobox = gs[_id_to_tuple(study_area)]
-
-    return geobox
-
-
-def load_data(
-    dc,
-    study_area=None,
-    geom=None,
-    time_range=("2019", "2021"),
-    resolution=10,
-    crs="EPSG:3577",
-    include_s2=True,
-    include_ls=True,
-    filter_gqa=True,
-    max_cloudcover=90,
-    ndwi=True,
-    mask_sunglint=None,
-    dask_chunks=None,
-    dtype="float32",
-    log=None,
-    **query,
-):
-    """
-    Loads cloud-masked Sentinel-2 and Landsat satellite data for a given
-    study area/geom and time range.
-
-    Supports optionally converting to Normalised Difference Water Index
-    and masking sunglinted pixels.
-
-    Parameters
-    ----------
-    dc : datacube.Datacube()
-        A datacube instance to load data from.
-    study_area : str, optional
-        Tile ID string to process. This should be the ID of a GridSpec
-        analysis tile in the format "x143y56". If `geom` is provided,
-        this will have no effect.
-    geom : Geometry, optional
-        A datacube Geometry object defining a custom spatial extent of
-        interest. If `geom` is provided, this will overrule any study
-        area ID passed to `study_area` and will be returned as-is.
-    time_range : tuple, optional
-        A tuple containing the start and end date for the time range of
-        interest, in the format (start_date, end_date). The default is
-        ("2019", "2021").
-    resolution : int or float, optional
-        The spatial resolution (in metres) to load data at. The default
-        is 10.
-    crs : str, optional
-        The coordinate reference system (CRS) to project data into. The
-        default is Australian Albers "EPSG:3577".
-    include_s2 : bool, optional
-        Whether to load Sentinel-2 data.
-    include_ls : bool, optional
-        Whether to load Landsat data.
-    filter_gqa : bool, optional
-        Whether or not to filter Sentinel-2 data using the GQA filter.
-        Defaults to True.
-    max_cloudcover : float, optional
-        The maximum cloud cover metadata value used to load data.
-        Defaults to 90 (i.e. 90% cloud cover).
-    ndwi : bool, optional
-        Whether to convert spectral bands to Normalised Difference Water
-        Index values before returning them. Note that this must be set
-        to True if both `include_s2` and `include_ls` are True.
-    mask_sunglint : int, optional
-        EXPERIMENTAL: Whether to mask out pixels that are likely to be
-        affected by sunglint using glint angles. Low glint angles
-        (e.g. < 20) often correspond with sunglint. Defaults to None;
-        set to e.g. "20" to mask out all pixels with a glint angle of
-        less than 20.
-    dask_chunks : dict, optional
-        Optional custom Dask chunks to load data with. Defaults to None,
-        which will use '{"x": 1600, "y": 1600}'.
-    dtype : str, optional
-        Desired data type for output data. Valid values are "int16"
-        (default) and "float32". If `ndwi=True`, then "float32" will be
-        used regardless of what is set here (as nodata values must be
-        set to 'NaN' before calculating NDWI).
-    **query :
-        Optional datacube.load keyword argument parameters used to
-        query data.
-
-    Returns
-    -------
-    satellite_ds : xarray.Dataset
-        An xarray dataset containing the loaded Landsat or Sentinel-2
-        data.
-    """
-
-    # Set spectral bands to load
-    s2_spectral_bands = [
-        "nbart_blue",
-        "nbart_green",
-        "nbart_red",
-        "nbart_red_edge_1",
-        "nbart_red_edge_2",
-        "nbart_red_edge_3",
-        "nbart_nir_1",
-        "nbart_nir_2",
-        "nbart_swir_2",
-        "nbart_swir_3",
-    ]
-    ls_spectral_bands = [
-        "nbart_blue",
-        "nbart_green",
-        "nbart_red",
-        "nbart_nir",
-        "nbart_swir_1",
-        "nbart_swir_2",
-    ]
-
-    # Set masking bands to load
-    s2_masking_bands = ["oa_s2cloudless_mask", "oa_nbart_contiguity"]
-    ls_masking_bands = ["oa_fmask", "oa_nbart_contiguity"]
-
-    # Set sunglint bands to load
-    if mask_sunglint is not None:
-        sunglint_bands = [
-            "oa_solar_zenith",
-            "oa_solar_azimuth",
-            "oa_satellite_azimuth",
-            "oa_satellite_view",
-        ]
-    else:
-        sunglint_bands = []
-
-    # Load study area, defined as a GeoBox pixel grid
-    geobox = extract_geobox(
-        study_area=study_area, geom=geom, resolution=resolution, crs=crs
-    )
-
-    # Set up query params
-    query_params = {
-        "like": geobox.compat,  # Load into the exact GeoBox pixel grid
-        "time": time_range,
-        **query,  # Optional additional query parameters
-    }
-
-    # Set up load params
-    load_params = {
-        "group_by": "solar_day",
-        "dask_chunks": {"x": 1600, "y": 1600} if dask_chunks is None else dask_chunks,
-        "resampling": {
-            "*": "cubic",
-            "oa_fmask": "nearest",
-            "oa_s2cloudless_mask": "nearest",
-        },
-    }
-
-    # Optionally add GQA
-    # TODO: Remove once Sentinel-2 GQA issue is resolved
-    if filter_gqa:
-        query_params["gqa_iterative_mean_xy"] = (0, 1)
-
-    # Output data
-    data_list = []
-
-    # If Sentinel-2 data is requested
-    if include_s2:
-        ds_s2 = dc.load(
-            product=["ga_s2am_ard_3", "ga_s2bm_ard_3"],
-            measurements=s2_spectral_bands + s2_masking_bands + sunglint_bands,
-            s2cloudless_cloud=(0, max_cloudcover),
-            **query_params,
-            **load_params,
-        )
-
-        # Create cloud mask, treating nodata and clouds as bad pixels
-        cloud_mask = enum_to_bool(
-            mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
-        )
-
-        # Identify non-contiguous pixels
-        noncontiguous_mask = enum_to_bool(ds_s2.oa_nbart_contiguity, categories=[False])
-
-        # Set cloud mask and non-contiguous pixels to nodata
-        combined_mask = cloud_mask | noncontiguous_mask
-        ds_s2 = erase_bad(
-            x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
-        )
-
-        # Optionally, apply sunglint mask
-        if mask_sunglint is not None:
-            # Calculate glint angle
-            glint_array = glint_angle(
-                solar_azimuth=ds_s2.oa_solar_azimuth,
-                solar_zenith=ds_s2.oa_solar_zenith,
-                view_azimuth=ds_s2.oa_satellite_azimuth,
-                view_zenith=ds_s2.oa_satellite_view,
-            )
-
-            # Apply glint angle threshold and set affected pixels to nodata
-            glint_mask = glint_array > mask_sunglint
-            ds_s2 = keep_good_only(x=ds_s2[s2_spectral_bands], where=glint_mask)
-
-        # Optionally convert to float, setting all nodata pixels to `np.nan`
-        # (required for NDWI, so will be applied even if `dtype="int16"`)
-        if (dtype == "float32") or ndwi:
-            ds_s2 = to_f32(ds_s2)
-
-        # Convert to NDWI
-        if ndwi:
-            # Calculate NDWI
-            ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
-                ds_s2.nbart_green + ds_s2.nbart_nir_1
-            )
-            data_list.append(ds_s2[["ndwi"]])
-        else:
-            data_list.append(ds_s2)
-
-    # If Landsat data is requested
-    if include_ls:
-        ds_ls = dc.load(
-            product=[
-                "ga_ls5t_ard_3",
-                "ga_ls7e_ard_3",
-                "ga_ls8c_ard_3",
-                "ga_ls9c_ard_3",
-            ],
-            measurements=ls_spectral_bands + ls_masking_bands + sunglint_bands,
-            cloud_cover=(0, max_cloudcover),
-            **query_params,
-            **load_params,
-        )
-
-        # First, we identify all bad pixels: nodata, cloud and shadow.
-        # We then apply morphological opening to clean up narrow false
-        # positive clouds (e.g. bright sandy beaches). By including
-        # nodata, we make sure that small areas of cloud next to Landsat
-        # 7 SLC-off nodata gaps are not accidently removed (at the cost
-        # of not being able to clean false positives next to SLC-off gaps)
-        bad_data = enum_to_bool(
-            ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
-        )
-        bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
-
-        # We now dilate ONLY pixels in our cleaned bad data dask that
-        # are outside of our iriginal nodata pixels. This ensures that
-        # Landsat 7 SLC-off nodata stripes are not also dilated.
-        nodata_mask = enum_to_bool(ds_ls.oa_fmask, categories=["nodata"])
-        bad_data_mask = mask_cleanup(
-            mask=bad_data_cleaned & ~nodata_mask,
-            mask_filters=[("dilation", 5)],
-        )
-
-        # Identify non-contiguous pixels
-        noncontiguous_mask = enum_to_bool(ds_ls.oa_nbart_contiguity, categories=[False])
-
-        # Set cleaned bad pixels and non-contiguous pixels to nodata
-        combined_mask = bad_data_mask | noncontiguous_mask
-        ds_ls = erase_bad(ds_ls[ls_spectral_bands + sunglint_bands], combined_mask)
-
-        # Optionally, apply sunglint mask
-        if mask_sunglint is not None:
-            # Calculate glint angle
-            glint_array = glint_angle(
-                solar_azimuth=ds_ls.oa_solar_azimuth,
-                solar_zenith=ds_ls.oa_solar_zenith,
-                view_azimuth=ds_ls.oa_satellite_azimuth,
-                view_zenith=ds_ls.oa_satellite_view,
-            )
-
-            # Apply glint angle threshold and set affected pixels to nodata
-            glint_mask = glint_array > mask_sunglint
-            ds_ls = keep_good_only(x=ds_ls[ls_spectral_bands], where=glint_mask)
-
-        # Optionally convert to float, setting all nodata pixels to `np.nan`
-        # (required for NDWI, so will be applied even if `dtype="int16"`)
-        if (dtype == "float32") or ndwi:
-            ds_ls = to_f32(ds_ls)
-
-        # Convert to NDWI
-        if ndwi:
-            # Calculate NDWI
-            ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
-                ds_ls.nbart_green + ds_ls.nbart_nir
-            )
-            data_list.append(ds_ls[["ndwi"]])
-        else:
-            data_list.append(ds_ls)
-
-    # Combine into a single ds, sort and drop no longer needed bands
-    satellite_ds = xr.concat(data_list, dim="time").sortby("time")
-
-    return satellite_ds
+from intertidal.tidal_bias_offset import bias_offset
 
 
 def load_topobathy(
@@ -564,7 +151,7 @@ def ds_to_flat(
         (flat_ds[index] > ndwi_thresh)
         .where(~flat_ds[index].isnull())
         .mean(dim="time")
-        .rename("ndwi_wet_freq")
+        .rename("qa_ndwi_freq")
     )
     freq_mask = (freq >= min_freq) & (freq <= max_freq)
 
@@ -579,15 +166,17 @@ def ds_to_flat(
     # surface from producing correlations with tide height.
     wet_dry = flat_ds[index] > ndwi_thresh
     if corr_method == "pearson":
-        corr = xr.corr(wet_dry, flat_ds.tide_m, dim="time").rename("ndwi_tide_corr")
+        corr = xr.corr(wet_dry, flat_ds.tide_m, dim="time").rename("qa_ndwi_corr")
     elif corr_method == "spearman":
+        import xskillscore
+
         corr = xskillscore.spearman_r(
             flat_ds[index], flat_ds.tide_m, dim="time", skipna=True, keep_attrs=True
-        ).rename("ndwi_tide_corr")
+        ).rename("qa_ndwi_corr")
 
     # TODO: investigate alternative function from DEA Tools
     # (doesn't currently handle multiple tide models)
-    # corr = lag_linregress_3D(x=flat_ds.tide_m, y=wet_dry).cor.rename("ndwi_tide_corr")
+    # corr = lag_linregress_3D(x=flat_ds.tide_m, y=wet_dry).cor.rename("qa_ndwi_corr")
 
     # Keep only pixels with correlations that meet min threshold
     corr_mask = corr >= min_correlation
@@ -1152,7 +741,7 @@ def elevation(
     max_workers=None,
     tide_model="FES2014",
     tide_model_dir="/var/share/tide_models",
-    study_area=None,
+    run_id=None,
     log=None,
 ):
     """
@@ -1204,7 +793,7 @@ def elevation(
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
         directory structure, refer to `dea_tools.coastal.model_tides`.
-    study_area : string, optional
+    run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
     log : logging.Logger, optional
@@ -1231,15 +820,12 @@ def elevation(
     if log is None:
         log = configure_logging()
 
-    # Use study area name for logs if it exists
-    if study_area is not None:
-        log_prefix = f"Study area {study_area}: "
-    else:
-        log_prefix = ""
+    # Use run ID name for logs if it exists
+    run_id = "Processing" if run_id is None else run_id
 
     # Model tides into every pixel in the three-dimensional satellite
     # dataset (x by y by time)
-    log.info(f"{log_prefix}Modelling tide heights for each pixel")
+    log.info(f"{run_id}: Modelling tide heights for each pixel")
     if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
         # Use ensemble model combining multiple input ocean tide models
         tide_m, _ = pixel_tides_ensemble(
@@ -1265,7 +851,7 @@ def elevation(
     # contain nodata. This ensures that we ignore any tide observations
     # where we don't have matching satellite imagery
     log.info(
-        f"{log_prefix}Masking nodata and adding tide heights to satellite data array"
+        f"{run_id}: Masking nodata and adding tide heights to satellite data array"
     )
     satellite_ds["tide_m"] = tide_m.where(
         ~satellite_ds.to_array().isel(variable=0).isnull().drop("variable")
@@ -1277,10 +863,10 @@ def elevation(
     # along the coast are analysed, rather than the entire study area.
     # (This step is later reversed using the `flat_to_ds` function)
     log.info(
-        f"{log_prefix}Flattening satellite data array and filtering to intertidal candidate pixels"
+        f"{run_id}: Flattening satellite data array and filtering to intertidal candidate pixels"
     )
     if valid_mask is not None:
-        log.info(f"{log_prefix}Applying valid data mask to constrain study area")
+        log.info(f"{run_id}: Applying valid data mask to constrain study area")
     flat_ds, freq, corr = ds_to_flat(
         satellite_ds,
         min_freq=min_freq,
@@ -1290,7 +876,7 @@ def elevation(
     )
 
     # Calculate per-pixel rolling median.
-    log.info(f"{log_prefix}Running per-pixel rolling median")
+    log.info(f"{run_id}: Running per-pixel rolling median")
     interval_ds = pixel_rolling_median(
         flat_ds,
         windows_n=windows_n,
@@ -1299,11 +885,11 @@ def elevation(
     )
 
     # Model intertidal elevation
-    log.info(f"{log_prefix}Modelling intertidal elevation")
+    log.info(f"{run_id}: Modelling intertidal elevation")
     flat_dem = pixel_dem(interval_ds, ndwi_thresh)
 
     # Model intertidal elevation uncertainty
-    log.info(f"{log_prefix}Modelling intertidal uncertainty")
+    log.info(f"{run_id}: Modelling intertidal uncertainty")
     (
         elevation_low,
         elevation_high,
@@ -1315,26 +901,30 @@ def elevation(
     # TODO: decide whether we want to also keep low and high bounds
     flat_dem["elevation_uncertainty"] = elevation_uncertainty
 
-    # Combine auxiliary layers into a new auxilary dataset. Using
-    # `xr.combine_by_coords` is required because each of our debug
-    # layers have different lengths/coordinates along the "z" dimension
-    flat_ds_aux = xr.combine_by_coords(
-        [freq, corr, misclassified],
+    # Combine QA layers with elevation layers. Using `xr.combine_by_coords`
+    # is required because each of our QA layers have different lengths/
+    # coordinates along the "z" dimension
+    flat_combined = xr.combine_by_coords(
+        [
+            flat_dem,  # DEM data
+            freq,  # Frequency
+            corr,  # Correlation
+        ],
     )
 
     # Unstack all layers back into their original spatial dimensions
-    log.info(f"{log_prefix}Unflattening data back to its original spatial dimensions")
-    ds = flat_to_ds(flat_dem, satellite_ds)
-    ds_aux = flat_to_ds(flat_ds_aux, satellite_ds)
+    log.info(f"{run_id}: Unflattening data back to its original spatial dimensions")
+    ds = flat_to_ds(flat_combined, satellite_ds)
 
-    # Clean upper edge of intertidal zone (likely to be inaccurate edge pixels)
-    log.info(f"{log_prefix}Cleaning inaccurate upper intertidal pixels")
-    ds = clean_edge_pixels(ds)
+    # Clean upper edge of intertidal zone in elevation layers
+    # (likely to be inaccurate edge pixels)
+    log.info(f"{run_id}: Cleaning inaccurate upper intertidal pixels")
+    elevation_bands = [d for d in ds.data_vars if "elevation" in d]
+    ds[elevation_bands] = clean_edge_pixels(ds[elevation_bands])
 
-    # Return master dataset and debug dataset
-    log.info(f"{log_prefix}Successfully completed intertidal elevation modelling")
-
-    return ds, ds_aux, tide_m
+    # Return output data and tide height array
+    log.info(f"{run_id}: Successfully completed intertidal elevation modelling")
+    return ds, tide_m
 
 
 @click.command()
@@ -1343,21 +933,46 @@ def elevation(
     type=str,
     required=True,
     help="A string providing a GridSpec tile ID (e.g. in the form "
-    "'x143y56') to run the analysis on.",
+    "'x123y123') to run the analysis on.",
 )
 @click.option(
     "--start_date",
     type=str,
-    default="2019",
+    required=True,
     help="The start date of satellite data to load from the "
-    "datacube. This can be any date format accepted by datacube. ",
+    "datacube. This can be any date format accepted by datacube. "
+    "For DEA Intertidal, this is set to provide a three year window "
+    "centred over `label_date` below.",
 )
 @click.option(
     "--end_date",
     type=str,
-    default="2021",
+    required=True,
     help="The end date of satellite data to load from the "
-    "datacube. This can be any date format accepted by datacube. ",
+    "datacube. This can be any date format accepted by datacube. "
+    "For DEA Intertidal, this is set to provide a three year window "
+    "centred over `label_date` below.",
+)
+@click.option(
+    "--label_date",
+    type=str,
+    required=True,
+    help="The date used to label output arrays, and to use as the date "
+    "assigned to the dataset when indexed into Datacube.",
+)
+@click.option(
+    "--output_version",
+    type=str,
+    required=True,
+    help="The version number to use for output files and metadata (e.g. "
+    "'0.0.1').",
+)
+@click.option(
+    "--output_dir",
+    type=str,
+    default="data/processed/",
+    help="The directory/location to output data and metadata; supports "
+    "both local disk and S3 locations.",
 )
 @click.option(
     "--resolution",
@@ -1440,28 +1055,12 @@ def elevation(
     "'end_date'.",
 )
 @click.option(
-    "--tideline_offset_distance",
-    type=int,
-    default=500,
-    help="The distance along each high and low tideline "
-    "at which the respective high or low tide satellite "
-    "offset will be calculated. By default, the distance "
-    "is set to 500 m.",
-)
-@click.option(
     "--exposure_offsets/--no-exposure_offsets",
     is_flag=True,
     default=True,
     help="Whether to run the Exposure and spread/offsets/tidelines "
     "steps of the Intertidal workflow. Defaults to True; can be set "
     "to False by passing `--no-exposure_offsets`.",
-)
-@click.option(
-    "--output_auxiliaries",
-    is_flag=True,
-    default=False,
-    help="Whether to output auxiliary files for debugging. Defaults to "
-    "False; can be set to True by passing `--output_auxiliaries`.",
 )
 @click.option(
     "--aws_unsigned/--no-aws_unsigned",
@@ -1474,6 +1073,9 @@ def intertidal_cli(
     study_area,
     start_date,
     end_date,
+    label_date,
+    output_version,
+    output_dir,
     resolution,
     ndwi_thresh,
     min_freq,
@@ -1484,40 +1086,40 @@ def intertidal_cli(
     tide_model,
     tide_model_dir,
     modelled_freq,
-    tideline_offset_distance,
     exposure_offsets,
-    output_auxiliaries,
     aws_unsigned,
 ):
-    log = configure_logging(f"Intertidal processing for study area {study_area}")
+    # Create a unique run ID for analysis based on input params and use
+    # for logs
+    run_id = f"[{output_version}] [{label_date}] [{study_area}]"
+    log = configure_logging(run_id)
 
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
-    # Create output folder. If it doesn't exist, create it
-    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
-    os.makedirs(output_dir, exist_ok=True)
-
     try:
-        log.info(f"Study area {study_area}: Loading satellite data")
-        
+        log.info(f"{run_id}: Loading satellite data")
+
         # Create local dask cluster to improve data load time
         client = create_local_dask_cluster(return_client=True)
 
         if study_area == "testing":
-            log.info(f"Running in testing mode")
+            log.info(f"{run_id}: Running in testing mode")
             import pickle
 
             with open("tests/data/satellite_ds.pickle", "rb") as handle:
                 satellite_ds = pickle.load(handle)
-            valid_mask = None
+                valid_mask = None
+                dss_s2 = None
+                dss_ls = None
+                dss_ancillary = None
 
         else:
-            
             # Connect to datacube to load data
             dc = datacube.Datacube(app="Intertidal_CLI")
 
-            satellite_ds = load_data(
+            # Lazily load satellite data and dataset IDs for metadata
+            satellite_ds, dss_s2, dss_ls = load_data(
                 dc=dc,
                 study_area=study_area,
                 time_range=(start_date, end_date),
@@ -1530,7 +1132,14 @@ def intertidal_cli(
                 skip_broken_datasets=True,
             )
 
-            # Load data
+            # Also load ancillary dataset IDs to use in metadata
+            # (both layers are continental continental products with only
+            # a single dataset, so no need for a spatial/temporal query)
+            dss_ancillary = dc.find_datasets(
+                product=["ga_ausbathytopo250m_2023", "abares_clum_2020"]
+            )
+
+            # Load data into memory
             satellite_ds.load()
 
             # Load data from GA's Australian Bathymetry and Topography Grid 2009
@@ -1540,8 +1149,8 @@ def intertidal_cli(
             valid_mask = topobathy_ds.height_depth > -20
 
         # Calculate elevation
-        log.info(f"Study area {study_area}: Calculating Intertidal Elevation")
-        ds, ds_aux, tide_m = elevation(
+        log.info(f"{run_id}: Calculating Intertidal Elevation")
+        ds, tide_m = elevation(
             satellite_ds,
             valid_mask=valid_mask,
             ndwi_thresh=ndwi_thresh,
@@ -1552,18 +1161,16 @@ def intertidal_cli(
             window_prop_tide=window_prop_tide,
             tide_model=tide_model,
             tide_model_dir=tide_model_dir,
-            study_area=study_area,
+            run_id=run_id,
             log=log,
         )
 
         # Calculate extents
-        log.info(f"Study area {study_area}: Calculating Intertidal Extents")
-        ds["extents"] = extents(
-            ds_aux.ndwi_wet_freq, ds.elevation, ds_aux.ndwi_tide_corr
-        )
+        log.info(f"{run_id}: Calculating Intertidal Extents")
+        ds["extents"] = extents(ds.qa_ndwi_freq, ds.elevation, ds.qa_ndwi_corr)
 
         if exposure_offsets:
-            log.info(f"Study area {study_area}: Calculating Intertidal Exposure")
+            log.info(f"{run_id}: Calculating Intertidal Exposure")
 
             # Set time range
             all_timerange = pd.date_range(
@@ -1582,17 +1189,16 @@ def intertidal_cli(
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(
-                f"Study area {study_area}: Calculating spread, offset "
-                "and HAT/LAT/LOT/HOT layers"
+                f"{run_id}: Calculating spread, offset and HAT/LAT/LOT/HOT layers"
             )
             (
-                ds["oa_lat"],
-                ds["oa_hat"],
-                ds["oa_lot"],
-                ds["oa_hot"],
-                ds["oa_spread"],
-                ds["oa_offset_lowtide"],
-                ds["oa_offset_hightide"],
+                ds["ta_lat"],
+                ds["ta_hat"],
+                ds["ta_lot"],
+                ds["ta_hot"],
+                ds["ta_spread"],
+                ds["ta_offset_low"],
+                ds["ta_offset_high"],
             ) = bias_offset(
                 tide_m=tide_m,
                 tide_cq=tide_cq,
@@ -1601,59 +1207,33 @@ def intertidal_cli(
                 lat_hat=True,
             )
 
-        #             # Calculate tidelines
-        #             log.info(
-        #                 f"Study area {study_area}: Calculating high and low tidelines "
-        #                 "and associated satellite offsets"
-        #             )
-        #             (hightideline, lowtideline, tidelines_gdf) = tidal_offset_tidelines(
-        #                 extents=ds.extents,
-        #                 offset_hightide=ds.oa_offset_hightide,
-        #                 offset_lowtide=ds.oa_offset_lowtide,
-        #                 distance=tideline_offset_distance,
-        #             )
-
-        #             # Export high and low tidelines and the offset data
-        #             log.info(
-        #                 f"Study area {study_area}: Exporting high and low tidelines with satellite offset to {output_dir}"
-        #             )
-        #             hightideline.to_crs("EPSG:4326").to_file(
-        #                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_hightide.geojson"
-        #             )
-        #             lowtideline.to_crs("EPSG:4326").to_file(
-        #                 f"{output_dir}/{study_area}_{start_date}_{end_date}_offset_lowtide.geojson"
-        #             )
-        #             tidelines_gdf.to_crs("EPSG:4326").to_file(
-        #                 f"{output_dir}/{study_area}_{start_date}_{end_date}_tidelines_highlow.geojson"
-        #             )
-
         else:
-            log.info(
-                f"Study area {study_area}: Skipping Exposure and spread/offsets/tidelines calculation"
-            )
+            log.info(f"{run_id}: Skipping Exposure and spread/offsets calculation")
 
-        # Export layers as GeoTIFFs with optimised data types
-        log.info(f"Study area {study_area}: Exporting output GeoTIFFs to {output_dir}")
-        export_intertidal_rasters(
-            ds, prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}"
+        # Prepare data for export
+        ds["qa_ndwi_freq"] *= 100  # Convert frequency to %
+        ds_prepared = prepare_for_export(ds)  # sets correct dtypes and nodata
+
+        # Export data and metadata
+        export_dataset_metadata(
+            ds_prepared,
+            year=label_date,
+            study_area=study_area,
+            output_location=output_dir,
+            ls_lineage=dss_ls,
+            s2_lineage=dss_s2,
+            ancillary_lineage=dss_ancillary,
+            dataset_version=output_version,
+            run_id=run_id,
+            log=log,
         )
-
-        if output_auxiliaries:
-            # Export auxiliary debug layers as GeoTIFFs with optimised data types
-            log.info(
-                f"Study area {study_area}: Exporting debugging GeoTIFFs to {output_dir}"
-            )
-            export_intertidal_rasters(
-                ds_aux,
-                prefix=f"{output_dir}/{study_area}_{start_date}_{end_date}_debug",
-            )
 
         # Workflow completed; close Dask client
         client.close()
-        log.info(f"Study area {study_area}: Completed DEA Intertidal workflow")
+        log.info(f"{run_id}: Completed DEA Intertidal workflow")
 
     except Exception as e:
-        log.exception(f"Study area {study_area}: Failed to run process with error {e}")
+        log.exception(f"{run_id}: Failed to run process with error {e}")
         sys.exit(1)
 
 

@@ -1,12 +1,9 @@
 import xarray as xr
-import numpy as np
 
-import datacube
 from skimage.measure import label, regionprops
 from skimage.morphology import binary_erosion, disk
 
 from odc.algo import mask_cleanup
-from odc.geo.geom import Geometry
 import odc.geo.xr
 
 
