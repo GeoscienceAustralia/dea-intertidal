@@ -72,91 +72,8 @@ def intertidal_connection(water_intertidal, intertidal, connectivity=1):
 
     return intertidal_connection
 
-def load_aclum(
-    dc,
-    dem,
-    product="abares_clum_2020",
-    resampling="bilinear",
-    mask_invalid=True,
-):
-    """
-    Loads a topo-bathymetric DEM for the extents of the loaded satellite
-    data. This is used as a coarse mask to constrain the analysis to the
-    coastal zone, improving run time and reducing clear false positives.
-
-    Parameters
-    ----------
-    dc : Datacube
-        A Datacube instance for loading data.
-    dem : ndarray
-        The loaded satellite data, used to obtain the spatial extents
-        of the data.
-    product : str, optional
-        The name of the topo-bathymetric DEM product to load from the
-        datacube. Defaults to "ga_multi_ausbath_0".
-    resampling : str, optional
-        The resampling method to use, by default "bilinear".
-    mask_invalid : bool, optional
-        Whether to mask invalid/nodata values in the array by setting
-        them to NaN, by default True.
-
-    Returns
-    -------
-    topobathy_ds : xarray.Dataset
-        The loaded topo-bathymetric DEM.
-    """
-    from datacube.utils.masking import mask_invalid_data
-
-    aclum_ds = dc.load(
-        product=product, like=dem.odc.geobox.compat, resampling=resampling
-    ).squeeze("time")
-
-    # Mask invalid data
-    if mask_invalid:
-        aclum_ds = mask_invalid_data(aclum_ds)
-
-    # Manually isolate the 'intensive urban' land use summary class, set all other pixels to false. For class definitions, refer to gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
-    
-    reclassified_aclum = aclum_ds.alum_class.isin(
-    [
-        500,
-        530,
-        531,
-        532,
-        533,
-        534,
-        535,
-        536,
-        537,
-        538,
-        540,
-        541,
-        550,
-        551,
-        552,
-        553,
-        554,
-        555,
-        560,
-        561,
-        562,
-        563,
-        564,
-        565,
-        566,
-        567,
-        570,
-        571,
-        572,
-        573,
-        574,
-        575,
-    ]
-    )
-    return reclassified_aclum
-
 def extents(
-    dc,
+    reclassified_aclum,
     freq,
     dem,
     corr,
@@ -234,7 +151,7 @@ def extents(
     # Load the land use dataset to mask out misclassified extents classes caused by urban land class. 
     # Separate out the 'intensive urban' land use summary class and set all other pixels to False
 
-    reclassified_aclum = load_aclum(dc,dem)
+    # 
     
     """--------------------------------------------------------------------"""
     ## Set the upper and lower freq thresholds
