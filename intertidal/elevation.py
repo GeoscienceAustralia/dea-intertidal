@@ -536,7 +536,9 @@ def load_aclum(
     if mask_invalid:
         aclum_ds = mask_invalid_data(aclum_ds)
 
-    # Manually isolate the 'intensive urban' land use summary class, set all other pixels to false. For class definitions, refer to gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
+    # Manually isolate the 'intensive urban' land use summary class, set all other pixels
+    # to false. For class definitions, refer to 
+    # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
 
     reclassified_aclum = aclum_ds.alum_class.isin(
         [
