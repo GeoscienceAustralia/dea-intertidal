@@ -78,8 +78,6 @@ def extents(
     freq,
     dem,
     corr,
-    # land_use_mask="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/abares_clum_2020/clum_50m1220m.tiff",
-    # land_use_mask='abares_clum_2020',
 ):
     """
     Classify coastal ecosystems into broad classes based
