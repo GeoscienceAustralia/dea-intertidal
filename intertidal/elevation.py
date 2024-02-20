@@ -490,6 +490,91 @@ def load_topobathy(
 
     return topobathy_ds
 
+def load_aclum(
+    dc,
+    satellite_ds,
+    product="abares_clum_2020",
+    resampling="bilinear",
+    mask_invalid=True,
+):
+    """
+    Loads an ABARES derived land use classification of Australia 
+    for the extents of the loaded satellite data. The 'intensive urban'
+    land use class is used as a coarse mask to clean up intertidal
+    extents classifications in urban areas.
+
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    satellite_ds : ndarray
+        The loaded satellite data, used to obtain the spatial extents
+        of the data.
+    product : str, optional
+        The name of the ABARES land use dataset product to load from the
+        datacube. Defaults to "abares_clum_2020".
+    resampling : str, optional
+        The resampling method to use, by default "bilinear".
+    mask_invalid : bool, optional
+        Whether to mask invalid/nodata values in the array by setting
+        them to NaN, by default True.
+
+    Returns
+    -------
+    reclassified_aclum : xarray.Dataset
+        The ABARES land use mask, summarised to include only two land
+        use classes: 'intensive urban' and 'other'.
+    """
+    from datacube.utils.masking import mask_invalid_data
+
+    aclum_ds = dc.load(
+        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
+    ).squeeze("time")
+
+    # Mask invalid data
+    if mask_invalid:
+        aclum_ds = mask_invalid_data(aclum_ds)
+
+    # Manually isolate the 'intensive urban' land use summary class, set all other pixels to false. For class definitions, refer to gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
+    
+    reclassified_aclum = aclum_ds.alum_class.isin(
+    [
+        500,
+        530,
+        531,
+        532,
+        533,
+        534,
+        535,
+        536,
+        537,
+        538,
+        540,
+        541,
+        550,
+        551,
+        552,
+        553,
+        554,
+        555,
+        560,
+        561,
+        562,
+        563,
+        564,
+        565,
+        566,
+        567,
+        570,
+        571,
+        572,
+        573,
+        574,
+        575,
+    ]
+    )
+    return reclassified_aclum
+
 
 def ds_to_flat(
     satellite_ds,
@@ -1539,6 +1624,10 @@ def intertidal_cli(
                 dc, satellite_ds, product="ga_multi_ausbath_0", resampling="bilinear"
             )
             valid_mask = topobathy_ds.height_depth > -20
+            
+            # Load and reclassify for intensive urban land use class only the ABARES ACLUM ds
+            
+            reclassified_aclum = load_aclum(dc,satellite_ds)
 
         # Calculate elevation
         log.info(f"Study area {study_area}: Calculating Intertidal Elevation")
@@ -1560,7 +1649,7 @@ def intertidal_cli(
         # Calculate extents
         log.info(f"Study area {study_area}: Calculating Intertidal Extents")
         ds["extents"] = extents(
-            dc, ds_aux.ndwi_wet_freq, ds.elevation, ds_aux.ndwi_tide_corr
+            reclassified_aclum, ds_aux.ndwi_wet_freq, ds.elevation, ds_aux.ndwi_tide_corr
         )
 
         if exposure_offsets:
@@ -1573,25 +1662,25 @@ def intertidal_cli(
                 freq=modelled_freq,
             )
 
-            # # Calculate exposure (use only until exposure PR is accepted/merged)
-            # ds["exposure"], tide_cq = exposure(
-            #     dem=ds.elevation,
-            #     time_range=all_timerange,
-            #     tide_model=tide_model,
-            #     tide_model_dir=tide_model_dir,
-            # )
-            
-            # Calculate exposure (use the following 10 lines once the exposure PR is approved)
-            exposure_filters, tide_cq = exposure(
+            # Calculate exposure (use only until exposure PR is accepted/merged)
+            ds["exposure"], tide_cq = exposure(
                 dem=ds.elevation,
                 time_range=all_timerange,
-                modelled_freq = modelled_freq,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
             )
             
-            for x in list(exposure_filters.keys()):
-                ds["exposure_"+str(x)]=exposure_filters[str(x)]
+#             # Calculate exposure (use the following 10 lines once the exposure PR is approved)
+#             exposure_filters, tide_cq = exposure(
+#                 dem=ds.elevation,
+#                 time_range=all_timerange,
+#                 modelled_freq = modelled_freq,
+#                 tide_model=tide_model,
+#                 tide_model_dir=tide_model_dir,
+#             )
+            
+#             for x in list(exposure_filters.keys()):
+#                 ds["exposure_"+str(x)]=exposure_filters[str(x)]
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(
