@@ -448,7 +448,7 @@ def load_data(
 def load_topobathy(
     dc,
     satellite_ds,
-    product="ga_multi_ausbath_0",
+    product="ga_ausbathytopo250m_2023",
     resampling="bilinear",
     mask_invalid=True,
 ):
@@ -466,7 +466,7 @@ def load_topobathy(
         of the data.
     product : str, optional
         The name of the topo-bathymetric DEM product to load from the
-        datacube. Defaults to "ga_multi_ausbath_0".
+        datacube. Defaults to "ga_ausbathytopo250m_2023".
     resampling : str, optional
         The resampling method to use, by default "bilinear".
     mask_invalid : bool, optional
@@ -1625,11 +1625,11 @@ def intertidal_cli(
             # Load data
             satellite_ds.load()
 
-            # Load data from GA's Australian Bathymetry and Topography Grid 2009
+            # Load data from GA's AusBathyTopo 250m 2023 Grid
             topobathy_ds = load_topobathy(
-                dc, satellite_ds, product="ga_multi_ausbath_0", resampling="bilinear"
+                dc, satellite_ds, product="ga_ausbathytopo250m_2023", resampling="bilinear"
             )
-            valid_mask = topobathy_ds.height_depth > -20
+            valid_mask = topobathy_ds.height_depth > -15
 
             # Load and reclassify for intensive urban land use class only the ABARES ACLUM ds
             reclassified_aclum = load_aclum(dc, satellite_ds)
