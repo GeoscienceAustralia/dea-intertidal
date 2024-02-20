@@ -72,6 +72,7 @@ def intertidal_connection(water_intertidal, intertidal, connectivity=1):
 
     return intertidal_connection
 
+
 def extents(
     reclassified_aclum,
     freq,
@@ -148,11 +149,7 @@ def extents(
           crosses zero)
 
     """
-    # Load the land use dataset to mask out misclassified extents classes caused by urban land class. 
-    # Separate out the 'intensive urban' land use summary class and set all other pixels to False
 
-    # 
-    
     """--------------------------------------------------------------------"""
     ## Set the upper and lower freq thresholds
     upper, lower = 0.99, 0.01
@@ -181,7 +178,9 @@ def extents(
 
     # Erode the intensive urban land use class to remove extents-class overlaps from
     # the native 50m CLUM pixel resolution dataset
-    reclassified_aclum = mask_cleanup(mask=reclassified_aclum, mask_filters=[("erosion", 5)])
+    reclassified_aclum = mask_cleanup(
+        mask=reclassified_aclum, mask_filters=[("erosion", 5)]
+    )
 
     ##### Classify 'wet' pixels based on connectivity to intertidal pixels (into 'wet_ocean' and 'wet_inland')
 
