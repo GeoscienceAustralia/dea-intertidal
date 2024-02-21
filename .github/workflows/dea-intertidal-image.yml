@@ -93,35 +93,24 @@ jobs:
           unzip -q tide_models.zip
         
           # Run integration tests using Docker
-          docker run --rm \
+          docker run \
             --net=host \
             --env DATACUBE_DB_URL \
+            --env AWS_SESSION_TOKEN \
+            --env AWS_REGION \
+            --env AWS_ACCESS_KEY_ID \
+            --env AWS_SECRET_ACCESS_KEY \
+            --env AWS_SESSION_TOKEN \
             --volume ${GITHUB_WORKSPACE}:/code \
             --volume ${GITHUB_WORKSPACE}/tide_models:/var/share/tide_models \
             --volume ${GITHUB_WORKSPACE}/artifacts:/mnt/artifacts \
             dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
-      # - name: Run tests
-      #   run: |
-      #     # Download tide modelling files and unzip
-      #     # TODO: Replace with S3 sync from dea-non-public-data
-      #     wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
-      #     unzip -q tide_models.zip
-
-      #     docker run --rm \
-      #       --net=host \
-      #       --env DATACUBE_DB_URL \
-      #       --volume ${GITHUB_WORKSPACE}/tide_models/:/var/share/tide_models \
-      #       --volume ${GITHUB_WORKSPACE}/artifacts:/mnt/artifacts \
-      #       --entrypoint /bin/bash \
-      #       dea_intertidal \
-      #       pytest -v --cov=intertidal --cov-report=xml tests
-
-      #     # Copy out validation outputs produced by the integration tests and place them
-      #     # in correct output locations so they can be committed back into the repository
-      #     cp ./artifacts/validation.jpg ./tests/validation.jpg
-      #     cp ./artifacts/validation.csv ./tests/validation.csv
-      #     cp ./artifacts/README.md ./tests/README.md
+          # Copy out validation outputs produced by the integration tests and place them
+          # in correct output locations so they can be committed back into the repository
+          cp ./artifacts/validation.jpg ./tests/validation.jpg
+          cp ./artifacts/validation.csv ./tests/validation.csv
+          cp ./artifacts/README.md ./tests/README.md
 
       # - name: Setup upterm session
       #   uses: lhotari/action-upterm@v1
