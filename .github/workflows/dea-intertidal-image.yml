@@ -94,6 +94,8 @@ jobs:
         
           # Run integration tests using Docker
           docker run --rm \
+            --net=host \
+            --env DATACUBE_DB_URL \
             --volume ${GITHUB_WORKSPACE}:/code \
             --volume ${GITHUB_WORKSPACE}:/var/share/tide_models \
             --volume ${GITHUB_WORKSPACE}:/mnt/artifacts \
