@@ -16,7 +16,7 @@ import xskillscore
 
 import datacube
 import odc.geo.xr
-from odc.geo.geom import Geometry
+from odc.geo.geom import Geometry, BoundingBox
 from odc.geo.geobox import GeoBox
 from odc.geo.gridspec import GridSpec
 from odc.geo.types import xy_
@@ -1592,51 +1592,42 @@ def intertidal_cli(
         # Create local dask cluster to improve data load time
         client = create_local_dask_cluster(return_client=True)
 
+        # Connect to datacube to load data
+        dc = datacube.Datacube(app="Intertidal_CLI")
+
+        # Use a custom polygon if in testing mode
         if study_area == "testing":
-            log.info(f"Running in testing mode")
-            import pickle
-
-            with open("tests/data/satellite_ds.pickle", "rb") as handle:
-                satellite_ds = pickle.load(handle)
-                
-                # Create empty/dummy variables to use in place of datacube data
-                valid_mask = None
-                reclassified_aclum = odc.geo.xr.xr_zeros(
-                    geobox=satellite_ds.odc.geobox, dtype="bool"
-                )
-
-                # Test database access
-                dc = datacube.Datacube(app="Intertidal_CLI")
-                reclassified_aclum = load_aclum(dc, satellite_ds)
-
+            log.info(f"Study area {study_area}: Running in testing mode")
+            geom = BoundingBox(
+                467484, -1665809, 468287, -1664817, crs="EPSG:3577"
+            ).polygon
         else:
-            # Connect to datacube to load data
-            dc = datacube.Datacube(app="Intertidal_CLI")
+            geom = None
 
-            satellite_ds = load_data(
-                dc=dc,
-                study_area=study_area,
-                time_range=(start_date, end_date),
-                resolution=resolution,
-                crs="EPSG:3577",
-                include_s2=True,
-                include_ls=True,
-                filter_gqa=True,
-                max_cloudcover=90,
-                skip_broken_datasets=True,
-            )
+        # Load satellite data
+        satellite_ds = load_data(
+            dc=dc,
+            study_area=study_area,
+            geom=geom,
+            time_range=(start_date, end_date),
+            resolution=resolution,
+            crs="EPSG:3577",
+            include_s2=True,
+            include_ls=True,
+            filter_gqa=True,
+            max_cloudcover=90,
+            skip_broken_datasets=True,
+        )
+        satellite_ds.load()
 
-            # Load data
-            satellite_ds.load()
+        # Load data from GA's AusBathyTopo 250m 2023 Grid
+        topobathy_ds = load_topobathy(
+            dc, satellite_ds, product="ga_ausbathytopo250m_2023", resampling="bilinear"
+        )
+        valid_mask = topobathy_ds.height_depth > -15
 
-            # Load data from GA's AusBathyTopo 250m 2023 Grid
-            topobathy_ds = load_topobathy(
-                dc, satellite_ds, product="ga_ausbathytopo250m_2023", resampling="bilinear"
-            )
-            valid_mask = topobathy_ds.height_depth > -15
-
-            # Load and reclassify for intensive urban land use class only the ABARES ACLUM ds
-            reclassified_aclum = load_aclum(dc, satellite_ds)
+        # Load and reclassify for intensive urban land use class only the ABARES ACLUM ds
+        reclassified_aclum = load_aclum(dc, satellite_ds)
 
         # Calculate elevation
         log.info(f"Study area {study_area}: Calculating Intertidal Elevation")
