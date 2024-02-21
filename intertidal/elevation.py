@@ -1599,7 +1599,7 @@ def intertidal_cli(
         if study_area == "testing":
             log.info(f"Study area {study_area}: Running in testing mode")
             geom = BoundingBox(
-                467484, -1665809, 468287, -1664817, crs="EPSG:3577"
+                467510, -1665790, 468260, -1664840, crs="EPSG:3577"
             ).polygon
         else:
             geom = None
