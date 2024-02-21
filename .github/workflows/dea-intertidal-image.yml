@@ -90,8 +90,8 @@ jobs:
           # TODO: Replace with S3 sync from dea-non-public-data
           wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
           unzip -q tide_models.zip
-        
-          # Run integration tests using Docker
+
+          # Run integration tests using Docker, setting up datacube access and AWS configuration
           docker run \
             --net=host \
             --env DATACUBE_DB_URL \
