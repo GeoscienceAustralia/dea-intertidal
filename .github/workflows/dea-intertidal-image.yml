@@ -56,34 +56,34 @@ jobs:
         run: |
           docker-compose build
 
-      # - name: Configure AWS credentials
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: arn:aws:iam::060378307146:role/github-actions-dea-notebooks--sandbox
-      #     aws-region: ap-southeast-2
-      #     role-duration-seconds: 7200  # 2 hours
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::060378307146:role/github-actions-dea-notebooks--sandbox
+          aws-region: ap-southeast-2
+          role-duration-seconds: 7200  # 2 hours
 
-      # - name: Get Database Credentials
-      #   run: |
-      #     username_password=$(aws ssm get-parameter --name /dea-sandbox-eks/sandbox_reader/db.creds --with-decryption  --query Parameter.Value --output text)
-      #     # If we need separate username/password they can be split as follows.
-      #     # However exporting them to GitHub Environment variables will leave the Password in the Logs, if further steps aren't taken.
-      #     # IFS=: read -r PGUSERNAME PGPASSWORD <<< $username_password
-      #     # echo "PGUSERNAME=${PGUSERNAME}" >> $GITHUB_ENV
-      #     # echo "PGPASSWORD=${PGPASSWORD}" >> $GITHUB_ENV
-      #     echo DATACUBE_DB_URL=postgresql://${username_password}@localhost:5432/odc >> $GITHUB_ENV
+      - name: Get Database Credentials
+        run: |
+          username_password=$(aws ssm get-parameter --name /dea-sandbox-eks/sandbox_reader/db.creds --with-decryption  --query Parameter.Value --output text)
+          # If we need separate username/password they can be split as follows.
+          # However exporting them to GitHub Environment variables will leave the Password in the Logs, if further steps aren't taken.
+          # IFS=: read -r PGUSERNAME PGPASSWORD <<< $username_password
+          # echo "PGUSERNAME=${PGUSERNAME}" >> $GITHUB_ENV
+          # echo "PGPASSWORD=${PGPASSWORD}" >> $GITHUB_ENV
+          echo DATACUBE_DB_URL=postgresql://${username_password}@localhost:5432/odc >> $GITHUB_ENV
 
-      # - name: Open Port Forward to RDS
-      #   run: |
-      #     npx basti connect \
-      #       --custom-target-vpc vpc-086904199e505c1f6 \
-      #       --custom-target-host db-aurora-dea-sandbox-eks-1.cos5zfpkso9m.ap-southeast-2.rds.amazonaws.com \
-      #       --custom-target-port 5432 \
-      #       --local-port 5432 &
-      #     # Wait until the connection comes up, but, if it doesn't, don't hang forever.
-      #     npx wait-on --timeout 120000 --interval 1000 tcp:127.0.0.1:5432
-      #     echo "PGPORT=5432" >> $GITHUB_ENV
-      #     echo "PGHOST=localhost" >> $GITHUB_ENV
+      - name: Open Port Forward to RDS
+        run: |
+          npx basti connect \
+            --custom-target-vpc vpc-086904199e505c1f6 \
+            --custom-target-host db-aurora-dea-sandbox-eks-1.cos5zfpkso9m.ap-southeast-2.rds.amazonaws.com \
+            --custom-target-port 5432 \
+            --local-port 5432 &
+          # Wait until the connection comes up, but, if it doesn't, don't hang forever.
+          npx wait-on --timeout 120000 --interval 1000 tcp:127.0.0.1:5432
+          echo "PGPORT=5432" >> $GITHUB_ENV
+          echo "PGHOST=localhost" >> $GITHUB_ENV
 
       - name: Run tests
         run: |
@@ -94,7 +94,8 @@ jobs:
 
           # Run integration tests using Docker
           docker compose run \
-            -e TESTING=testing \
+            --net=host \
+            --env DATACUBE_DB_URL \
             dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
           # Copy out validation outputs produced by the integration tests and place them
@@ -106,12 +107,12 @@ jobs:
       # - name: Setup upterm session
       #   uses: lhotari/action-upterm@v1
 
-      # Commit validation results produced by integration tests back into repo
-      - name: Commit validation results into repository
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: Automatically update integration test validation results
-          file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
+      # # Commit validation results produced by integration tests back into repo
+      # - name: Commit validation results into repository
+      #   uses: stefanzweifel/git-auto-commit-action@v4
+      #   with:
+      #     commit_message: Automatically update integration test validation results
+      #     file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
