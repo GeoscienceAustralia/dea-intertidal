@@ -36,7 +36,6 @@ on:
   release:
     types: [created, edited, published]
 
-
 permissions:
   id-token: write   # This is required for requesting the JWT
   contents: write    # This is required for actions/checkout
@@ -49,7 +48,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          
+
       - name: Build DEA Intertidal image
         timeout-minutes: 20
         shell: bash
@@ -115,12 +114,12 @@ jobs:
       # - name: Setup upterm session
       #   uses: lhotari/action-upterm@v1
 
-      # # Commit validation results produced by integration tests back into repo
-      # - name: Commit validation results into repository
-      #   uses: stefanzweifel/git-auto-commit-action@v4
-      #   with:
-      #     commit_message: Automatically update integration test validation results
-      #     file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
+      # Commit validation results produced by integration tests back into repo
+      - name: Commit validation results into repository
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Automatically update integration test validation results
+          file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
