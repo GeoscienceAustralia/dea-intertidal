@@ -1605,6 +1605,10 @@ def intertidal_cli(
                     geobox=satellite_ds.odc.geobox, dtype="bool"
                 )
 
+                # Test database access
+                dc = datacube.Datacube(app="Intertidal_CLI")
+                reclassified_aclum = load_aclum(dc, satellite_ds)
+
         else:
             # Connect to datacube to load data
             dc = datacube.Datacube(app="Intertidal_CLI")
