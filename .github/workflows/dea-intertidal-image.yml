@@ -97,11 +97,9 @@ jobs:
             --net=host \
             --env DATACUBE_DB_URL \
             --volume ${GITHUB_WORKSPACE}:/code \
-            --volume ${GITHUB_WORKSPACE}:/var/share/tide_models \
-            --volume ${GITHUB_WORKSPACE}:/mnt/artifacts \
-            dea_intertidal ls
-
-          # pytest -v --cov=intertidal --cov-report=xml tests
+            --volume ${GITHUB_WORKSPACE}/tide_models:/var/share/tide_models \
+            --volume ${GITHUB_WORKSPACE}/artifacts:/mnt/artifacts \
+            dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
       # - name: Run tests
       #   run: |
