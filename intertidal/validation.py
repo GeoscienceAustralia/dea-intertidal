@@ -53,7 +53,7 @@ def eval_metrics(x, y, round=3, all_regress=False):
         "Correlation": xy_df.corr().iloc[0, 1],
         "RMSE": sqrt(mean_squared_error(xy_df.x, xy_df.y)),
         "MAE": mean_absolute_error(xy_df.x, xy_df.y),
-        "R-squared": lin_reg.rvalue ** 2,
+        "R-squared": lin_reg.rvalue**2,
         "Bias": (xy_df.y - xy_df.x).mean(),
         "Regression slope": lin_reg.slope,
     }
@@ -92,7 +92,7 @@ def map_raster(
     cmap = [cmap] if not isinstance(cmap, list) else cmap
     vmin = [vmin] if not isinstance(vmin, list) else vmin
     vmax = [vmax] if not isinstance(vmax, list) else vmax
-    
+
     # Multiply out visualisation params to length of ds
     cmap = cmap * len(ds) if len(cmap) == 1 else cmap
     vmin = vmin * len(ds) if len(vmin) == 1 else vmin
@@ -139,25 +139,24 @@ def map_raster(
         display(m)
 
 
-def preprocess_validation(modelled_ds, validation_ds, clean_modelled=None, clean_validation=None):
-
-    # Reproject to match array
-    validation_ds = validation_ds.odc.reproject(
-        modelled_ds.odc.geobox, resampling="nearest", dst_nodata=np.nan
-    )
+def preprocess_validation(modelled_ds, validation_ds, clean_slope=True):
+    # Remove zero slope areas
+    if clean_slope:
+        import xrspatial.slope
+        
+        # Calculate slope then identify invalid flat areas that are
+        # highly likely to be ocean. Buffer these by 1 pixel so we
+        # remove any pixels partially obscured by ocean.
+        validation_slope = xrspatial.slope(agg=validation_ds)
+        validation_flat = mask_cleanup(
+            validation_slope == 0, mask_filters=[("dilation", 1)]
+        )
+        validation_ds = validation_ds.where(~validation_flat)
 
     # Analyse only pixels that contain valid data in both
     modelled_nodata = modelled_ds.isnull()
     validation_nodata = validation_ds.isnull()
-    
-    # Optionally clean modelled dataset using mask_filters (e.g. `[('dilation', 1)]`)
-    if clean_modelled is not None:
-        modelled_nodata = mask_cleanup(modelled_nodata, mask_filters=clean_modelled)
-    
-    # Optionally clean validation dataset using mask_filters (e.g. `[('dilation', 1)]`)
-    if clean_validation is not None:
-        validation_nodata = mask_cleanup(validation_nodata, mask_filters=clean_validation)
-        
+
     # Export 1D modelled and validation data for valid data area
     invalid_data = modelled_nodata | validation_nodata
     validation_z = validation_ds.values[~invalid_data.values]
