@@ -58,8 +58,17 @@ jobs:
 
       - name: Run tests
         run: |
+          # Download tide modelling files and unzip
+          # TODO: Replace with S3 sync from dea-non-public-data
+          wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
+          unzip -q tide_models.zip
+        
           # Run integration tests using Docker
-          docker run --rm dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
+          docker run --rm \
+            --volume ${GITHUB_WORKSPACE}:/code \
+            --volume ${GITHUB_WORKSPACE}:/var/share/tide_models \
+            --volume ${GITHUB_WORKSPACE}:/mnt/artifacts \
+            dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
       # - name: Configure AWS credentials
       #   uses: aws-actions/configure-aws-credentials@v4
