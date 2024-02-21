@@ -94,7 +94,6 @@ jobs:
 
           # Run integration tests using Docker
           docker compose run \
-            --net=host \
             --env DATACUBE_DB_URL \
             dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
