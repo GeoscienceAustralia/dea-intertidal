@@ -54,7 +54,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          docker build -t dea_intertidal
+          docker build -t dea_intertidal .
       
       # - name: Build DEA Intertidal image
       #   timeout-minutes: 20
