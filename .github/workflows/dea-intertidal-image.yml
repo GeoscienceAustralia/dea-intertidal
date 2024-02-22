@@ -47,7 +47,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build DEA Intertidal image
+      - name: Build DEA Intertidal docker image 
         timeout-minutes: 20
         shell: bash
         run: |
