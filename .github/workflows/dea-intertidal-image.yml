@@ -16,7 +16,6 @@ on:
       - 'Dockerfile'
       - 'requirements.in'
       - 'setup.py'
-      - 'docker-compose.yml'
       - 'codecov.yaml'
 
   pull_request:
@@ -30,7 +29,6 @@ on:
       - 'Dockerfile'
       - 'requirements.in'
       - 'setup.py'
-      - 'docker-compose.yml'
       - 'codecov.yaml'
 
   release:
