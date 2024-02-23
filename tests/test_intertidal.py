@@ -12,6 +12,7 @@ from mdutils.mdutils import MdUtils
 import matplotlib.pyplot as plt
 from click.testing import CliRunner
 
+import eodatasets3.validate
 from dea_tools.datahandling import load_reproject
 
 from intertidal.elevation import intertidal_cli, elevation
@@ -243,6 +244,28 @@ def test_dem_accuracy(
     mdFile.new_list(items=items)
     mdFile.new_paragraph(Html.image(path=f"validation.jpg", size="950"))
     mdFile.create_md_file()
+
+
+@pytest.mark.dependency(depends=["test_intertidal_cli"])
+def test_validate_metadata():
+    """
+    Validates output EO3 metadata against product definition.
+    This will detect issues like incorrect datatypes, band names, nodata
+    or missing bands.
+    """
+    runner = CliRunner()
+    result = runner.invoke(
+        eodatasets3.validate.run,
+        [
+            "data/raw/ga_s2ls_intertidal_cyear_3.odc-product.yaml",
+            "data/processed/ga_s2ls_intertidal_cyear_3/0-0-1a/x094/y145/2023--P1Y/ga_s2ls_intertidal_cyear_3_x094y145_2023--P1Y_final.odc-metadata.yaml",
+            "--thorough",
+        ],
+    )
+
+    # Return useful exception from eodatasets if error
+    if result.exit_code != 0:
+        raise Exception(result.output)
 
 
 def test_elevation(satellite_ds):
