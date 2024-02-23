@@ -12,6 +12,7 @@ import click
 
 import datacube
 import odc.geo.xr
+from odc.geo.geom import BoundingBox
 from odc.algo import xr_quantile
 from datacube.utils.aws import configure_s3_access
 from dea_tools.coastal import pixel_tides
@@ -19,6 +20,8 @@ from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.io import (
     load_data,
+    load_aclum,
+    load_topobathy,
     prepare_for_export,
     export_dataset_metadata,
 )
@@ -30,52 +33,6 @@ from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.extents import extents
 from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
-
-
-def load_topobathy(
-    dc,
-    satellite_ds,
-    product="ga_multi_ausbath_0",
-    resampling="bilinear",
-    mask_invalid=True,
-):
-    """
-    Loads a topo-bathymetric DEM for the extents of the loaded satellite
-    data. This is used as a coarse mask to constrain the analysis to the
-    coastal zone, improving run time and reducing clear false positives.
-
-    Parameters
-    ----------
-    dc : Datacube
-        A Datacube instance for loading data.
-    satellite_ds : ndarray
-        The loaded satellite data, used to obtain the spatial extents
-        of the data.
-    product : str, optional
-        The name of the topo-bathymetric DEM product to load from the
-        datacube. Defaults to "ga_multi_ausbath_0".
-    resampling : str, optional
-        The resampling method to use, by default "bilinear".
-    mask_invalid : bool, optional
-        Whether to mask invalid/nodata values in the array by setting
-        them to NaN, by default True.
-
-    Returns
-    -------
-    topobathy_ds : xarray.Dataset
-        The loaded topo-bathymetric DEM.
-    """
-    from datacube.utils.masking import mask_invalid_data
-
-    topobathy_ds = dc.load(
-        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
-    ).squeeze("time")
-
-    # Mask invalid data
-    if mask_invalid:
-        topobathy_ds = mask_invalid_data(topobathy_ds)
-
-    return topobathy_ds
 
 
 def ds_to_flat(
@@ -832,7 +789,6 @@ def elevation(
             satellite_ds,
             directory=tide_model_dir,
             ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-            # ancillary_points="data/raw/tide_correlation_points_spearmanndwi_nt.geojson",
             top_n=3,
             reduce_method="mean",
             resolution=3000,
@@ -964,15 +920,14 @@ def elevation(
     "--output_version",
     type=str,
     required=True,
-    help="The version number to use for output files and metadata (e.g. "
-    "'0.0.1').",
+    help="The version number to use for output files and metadata (e.g. " "'0.0.1').",
 )
 @click.option(
     "--output_dir",
     type=str,
     default="data/processed/",
     help="The directory/location to output data and metadata; supports "
-    "both local disk and S3 locations.",
+    "both local disk and S3 locations. Defaults to 'data/processed/'.",
 )
 @click.option(
     "--resolution",
@@ -1103,50 +1058,49 @@ def intertidal_cli(
         # Create local dask cluster to improve data load time
         client = create_local_dask_cluster(return_client=True)
 
+        # Connect to datacube to load data
+        dc = datacube.Datacube(app="Intertidal_CLI")
+
+        # Use a custom polygon if in testing mode
         if study_area == "testing":
-            log.info(f"{run_id}: Running in testing mode")
-            import pickle
-
-            with open("tests/data/satellite_ds.pickle", "rb") as handle:
-                satellite_ds = pickle.load(handle)
-                valid_mask = None
-                dss_s2 = None
-                dss_ls = None
-                dss_ancillary = None
-
+            log.info(f"{run_id}: Running in testing mode using custom study area")
+            geom = BoundingBox(
+                467510, -1665790, 468260, -1664840, crs="EPSG:3577"
+            ).polygon
         else:
-            # Connect to datacube to load data
-            dc = datacube.Datacube(app="Intertidal_CLI")
+            geom = None
 
-            # Lazily load satellite data and dataset IDs for metadata
-            satellite_ds, dss_s2, dss_ls = load_data(
-                dc=dc,
-                study_area=study_area,
-                time_range=(start_date, end_date),
-                resolution=resolution,
-                crs="EPSG:3577",
-                include_s2=True,
-                include_ls=True,
-                filter_gqa=True,
-                max_cloudcover=90,
-                skip_broken_datasets=True,
-            )
+        # Load satellite data and dataset IDs for metadata
+        satellite_ds, dss_s2, dss_ls = load_data(
+            dc=dc,
+            study_area=study_area,
+            geom=geom,
+            time_range=(start_date, end_date),
+            resolution=resolution,
+            crs="EPSG:3577",
+            include_s2=True,
+            include_ls=True,
+            filter_gqa=True,
+            max_cloudcover=90,
+            skip_broken_datasets=True,
+        )
+        satellite_ds.load()
 
-            # Also load ancillary dataset IDs to use in metadata
-            # (both layers are continental continental products with only
-            # a single dataset, so no need for a spatial/temporal query)
-            dss_ancillary = dc.find_datasets(
-                product=["ga_ausbathytopo250m_2023", "abares_clum_2020"]
-            )
+        # Load data from GA's AusBathyTopo 250m 2023 Grid
+        topobathy_ds = load_topobathy(
+            dc, satellite_ds, product="ga_ausbathytopo250m_2023", resampling="bilinear"
+        )
+        valid_mask = topobathy_ds.height_depth > -15
 
-            # Load data into memory
-            satellite_ds.load()
+        # Load and reclassify for intensive urban land use class only the ABARES ACLUM ds
+        reclassified_aclum = load_aclum(dc, satellite_ds)
 
-            # Load data from GA's Australian Bathymetry and Topography Grid 2009
-            topobathy_ds = load_topobathy(
-                dc, satellite_ds, product="ga_multi_ausbath_0", resampling="bilinear"
-            )
-            valid_mask = topobathy_ds.height_depth > -20
+        # Also load ancillary dataset IDs to use in metadata
+        # (both layers are continental continental products with only
+        # a single dataset, so no need for a spatial/temporal query)
+        dss_ancillary = dc.find_datasets(
+            product=["ga_ausbathytopo250m_2023", "abares_clum_2020"]
+        )
 
         # Calculate elevation
         log.info(f"{run_id}: Calculating Intertidal Elevation")
@@ -1167,7 +1121,12 @@ def intertidal_cli(
 
         # Calculate extents
         log.info(f"{run_id}: Calculating Intertidal Extents")
-        ds["extents"] = extents(ds.qa_ndwi_freq, ds.elevation, ds.qa_ndwi_corr)
+        ds["extents"] = extents(
+            dem=ds.elevation,
+            freq=ds.qa_ndwi_freq,
+            corr=ds.qa_ndwi_corr,
+            reclassified_aclum=reclassified_aclum,
+        )
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
@@ -1179,7 +1138,7 @@ def intertidal_cli(
                 freq=modelled_freq,
             )
 
-            # Calculate exposure
+            # Calculate exposure (use only until exposure PR is accepted/merged)
             ds["exposure"], tide_cq = exposure(
                 dem=ds.elevation,
                 time_range=all_timerange,
@@ -1188,9 +1147,7 @@ def intertidal_cli(
             )
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
-            log.info(
-                f"{run_id}: Calculating spread, offset and HAT/LAT/LOT/HOT layers"
-            )
+            log.info(f"{run_id}: Calculating spread, offset and HAT/LAT/LOT/HOT layers")
             (
                 ds["ta_lat"],
                 ds["ta_hat"],

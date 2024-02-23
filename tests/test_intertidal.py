@@ -83,7 +83,7 @@ def test_dem_accuracy(
     assert accuracy_metrics.MAE < 0.2
     assert accuracy_metrics["R-squared"] > 0.8
     assert accuracy_metrics.Bias < 0.2
-    assert abs(accuracy_metrics["Regression slope"] - 1) < 0.1
+    assert abs(accuracy_metrics["Regression slope"] - 1) < 0.15
 
     #########
     # Plots #

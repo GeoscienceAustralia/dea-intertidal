@@ -25,6 +25,7 @@ from eodatasets3 import DatasetAssembler, serialise
 from eodatasets3.scripts.tostac import json_fallback
 from eodatasets3.verify import PackageChecksum
 from eodatasets3.stac import to_stac_item, validate_item
+from datacube.utils.masking import mask_invalid_data
 
 from intertidal.utils import configure_logging
 
@@ -457,6 +458,135 @@ def load_data(
     return satellite_ds, dss_s2, dss_ls
 
 
+def load_topobathy(
+    dc,
+    satellite_ds,
+    product="ga_ausbathytopo250m_2023",
+    resampling="bilinear",
+    mask_invalid=True,
+):
+    """
+    Loads a topo-bathymetric DEM for the extents of the loaded satellite
+    data. This is used as a coarse mask to constrain the analysis to the
+    coastal zone, improving run time and reducing clear false positives.
+
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    satellite_ds : ndarray
+        The loaded satellite data, used to obtain the spatial extents
+        of the data.
+    product : str, optional
+        The name of the topo-bathymetric DEM product to load from the
+        datacube. Defaults to "ga_ausbathytopo250m_2023".
+    resampling : str, optional
+        The resampling method to use, by default "bilinear".
+    mask_invalid : bool, optional
+        Whether to mask invalid/nodata values in the array by setting
+        them to NaN, by default True.
+
+    Returns
+    -------
+    topobathy_ds : xarray.Dataset
+        The loaded topo-bathymetric DEM.
+    """
+    topobathy_ds = dc.load(
+        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
+    ).squeeze("time")
+
+    # Mask invalid data
+    if mask_invalid:
+        topobathy_ds = mask_invalid_data(topobathy_ds)
+
+    return topobathy_ds
+
+
+def load_aclum(
+    dc,
+    satellite_ds,
+    product="abares_clum_2020",
+    resampling="nearest",
+    mask_invalid=True,
+):
+    """
+    Loads an ABARES derived land use classification of Australia
+    for the extents of the loaded satellite data. The 'intensive urban'
+    land use class is used as a coarse mask to clean up intertidal
+    extents classifications in urban areas.
+
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    satellite_ds : ndarray
+        The loaded satellite data, used to obtain the spatial extents
+        of the data.
+    product : str, optional
+        The name of the ABARES land use dataset product to load from the
+        datacube. Defaults to "abares_clum_2020".
+    resampling : str, optional
+        The resampling method to use, by default "nearest".
+    mask_invalid : bool, optional
+        Whether to mask invalid/nodata values in the array by setting
+        them to NaN, by default True.
+
+    Returns
+    -------
+    reclassified_aclum : xarray.Dataset
+        The ABARES land use mask, summarised to include only two land
+        use classes: 'intensive urban' and 'other'.
+    """
+    aclum_ds = dc.load(
+        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
+    ).squeeze("time")
+
+    # Mask invalid data
+    if mask_invalid:
+        aclum_ds = mask_invalid_data(aclum_ds)
+
+    # Manually isolate the 'intensive urban' land use summary class, set
+    # all other pixels to false. For class definitions, refer to
+    # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
+    reclassified_aclum = aclum_ds.alum_class.isin(
+        [
+            500,
+            530,
+            531,
+            532,
+            533,
+            534,
+            535,
+            536,
+            537,
+            538,
+            540,
+            541,
+            550,
+            551,
+            552,
+            553,
+            554,
+            555,
+            560,
+            561,
+            562,
+            563,
+            564,
+            565,
+            566,
+            567,
+            570,
+            571,
+            572,
+            573,
+            574,
+            575,
+        ]
+    )
+    return reclassified_aclum
+
+
 def _is_s3(path):
     """
     Determine whether output location is on S3.
@@ -543,8 +673,6 @@ def _write_stac(
     stac_item_destination_url = odc_dataset_metadata_url.replace(
         "odc-metadata.yaml", "stac-item.json"
     )
-
-    print(destination_path)
 
     # Generate STAC
     stac = to_stac_item(
