@@ -52,7 +52,7 @@ def test_intertidal_cli():
 @pytest.mark.dependency(depends=["test_intertidal_cli"])
 def test_dem_accuracy(
     val_path="tests/data/lidar_10m_tests.tif",
-    mod_path="data/interim/testing/2020-2022/testing_2020_2022_elevation.tif",
+    mod_path="data/processed/ga_s2ls_intertidal_cyear_3/0-0-1/tes/ting/2023--P1Y/ga_s2ls_intertidal_cyear_3_testing_2023--P1Y_final_elevation.tif",
     input_csv="tests/validation.csv",
     output_csv="artifacts/validation.csv",
     output_plot="artifacts/validation.jpg",
