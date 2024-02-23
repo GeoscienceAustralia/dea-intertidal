@@ -258,7 +258,7 @@ def test_validate_metadata():
         eodatasets3.validate.run,
         [
             "data/raw/ga_s2ls_intertidal_cyear_3.odc-product.yaml",
-            "data/processed/ga_s2ls_intertidal_cyear_3/0-0-1a/x094/y145/2023--P1Y/ga_s2ls_intertidal_cyear_3_x094y145_2023--P1Y_final.odc-metadata.yaml",
+            "data/processed/ga_s2ls_intertidal_cyear_3/0-0-1/tes/ting/2021--P1Y/ga_s2ls_intertidal_cyear_3_testing_2021--P1Y_final.odc-metadata.yaml",            
             "--thorough",
         ],
     )
