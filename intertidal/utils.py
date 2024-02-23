@@ -90,41 +90,17 @@ def export_intertidal_rasters(
     overwrite=True,
 ):
     """
-    Export outputs of the DEA Intertidal workflow to COG GeoTIFF files.
-
-    If a band contains "elevation" in the name it is exported as a
-    float32 data type. Otherwise, the band is exported as an integer16
-    data type, after filling NaN with the nodata value and setting the
-    nodata attribute on the layer.
-
-    Parameters
-    ----------
-    ds : xarray.Dataset
-        The dataset containing the bands to be exported.
-    prefix : str, optional
-        A string that will be used as a prefix for the output file
-        names (default is "testing").
-    int_bands : tuple or list, optional
-        A list of bands to export as integer datatype. If None, will use
-        the following list of bands: ("exposure", "extents",
-        "offset_hightide", "offset_lowtide", "spread")
-    int_nodata : int, optional
-        An integer that represents nodata values for integer bands
-        (default is -999).
-    int_dtype : string or numpy data type, optional
-        The data type to use for integer layers (default is
-        np.int16).
-    float_dtype : string or numpy data type, optional
-        The data type to use for floating point layers (default is
-        np.float32).
-    overwrite : bool, optional
-        A boolean value that determines whether or not to overwrite
-        existing files (default is True).
-
-    Returns
-    -------
-    None
+    DEPRECATED: Please use `intertidal.io.prepare_for_export` instead.
     """
+
+    from warnings import warn
+
+    warn(
+        "This function is deprecated and will be removed. Please use "
+        "`intertidal.io.prepare_for_export` instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Use default list of bands to convert to integers if none provided
     if int_bands is None:
