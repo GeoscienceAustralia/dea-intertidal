@@ -1662,25 +1662,25 @@ def intertidal_cli(
                 freq=modelled_freq,
             )
 
-            # Calculate exposure (use only until exposure PR is accepted/merged)
-            ds["exposure"], tide_cq = exposure(
+            # # Calculate exposure (use only until exposure PR is accepted/merged)
+            # ds["exposure"], tide_cq = exposure(
+            #     dem=ds.elevation,
+            #     time_range=all_timerange,
+            #     tide_model=tide_model,
+            #     tide_model_dir=tide_model_dir,
+            # )
+            
+            # Calculate exposure (use the following 10 lines once the exposure PR is approved)
+            exposure_filters, tide_cq = exposure(
                 dem=ds.elevation,
                 time_range=all_timerange,
+                modelled_freq = modelled_freq,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
             )
             
-#             # Calculate exposure (use the following 10 lines once the exposure PR is approved)
-#             exposure_filters, tide_cq = exposure(
-#                 dem=ds.elevation,
-#                 time_range=all_timerange,
-#                 modelled_freq = modelled_freq,
-#                 tide_model=tide_model,
-#                 tide_model_dir=tide_model_dir,
-#             )
-            
-#             for x in list(exposure_filters.keys()):
-#                 ds["exposure_"+str(x)]=exposure_filters[str(x)]
+            for x in list(exposure_filters.keys()):
+                ds["exposure_"+str(x)]=exposure_filters[str(x)]
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(
