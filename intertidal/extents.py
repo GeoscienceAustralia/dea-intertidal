@@ -1,33 +1,10 @@
 import xarray as xr
-import numpy as np
 
-import datacube
 from skimage.measure import label, regionprops
 from skimage.morphology import binary_erosion, disk
 
 from odc.algo import mask_cleanup
-from odc.geo.geom import Geometry
 import odc.geo.xr
-
-
-def load_reproject(
-    path, gbox, chunks={"x": 2048, "y": 2048}, masked=True, **reproj_kwargs
-):
-    """
-    Load and reproject part of a raster dataset into a given GeoBox.
-    """
-    ds = (
-        xr.open_dataset(
-            path,
-            engine="rasterio",
-            masked=masked,
-            chunks=chunks,
-        )
-        .squeeze("band")
-        .odc.reproject(how=gbox, **reproj_kwargs)
-    )
-
-    return ds
 
 
 def intertidal_connection(water_intertidal, intertidal, connectivity=1):
@@ -74,10 +51,10 @@ def intertidal_connection(water_intertidal, intertidal, connectivity=1):
 
 
 def extents(
-    reclassified_aclum,
-    freq,
     dem,
+    freq,
     corr,
+    reclassified_aclum,
 ):
     """
     Classify coastal ecosystems into broad classes based
@@ -96,10 +73,10 @@ def extents(
         generated during the intertidal.elevation workflow
     corr : xarray.DataArray
         An xarray.DataArray of the correlation between pixel NDWI values
-        and the tide-height, generated during the intertidal.elevation workflow
-    land_use_mask  :  str
-        Directory path to the ABARES CLUM raster dataset depicting Australian
-        land use
+        and tide height, generated during the intertidal.elevation workflow
+    reclassified_aclum : str
+        An xarray.DataArray containing reclassified land use data, used
+        to mask out urban areas misclassified as water.
 
     Returns:
     --------
@@ -107,12 +84,13 @@ def extents(
         A binary xarray.DataArray depicting dry (0), inland intermittent wet (1),
         inland persistent wet (2), tidal influenced persistent wet (3),
         intertidal (low confidence, 4) and intertidal (high confidence, 5) coastal extents.
+
     Notes:
     ------
     Classes are defined as follows:
 
     0: Dry
-        - Pixels with wettness `freq` < 0.01
+        - Pixels with wetness `freq` < 0.01
         Includes pixels that meet the following criteria:
         - Intermittently wet pixels with wetness frequency > 0.01 and < 0.99 and
         - Un-correclated to tide (p>0.15) and either of the following:
