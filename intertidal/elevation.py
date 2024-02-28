@@ -23,6 +23,7 @@ from intertidal.io import (
     load_aclum,
     load_topobathy,
     prepare_for_export,
+    tidal_metadata,
     export_dataset_metadata,
 )
 from intertidal.utils import (
@@ -1170,6 +1171,9 @@ def intertidal_cli(
         # Prepare data for export
         ds["qa_ndwi_freq"] *= 100  # Convert frequency to %
         ds_prepared = prepare_for_export(ds)  # sets correct dtypes and nodata
+        
+        # Calculate additional tile-level tidal metadata attributes
+        metadata_dict = tidal_metadata(ds)
 
         # Export data and metadata
         export_dataset_metadata(
@@ -1181,6 +1185,8 @@ def intertidal_cli(
             s2_lineage=dss_s2,
             ancillary_lineage=dss_ancillary,
             dataset_version=output_version,
+            product_maturity="provisional",
+            additional_metadata=metadata_dict,
             run_id=run_id,
             log=log,
         )
