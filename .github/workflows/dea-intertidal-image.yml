@@ -54,8 +54,9 @@ jobs:
         if: github.event_name != 'release'
         with:
           message: |
-            **Latest validation results:**
             <img align="left" width="100%" src="https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true" alt="Validation results">
+            <br>
+            For full results, refer to the [Tests directory README](https://github.com/GeoscienceAustralia/dea-intertidal/${{ github.head_ref }}/main/tests).
 
       # - name: Configure AWS credentials
       #   uses: aws-actions/configure-aws-credentials@v4
