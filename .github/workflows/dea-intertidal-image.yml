@@ -35,8 +35,9 @@ on:
     types: [created, edited, published]
 
 permissions:
-  id-token: write   # This is required for requesting the JWT
-  contents: write    # This is required for actions/checkout
+  id-token: write  # Required for requesting Json web token
+  contents: write  # Required for actions/checkout
+  pull-requests: write  # Required for validation results comment bot
 
 jobs:
   test:
@@ -116,6 +117,16 @@ jobs:
         with:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
+
+      # Post validation tesults as comment on PR
+      - name: Post validation results as comment
+        uses: mshick/add-pr-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          message: |
+            ![](https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true")
+            
+            For full integration test results, refer to the [Tests directory README](https://github.com/GeoscienceAustralia/dea-intertidal/tree/${{ github.head_ref }}/tests).
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
