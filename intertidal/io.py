@@ -7,6 +7,7 @@ import numpy as np
 import xarray as xr
 from pathlib import Path
 from urllib.parse import urlparse
+from rasterio.errors import NotGeoreferencedWarning
 
 import datacube
 import odc.geo.xr
@@ -31,6 +32,7 @@ from intertidal.utils import configure_logging
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
 
 
 def _id_to_tuple(id_str):
@@ -61,7 +63,7 @@ def extract_geobox(
 ):
     """
     Handles extraction of a GeoBox pixel grid from either a GridSpec
-    tile ID (in the form 'x143y56'), or a provided Geometry object.
+    tile ID (in the form "x123y123"), or a provided Geometry object.
 
     If a tile ID string is passed to `study_area`, a GeoBox will be
     extracted based on relevant GridSpec tile. If a custom Geometry
@@ -208,8 +210,8 @@ def load_data(
         Defaults to 90 (i.e. 90% cloud cover).
     skip_broken_datasets : bool, optional
         Whether to skip broken datasets during load. This can avoid
-        temporary file access issues on S3, however introduces 
-        randomness into the analysis (two identical runs may produce 
+        temporary file access issues on S3, however introduces
+        randomness into the analysis (two identical runs may produce
         different results due to different data failing to load).
     ndwi : bool, optional
         Whether to convert spectral bands to Normalised Difference Water
@@ -712,6 +714,57 @@ def _write_stac(
     return stac
 
 
+def tidal_metadata(ds):
+    """
+    Generate tile-based tidal attribute metadata from DEA Intertidal
+    outputs.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset containing tidal attribute variables.
+
+    Returns
+    -------
+    dict
+        A dictionary containing metadata for tidal attributes including
+        mean tidal attribute values, Tide Range (tr), Observed Tide Range
+        (otr), and tide range category classification, classifying tiles
+        into microtidal (less than 2 m), mesotidal (between 2
+        and 4 m), or macrotidal (greater than 4 m) tide ranges.
+    """
+    # Identify tidal attribute variables
+    tide_vars = [var for var in ds.data_vars if var.startswith("ta_")]
+
+    # Calculate mean per variable and extract as dictionary
+    metadata_dict = ds[tide_vars].mean().to_array().to_series().to_dict()
+
+    # Rename to standard name format and round to two decimal places
+    metadata_dict = {
+        key.replace("ta_", "intertidal:"): round(value, 2)
+        for key, value in metadata_dict.items()
+    }
+
+    # Add tide range metadata
+    metadata_dict["intertidal:tr"] = (
+        metadata_dict["intertidal:hat"] - metadata_dict["intertidal:lat"]
+    )
+    metadata_dict["intertidal:otr"] = (
+        metadata_dict["intertidal:hot"] - metadata_dict["intertidal:lot"]
+    )
+
+    # Calculate category
+    metadata_dict["intertidal:category"] = (
+        "microtidal"
+        if metadata_dict["intertidal:tr"] < 2
+        else "mesotidal"
+        if 2 <= metadata_dict["intertidal:tr"] <= 4
+        else "macrotidal"
+    )
+
+    return metadata_dict
+
+
 def _ls_platform_instrument(year):
     """
     Indentify relevant Landsat platforms and instruments for a given
@@ -832,6 +885,7 @@ def export_dataset_metadata(
     dataset_version="0.0.1",
     product_maturity="provisional",
     dataset_maturity="final",
+    additional_metadata=None,
     debug=True,
     run_id=None,
     log=None,
@@ -867,10 +921,13 @@ def export_dataset_metadata(
         Dataset version to use for the output dataset. Default is "0.0.1".
     product_maturity : str, optional
         Product maturity to use for the output dataset. Default is
-        "provisional".
+        "provisional", can also be "stable".
     dataset_maturity : str, optional
         Dataset maturity to use for the output dataset. Default is
-        "final".
+        "final", can also be "interim".
+    additional_metadata : dict, optional
+        An option dictionary containing additional metadata fields to 
+        add to the dataset metadata properties.
     debug : bool, optional
         When true, this will write S3 outputs locally so they can be
         checked for correctness. Default is True.
@@ -884,8 +941,11 @@ def export_dataset_metadata(
     if log is None:
         log = configure_logging()
 
-    # Use run ID name for logs if it exists        
+    # Use run ID name for logs if it exists
     run_id = "Processing" if run_id is None else run_id
+
+    # Use empty metadata dict if no custom metadata is provided
+    additional_metadata = {} if additional_metadata is None else additional_metadata
 
     # Use a temporary directory to write outputs to before we either copy
     # it locally or sync to S3
@@ -928,6 +988,7 @@ def export_dataset_metadata(
                     "odc:file_format": "GeoTIFF",
                     "odc:collection_number": 3,
                     "eo:gsd": ds.odc.geobox.resolution.x,
+                    **additional_metadata,
                 }
             )
 

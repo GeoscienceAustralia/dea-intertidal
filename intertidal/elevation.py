@@ -23,6 +23,7 @@ from intertidal.io import (
     load_aclum,
     load_topobathy,
     prepare_for_export,
+    tidal_metadata,
     export_dataset_metadata,
 )
 from intertidal.utils import (
@@ -930,6 +931,20 @@ def elevation(
     "both local disk and S3 locations. Defaults to 'data/processed/'.",
 )
 @click.option(
+    "--product_maturity",
+    type=str,
+    default="provisional",
+    help="Product maturity metadata to use for the output dataset. "
+    "Defaults to 'provisional', can also be 'stable'.",
+)
+@click.option(
+    "--dataset_maturity",
+    type=str,
+    default="final",
+    help="Dataset maturity metadata to use for the output dataset. "
+    "Defaults to 'final', can also be 'interim'.",
+)
+@click.option(
     "--resolution",
     type=int,
     default=10,
@@ -1031,6 +1046,8 @@ def intertidal_cli(
     label_date,
     output_version,
     output_dir,
+    product_maturity,
+    dataset_maturity,
     resolution,
     ndwi_thresh,
     min_freq,
@@ -1170,6 +1187,9 @@ def intertidal_cli(
         # Prepare data for export
         ds["qa_ndwi_freq"] *= 100  # Convert frequency to %
         ds_prepared = prepare_for_export(ds)  # sets correct dtypes and nodata
+        
+        # Calculate additional tile-level tidal metadata attributes
+        metadata_dict = tidal_metadata(ds)
 
         # Export data and metadata
         export_dataset_metadata(
@@ -1181,6 +1201,9 @@ def intertidal_cli(
             s2_lineage=dss_s2,
             ancillary_lineage=dss_ancillary,
             dataset_version=output_version,
+            product_maturity=product_maturity,
+            dataset_maturity=dataset_maturity,
+            additional_metadata=metadata_dict,
             run_id=run_id,
             log=log,
         )
