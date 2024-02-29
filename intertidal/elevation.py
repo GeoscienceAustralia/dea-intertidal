@@ -935,14 +935,14 @@ def elevation(
     type=str,
     default="provisional",
     help="Product maturity metadata to use for the output dataset. "
-    "Defaults to 'provisional'.",
+    "Defaults to 'provisional', can also be 'stable'.",
 )
 @click.option(
     "--dataset_maturity",
     type=str,
     default="final",
     help="Dataset maturity metadata to use for the output dataset. "
-    "Defaults to 'final'.",
+    "Defaults to 'final', can also be 'interim'.",
 )
 @click.option(
     "--resolution",

@@ -26,7 +26,6 @@ from eodatasets3 import DatasetAssembler, serialise
 from eodatasets3.scripts.tostac import json_fallback
 from eodatasets3.verify import PackageChecksum
 from eodatasets3.stac import to_stac_item, validate_item
-from eodatasets3.assemble import IncompleteDatasetWarning
 from datacube.utils.masking import mask_invalid_data
 
 from intertidal.utils import configure_logging
@@ -922,10 +921,10 @@ def export_dataset_metadata(
         Dataset version to use for the output dataset. Default is "0.0.1".
     product_maturity : str, optional
         Product maturity to use for the output dataset. Default is
-        "provisional".
+        "provisional", can also be "stable".
     dataset_maturity : str, optional
         Dataset maturity to use for the output dataset. Default is
-        "final".
+        "final", can also be "interim".
     additional_metadata : dict, optional
         An option dictionary containing additional metadata fields to 
         add to the dataset metadata properties.
@@ -982,19 +981,16 @@ def export_dataset_metadata(
             dataset_assembler.maturity = dataset_maturity
             dataset_assembler.dataset_version = dataset_version
 
-            # Set additional properties (ignore UserWarning due to 
-            # non-standard tidal attribute metadata)
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning)
-                dataset_assembler.properties.update(
-                    {
-                        "odc:product": "ga_s2ls_intertidal_cyear_3",
-                        "odc:file_format": "GeoTIFF",
-                        "odc:collection_number": 3,
-                        "eo:gsd": ds.odc.geobox.resolution.x,
-                        **additional_metadata,
-                    }
-                )
+            # Set additional properties
+            dataset_assembler.properties.update(
+                {
+                    "odc:product": "ga_s2ls_intertidal_cyear_3",
+                    "odc:file_format": "GeoTIFF",
+                    "odc:collection_number": 3,
+                    "eo:gsd": ds.odc.geobox.resolution.x,
+                    **additional_metadata,
+                }
+            )
 
             # Update to temporal naming convention
             time_convention = f"{year}--P1Y"
@@ -1026,10 +1022,8 @@ def export_dataset_metadata(
             dataset_assembler.write_thumbnail("elevation", "elevation", "elevation")
 
             # Complete the dataset
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=IncompleteDatasetWarning)
-                dataset_id, metadata_path = dataset_assembler.done()
-                log.info(f"{run_id}: Assembled dataset: {metadata_path}")
+            dataset_id, metadata_path = dataset_assembler.done()
+            log.info(f"{run_id}: Assembled dataset: {metadata_path}")
 
             # Replace the thumbnail with something nicer
             thumbnail_path = (
