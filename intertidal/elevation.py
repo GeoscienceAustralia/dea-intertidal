@@ -931,6 +931,20 @@ def elevation(
     "both local disk and S3 locations. Defaults to 'data/processed/'.",
 )
 @click.option(
+    "--product_maturity",
+    type=str,
+    default="provisional",
+    help="Product maturity metadata to use for the output dataset. "
+    "Defaults to 'provisional'.",
+)
+@click.option(
+    "--dataset_maturity",
+    type=str,
+    default="final",
+    help="Dataset maturity metadata to use for the output dataset. "
+    "Defaults to 'final'.",
+)
+@click.option(
     "--resolution",
     type=int,
     default=10,
@@ -1032,6 +1046,8 @@ def intertidal_cli(
     label_date,
     output_version,
     output_dir,
+    product_maturity,
+    dataset_maturity,
     resolution,
     ndwi_thresh,
     min_freq,
@@ -1185,7 +1201,8 @@ def intertidal_cli(
             s2_lineage=dss_s2,
             ancillary_lineage=dss_ancillary,
             dataset_version=output_version,
-            product_maturity="provisional",
+            product_maturity=product_maturity,
+            dataset_maturity=dataset_maturity,
             additional_metadata=metadata_dict,
             run_id=run_id,
             log=log,
