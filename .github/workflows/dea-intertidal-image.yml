@@ -112,6 +112,7 @@ jobs:
       # Commit validation results produced by integration tests back into repo
       - name: Commit validation results into repository
         uses: stefanzweifel/git-auto-commit-action@v4
+        if: github.event_name != 'release'
         with:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
@@ -125,8 +126,8 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
 
-    # Only run on a push to the main branch
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Only run on a push to the main branch OR a release
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'release')
 
     steps:
       - name: Checkout code
