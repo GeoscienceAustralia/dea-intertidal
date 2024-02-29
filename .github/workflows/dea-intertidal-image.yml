@@ -56,7 +56,7 @@ jobs:
           message: |
             <img align="left" width="100%" src="https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true" alt="Validation results">
             <br>
-            For full results, refer to the [Tests directory README](https://github.com/GeoscienceAustralia/dea-intertidal/${{ github.head_ref }}/main/tests).
+            For full results, refer to the [Tests directory README](https://github.com/GeoscienceAustralia/dea-intertidal/tree/${{ github.head_ref }}/tests).
 
       # - name: Configure AWS credentials
       #   uses: aws-actions/configure-aws-credentials@v4
