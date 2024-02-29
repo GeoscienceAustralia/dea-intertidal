@@ -54,7 +54,7 @@ jobs:
         with:
           message: |
             **Latest validation results:**
-            <img align="left" width="300" src="https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true" alt="Validation results">
+            <img align="left" width="300" src="https://raw.githubusercontent.com/GeoscienceAustralia/dea-intertidal/{{ github.head_ref }}/tests/validation.jpg?token=GHSAT0AAAAAACNDOQRJW3AA5KBSYYXEFFRCZO735WQ" alt="Validation results">
 
       # - name: Configure AWS credentials
       #   uses: aws-actions/configure-aws-credentials@v4
