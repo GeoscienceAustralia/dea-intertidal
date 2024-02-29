@@ -54,7 +54,7 @@ jobs:
         if: github.event_name != 'release'
         with:
           message: |
-            <img align="left" width="100%" src="https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true" alt="Validation results">
+            ![](https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true")
 
             
             For full integration test results, refer to the [Tests directory README](https://github.com/GeoscienceAustralia/dea-intertidal/tree/${{ github.head_ref }}/tests).
