@@ -14,6 +14,7 @@ REQUIRED = [
     "click",
     "datacube",
     "dea_tools",
+    "eodatasets3",
     "fiona",
     "geopandas",
     "matplotlib",

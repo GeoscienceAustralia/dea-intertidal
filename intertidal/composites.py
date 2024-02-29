@@ -1,17 +1,12 @@
 import os
 import sys
 import numpy as np
-import pandas as pd
-import xarray as xr
-import geopandas as gpd
-import matplotlib.pyplot as plt
 import click
 
 import datacube
 import odc.geo.xr
 from odc.algo import (
     int_geomedian,
-    enum_to_bool,
     keep_good_only,
 )
 from datacube.utils.aws import configure_s3_access
