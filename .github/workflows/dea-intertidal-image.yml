@@ -118,7 +118,7 @@ jobs:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
 
-      # Post validaiton tesults as comment
+      # Post validaiton tesults as comment on PR
       - name: Post validation results as comment
         uses: mshick/add-pr-comment@v2
         if: github.event_name != 'release'
