@@ -1,6 +1,6 @@
 ---
 name: ga_s2ls_intertidal_cyear_3
-metadata_type: eo3
+metadata_type: eo3_intertidal
 description: Geoscience Australia Sentinel-2 Landsat Intertidal Calendar Year Collection 3
 
 license: CC-BY-4.0
