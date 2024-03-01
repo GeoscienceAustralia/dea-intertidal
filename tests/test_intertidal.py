@@ -249,7 +249,7 @@ def test_dem_accuracy(
 @pytest.mark.dependency(depends=["test_intertidal_cli"])
 def test_validate_metadata():
     """
-    Validates output EO3 metadata against product definition.
+    Validates output EO3 metadata against product definition and metadata type.
     This will detect issues like incorrect datatypes, band names, nodata
     or missing bands.
     """
@@ -257,7 +257,8 @@ def test_validate_metadata():
     result = runner.invoke(
         eodatasets3.validate.run,
         [
-            "data/raw/ga_s2ls_intertidal_cyear_3.odc-product.yaml",
+            "metadata/ga_s2ls_intertidal_cyear_3.odc-product.yaml",
+            "metadata/eo3_intertidal.odc-type.yaml",
             "data/processed/ga_s2ls_intertidal_cyear_3/0-0-1/tes/ting/2021--P1Y/ga_s2ls_intertidal_cyear_3_testing_2021--P1Y_final.odc-metadata.yaml",            
             "--thorough",
         ],
