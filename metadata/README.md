@@ -1,10 +1,10 @@
-# DEA Intertidal Datacube metadata
+# DEA Intertidal Open Data Cube metadata
 
-This directory contains metadata files required for indexing DEA Intertidal into the Open Data Cube, including:
-* A [Datacube Product Definition YAML](https://datacube-core.readthedocs.io/en/latest/installation/product-definitions.html) describing the DEA Intertidal product and its bands/measurements
-* A [Datacube Metadata Type YAML](https://datacube-core.readthedocs.io/en/latest/installation/metadata-types.html) defining custom searchable metadata fields for DEA Intertidal
+This directory contains metadata files required for indexing DEA Intertidal into the Open Data Cube (ODC), including:
+* An [ODC Product Definition YAML](https://datacube-core.readthedocs.io/en/latest/installation/product-definitions.html) describing the DEA Intertidal product and its bands/measurements
+* An [ODC Metadata Type YAML](https://datacube-core.readthedocs.io/en/latest/installation/metadata-types.html) defining custom searchable metadata fields for DEA Intertidal
 
-Individual [Datacube Dataset Documents](https://datacube-core.readthedocs.io/en/latest/installation/dataset-documents.html) and Spatiotemporal Asset Catalogue (STAC) metadata are generated during the product generation workflow using the [`intertidal.io.export_dataset_metadata`](https://github.com/GeoscienceAustralia/dea-intertidal/blob/main/intertidal/io.py#L877-L1091) function.
+Individual [ODC Dataset Documents](https://datacube-core.readthedocs.io/en/latest/installation/dataset-documents.html) and Spatiotemporal Asset Catalogue (STAC) metadata are generated during the product generation workflow using the [`intertidal.io.export_dataset_metadata`](https://github.com/GeoscienceAustralia/dea-intertidal/blob/main/intertidal/io.py#L877-L1091) function.
 
 All three metadata files can be validated using the `eo3-validate` command from `eodatasets`:
 ```
