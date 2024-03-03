@@ -886,7 +886,7 @@ def export_dataset_metadata(
     product_maturity="provisional",
     dataset_maturity="final",
     additional_metadata=None,
-    debug=True,
+    debug=False,
     run_id=None,
     log=None,
 ):
@@ -930,7 +930,7 @@ def export_dataset_metadata(
         add to the dataset metadata properties.
     debug : bool, optional
         When true, this will write S3 outputs locally so they can be
-        checked for correctness. Default is True.
+        checked for correctness. Default is False.
     run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
