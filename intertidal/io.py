@@ -485,11 +485,21 @@ def load_topobathy_mask(
     product : str, optional
         The name of the topo-bathymetric DEM product to load from the
         datacube. Defaults to "ga_ausbathytopo250m_2023".
+    elevation_band : str, optional
+        The name of the band containing elevation data. Defaults to 
+        "height_depth".
     resampling : str, optional
         The resampling method to use, by default "bilinear".
     mask_invalid : bool, optional
         Whether to mask invalid/nodata values in the array by setting
         them to NaN, by default True.
+    min_threshold : int or float, optional
+        The elevation value used to create the mask; all pixels with
+        elevations above this value will be given a value of True.
+    mask_filters : list of tuples, optional
+        An optional list of morphological processing steps to pass to 
+        the `mask_cleanup` function. The default is `[("dilation", 25)]`,
+        which will dilate True pixels by a radius of 25 pixels (~250 m).
 
     Returns
     -------
@@ -540,6 +550,9 @@ def load_aclum_mask(
     product : str, optional
         The name of the ABARES land use dataset product to load from the
         datacube. Defaults to "abares_clum_2020".
+    class_band : str, optional
+        The name of the band containing land use class data. Defaults to
+        "alum_class".
     resampling : str, optional
         The resampling method to use, by default "nearest".
     mask_invalid : bool, optional
