@@ -32,7 +32,7 @@ on:
       - 'codecov.yaml'
 
   release:
-    types: [created, edited, published]
+    types: [edited, published]
 
 permissions:
   id-token: write  # Required for requesting Json web token
