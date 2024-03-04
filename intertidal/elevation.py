@@ -20,8 +20,8 @@ from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.io import (
     load_data,
-    load_aclum,
-    load_topobathy,
+    load_topobathy_mask,
+    load_aclum_mask,
     prepare_for_export,
     tidal_metadata,
     export_dataset_metadata,
@@ -1103,14 +1103,11 @@ def intertidal_cli(
         )
         satellite_ds.load()
 
-        # Load data from GA's AusBathyTopo 250m 2023 Grid
-        topobathy_ds = load_topobathy(
-            dc, satellite_ds, product="ga_ausbathytopo250m_2023", resampling="bilinear"
-        )
-        valid_mask = topobathy_ds.height_depth > -15
+        # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid
+        topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox.compat)
 
-        # Load and reclassify for intensive urban land use class only the ABARES ACLUM ds
-        reclassified_aclum = load_aclum(dc, satellite_ds)
+        # Load urban land use class mask from ABARES CLUM
+        reclassified_aclum = load_aclum_mask(dc, satellite_ds.odc.geobox.compat)
 
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
@@ -1123,7 +1120,7 @@ def intertidal_cli(
         log.info(f"{run_id}: Calculating Intertidal Elevation")
         ds, tide_m = elevation(
             satellite_ds,
-            valid_mask=valid_mask,
+            valid_mask=topobathy_mask,
             ndwi_thresh=ndwi_thresh,
             min_freq=min_freq,
             max_freq=max_freq,
@@ -1187,7 +1184,7 @@ def intertidal_cli(
         # Prepare data for export
         ds["qa_ndwi_freq"] *= 100  # Convert frequency to %
         ds_prepared = prepare_for_export(ds)  # sets correct dtypes and nodata
-        
+
         # Calculate additional tile-level tidal metadata attributes
         metadata_dict = tidal_metadata(ds)
 
