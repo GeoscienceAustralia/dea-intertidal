@@ -107,13 +107,10 @@ jobs:
           cp ./artifacts/validation.csv ./tests/validation.csv
           cp ./artifacts/README.md ./tests/README.md
 
-      # - name: Setup upterm session
-      #   uses: lhotari/action-upterm@v1
-
       # Commit validation results produced by integration tests back into repo
       - name: Commit validation results into repository
         uses: stefanzweifel/git-auto-commit-action@v4
-        if: github.event_name != 'release'
+        if: github.event_name == 'pull_request'
         with:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
