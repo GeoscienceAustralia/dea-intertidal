@@ -460,12 +460,15 @@ def load_data(
     return satellite_ds, dss_s2, dss_ls
 
 
-def load_topobathy(
+def load_topobathy_mask(
     dc,
-    satellite_ds,
+    geobox,
     product="ga_ausbathytopo250m_2023",
+    elevation_band="height_depth",
     resampling="bilinear",
     mask_invalid=True,
+    min_threshold=-15,
+    mask_filters=[("dilation", 25)],
 ):
     """
     Loads a topo-bathymetric DEM for the extents of the loaded satellite
@@ -476,9 +479,9 @@ def load_topobathy(
     ----------
     dc : Datacube
         A Datacube instance for loading data.
-    satellite_ds : ndarray
-        The loaded satellite data, used to obtain the spatial extents
-        of the data.
+    geobox : ndarray
+        The GeoBox of the loaded satellite data, used to ensure the data
+        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
     product : str, optional
         The name of the topo-bathymetric DEM product to load from the
         datacube. Defaults to "ga_ausbathytopo250m_2023".
@@ -490,24 +493,34 @@ def load_topobathy(
 
     Returns
     -------
-    topobathy_ds : xarray.Dataset
-        The loaded topo-bathymetric DEM.
+    topobathy_ds : xarray.DataArray
+        An output boolean mask, where True represent pixels to use in the
+        following analysis.
     """
-    topobathy_ds = dc.load(
-        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
-    ).squeeze("time")
+    # Load from datacube, reprojecting to GeoBox of input satellite data
+    topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
+        "time"
+    )
 
     # Mask invalid data
     if mask_invalid:
         topobathy_ds = mask_invalid_data(topobathy_ds)
 
-    return topobathy_ds
+    # Threshold to minumum elevation
+    topobathy_mask = topobathy_ds[elevation_band] > min_threshold
+
+    # If requested, apply cleanup
+    if mask_filters is not None:
+        topobathy_mask = mask_cleanup(topobathy_mask, mask_filters=mask_filters)
+
+    return topobathy_mask
 
 
-def load_aclum(
+def load_aclum_mask(
     dc,
-    satellite_ds,
+    geobox,
     product="abares_clum_2020",
+    class_band="alum_class",
     resampling="nearest",
     mask_invalid=True,
 ):
@@ -521,9 +534,9 @@ def load_aclum(
     ----------
     dc : Datacube
         A Datacube instance for loading data.
-    satellite_ds : ndarray
-        The loaded satellite data, used to obtain the spatial extents
-        of the data.
+    geobox : ndarray
+        The GeoBox of the loaded satellite data, used to ensure the data
+        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
     product : str, optional
         The name of the ABARES land use dataset product to load from the
         datacube. Defaults to "abares_clum_2020".
@@ -535,12 +548,13 @@ def load_aclum(
 
     Returns
     -------
-    reclassified_aclum : xarray.Dataset
-        The ABARES land use mask, summarised to include only two land
-        use classes: 'intensive urban' and 'other'.
+    reclassified_aclum : xarray.DataArray
+        An output boolean mask, where True equals intensive urban and 
+        False equals all other classes.
     """
+    # Load from datacube, reprojecting to GeoBox of input satellite data
     aclum_ds = dc.load(
-        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
+        product=product, like=geobox, resampling=resampling
     ).squeeze("time")
 
     # Mask invalid data
@@ -548,9 +562,9 @@ def load_aclum(
         aclum_ds = mask_invalid_data(aclum_ds)
 
     # Manually isolate the 'intensive urban' land use summary class, set
-    # all other pixels to false. For class definitions, refer to
+    # all other pixels to False. For class definitions, refer to
     # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
-    reclassified_aclum = aclum_ds.alum_class.isin(
+    reclassified_aclum = aclum_ds[class_band].isin(
         [
             500,
             530,
@@ -926,7 +940,7 @@ def export_dataset_metadata(
         Dataset maturity to use for the output dataset. Default is
         "final", can also be "interim".
     additional_metadata : dict, optional
-        An option dictionary containing additional metadata fields to 
+        An option dictionary containing additional metadata fields to
         add to the dataset metadata properties.
     debug : bool, optional
         When true, this will write S3 outputs locally so they can be
