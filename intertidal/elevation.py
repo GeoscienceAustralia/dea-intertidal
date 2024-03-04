@@ -493,7 +493,13 @@ def pixel_dem_debug(
 
 
 def pixel_uncertainty(
-    flat_ds, flat_dem, ndwi_thresh=0.1, method="mad", min_q=0.25, max_q=0.75
+    flat_ds,
+    flat_dem,
+    ndwi_thresh=0.1,
+    method="mad",
+    min_misclassified=3,
+    min_q=0.25,
+    max_q=0.75,
 ):
     """
     Calculate uncertainty bounds around a modelled elevation based on
@@ -524,8 +530,14 @@ def pixel_uncertainty(
         taking upper/lower tide height quantiles of miscalssified points.
         Defaults to "mad" for Median Absolute Deviation; use "quantile"
         to use quantile calculation instead.
+    min_misclassified : int, optional
+        If `method == "mad"`: This sets the minimum number of misclassified
+        observations required to calculate a valid MAD uncertainty. Pixels
+        with fewer misclassified observations will be assigned an output
+        uncertainty of 0 metres (reflecting how sucessfully the provided
+        elevation and NDWI threshold divide observations into dry and wet).
     min_q, max_q : float, optional
-        If `method == "quantile": the minimum and maximum quantiles used
+        If `method == "quantile"`: the minimum and maximum quantiles used
         to estimate uncertainty bounds based on misclassified points.
         Defaults to interquartile range, or 0.25, 0.75. This provides a
         balance between capturing the range of uncertainty at each
@@ -554,13 +566,25 @@ def pixel_uncertainty(
     misclassified_all = misclassified_wet | misclassified_dry
     misclassified_ds = flat_ds.where(misclassified_all)
 
+    # Calculate sum of misclassified points
+    misclassified_sum = (
+        misclassified_all.sum(dim="time")
+        .rename("misclassified_px_count")
+        .where(~flat_dem.elevation.isnull())
+    )
+
     # Calculate uncertainty by taking the Median Absolute Deviation of
     # all misclassified points.
     if method == "mad":
         # Calculate median of absolute deviations
-        # TODO: Account for large MAD on pixels with very few
-        # misclassified points. Set < n misclassified points to 0 MAD?
         mad = abs(misclassified_ds.tide_m - flat_dem.elevation).median(dim="time")
+
+        # Set any pixels with < n misclassified points to 0 MAD. This
+        # avoids extreme MAD values being calculated when we have only
+        # a small set of misclassified observations, as well as missing
+        # data caused by being unable to calculate MAD on zero
+        # misclassified observations.
+        mad = mad.where(misclassified_sum >= min_misclassified, 0)
 
         # Calculate low and high bounds
         uncertainty_low = flat_dem.elevation - mad
@@ -588,13 +612,6 @@ def pixel_uncertainty(
 
     # Subtract low from high DEM to summarise uncertainy range
     dem_flat_uncertainty = dem_flat_high - dem_flat_low
-
-    # Calculate sum of misclassified points
-    misclassified_sum = (
-        misclassified_all.sum(dim="time")
-        .rename("misclassified_px_count")
-        .where(~flat_dem.elevation.isnull())
-    )
 
     return (
         dem_flat_low,
