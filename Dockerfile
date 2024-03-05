@@ -1,3 +1,7 @@
+# Base image with:
+# - Ubuntu 22.04
+# - Python 3.10.12
+# - GDAL 3.7.3, released 2023/10/30
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.7.3
 
 ENV DEBIAN_FRONTEND=noninteractive \
