@@ -15,7 +15,7 @@ RUN apt-get update && \
       wget \
       unzip \
       python3-pip \
-      libpq-dev python-dev \
+      libpq-dev \
     && apt-get autoclean && \
     apt-get autoremove && \
     rm -rf /var/lib/{apt,dpkg,cache,log}
