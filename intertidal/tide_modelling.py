@@ -4,6 +4,7 @@ import geopandas as gpd
 from dea_tools.coastal import pixel_tides, _pixel_tides_resample
 from dea_tools.spatial import interpolate_2d
 
+
 def pixel_tides_ensemble(
     satellite_ds,
     directory,
@@ -15,7 +16,6 @@ def pixel_tides_ensemble(
     calculate_quantiles=None,
     cutoff=None,
     **pixel_tides_kwargs,
-    
 ):
     """
     Generate an ensemble tide model, choosing the best three tide models
@@ -42,7 +42,7 @@ def pixel_tides_ensemble(
     ancillary_points : str
         Path to a file containing point correlations for different tidal
         models.
-    times  :  tuple or None, optional
+    times : tuple or None, optional
         Tuple containing start and end time of time range to be used for
         tide model in the format of "YYYY-MM-DD".
     top_n : integer, optional
@@ -55,6 +55,8 @@ def pixel_tides_ensemble(
     interp_method : str, optional
         Interpolation method used to interpolate correlations onto the
         low-resolution tide grid. Default is "nearest".
+    **pixel_tides_kwargs
+        Optional keyword arguments to provide to the `pixel_tides` function.
 
     Returns:
     --------
@@ -73,17 +75,18 @@ def pixel_tides_ensemble(
             "EOT20",
             "HAMTIDE11",
             "GOT4.10",
-                ]
+        ]
 
     tide_lowres = pixel_tides(
-                            satellite_ds,
-                            resample=False,
-                            calculate_quantiles=calculate_quantiles,
-                            times=times,
-                            model=models,
-                            directory=directory,
-                            cutoff=cutoff,
-                            )
+        satellite_ds,
+        resample=False,
+        calculate_quantiles=calculate_quantiles,
+        times=times,
+        model=models,
+        directory=directory,
+        cutoff=cutoff,
+        **pixel_tides_kwargs,
+    )
 
     # Load ancillary points from file, reproject to match satellite
     # data, and drop empty points

@@ -93,7 +93,6 @@ def exposure(
             ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
             top_n=3,
             reduce_method='mean',
-            resolution=3000,
         )
 
     else:
