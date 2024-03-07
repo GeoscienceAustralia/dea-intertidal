@@ -156,6 +156,7 @@ def rolling_tide_window(
     window_spacing,
     window_radius,
     tide_min,
+    min_count=5,
     statistic="median",
 ):
     """
@@ -181,6 +182,10 @@ def rolling_tide_window(
         (e.g. metres).
     tide_min : float
         Bottom edge of the rolling window in tide units (e.g. metres).
+    min_count : int, optional
+        The minimum number of valid datapoints required to calculate the
+        rolling statistic. Outputs with less observations will be set to
+        NaN. Defaults to 5.
     statistic : str, optional
         Statistic to apply on the values within each window. One of
         ["median", "mean", "quantile"]. Default is "median".
@@ -215,11 +220,21 @@ def rolling_tide_window(
     elif statistic == "mean":
         ds_agg = masked_ds.mean(dim="time")
 
+    # Optionally mask out observations with less than n valid datapoints.
+    if min_count:
+        clear_count = masked_ds.notnull().sum(dim="time")
+        ds_agg = ds_agg.where(clear_count > min_count)
+
     return ds_agg
 
 
 def pixel_rolling_median(
-    flat_ds, windows_n=100, window_prop_tide=0.15, window_offset=5, max_workers=None
+    flat_ds,
+    windows_n=100,
+    window_prop_tide=0.15,
+    window_offset=5,
+    min_count=5,
+    max_workers=None,
 ):
     """
     Calculate rolling medians for each pixel in an xarray.Dataset from
@@ -250,6 +265,11 @@ def pixel_rolling_median(
         first rolling window beneath the lowest tide, although at the
         risk of introducing noisy data due to the rolling medians
         containing fewer total satellite observations. Defaults to 5.
+    min_count : int, optional
+        The minimum number of cloud free observations required to
+        calculate the rolling statistic. Defaults to 5; higher values
+        will produce cleaner results but with potentially reduced
+        intertidal coverage.
     max_workers : int, optional
         Maximum number of worker processes to use for parallel
         execution, by default 64
@@ -292,7 +312,13 @@ def pixel_rolling_median(
             rolling_intervals,
             *(
                 repeat(i, len(rolling_intervals))
-                for i in [flat_ds, window_spacing_tide, window_radius_tide, tide_min]
+                for i in [
+                    flat_ds,
+                    window_spacing_tide,
+                    window_radius_tide,
+                    tide_min,
+                    min_count,
+                ]
             ),
         )
 
@@ -316,7 +342,7 @@ def pixel_dem(
     ndwi_thresh=0.1,
     interp_intervals=200,
     smooth_radius=20,
-    min_periods="auto",
+    min_periods=5,
     debug=False,
 ):
     """
@@ -354,7 +380,7 @@ def pixel_dem(
         None to deactivate.
     min_periods : int or string, optional
         Minimum number of valid datapoints required to calculate rolling
-        mean if `smooth_radius` is set. Default of "auto" will use
+        mean if `smooth_radius` is set. Defaults to 5; "auto" will use
         `int(smooth_radius / 2.0)`; `None` will use the size of the window.
 
     Returns
@@ -377,7 +403,7 @@ def pixel_dem(
         print(f"Applying rolling mean smoothing with radius {smooth_radius}")
         smoothed_ds = interval_ds.rolling(
             interval=smooth_radius,
-            center=False,
+            center=True,
             min_periods=int(smooth_radius / 2.0)
             if min_periods == "auto"
             else min_periods,
@@ -470,12 +496,15 @@ def pixel_dem_debug(
     else:
         sns.scatterplot(data=flat_pixel_df, x="tide_m", y="ndwi", color="black", s=10)
 
-    interval_pixel.to_dataframe().rename({"ndwi": "rolling median"}, axis=1).plot(
-        x="tide_m", y="rolling median", ax=plt.gca()
+    # Convert to dataframes and plot
+    interval_pixel_df = interval_pixel.to_dataframe().rename(
+        {"ndwi": "rolling median"}, axis=1
     )
-    interval_smoothed_pixel.to_dataframe().rename({"ndwi": "smoothed"}, axis=1).plot(
-        x="tide_m", y="smoothed", ax=plt.gca()
+    interval_smoothed_pixel_df = interval_smoothed_pixel.to_dataframe().rename(
+        {"ndwi": "smoothed"}, axis=1
     )
+    interval_pixel_df.plot(x="tide_m", y="rolling median", ax=plt.gca())
+    interval_smoothed_pixel_df.plot(x="tide_m", y="smoothed", ax=plt.gca())
 
     if not isinstance(ndwi_thresh, float):
         plt.plot(
@@ -498,6 +527,8 @@ def pixel_dem_debug(
         flat_dem_pixel.elevation, color="black", linestyle="--", lw=1, alpha=1
     )
     plt.gca().set_ylim(-1, 1)
+
+    return interval_pixel, interval_smoothed_pixel
 
 
 def pixel_uncertainty(
@@ -817,7 +848,6 @@ def elevation(
             ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
             top_n=3,
             reduce_method="mean",
-            resolution=3000,
         )
 
     else:
