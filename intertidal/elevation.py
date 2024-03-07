@@ -445,7 +445,7 @@ def pixel_dem_debug(
     ndwi_thresh=0.1,
     interp_intervals=200,
     smooth_radius=20,
-    min_periods="auto",
+    min_periods=5,
     certainty_method="mad",
     plot_style=None,
 ):
