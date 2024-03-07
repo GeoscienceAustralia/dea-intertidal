@@ -311,7 +311,14 @@ def pixel_rolling_median(
     return interval_ds
 
 
-def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=20):
+def pixel_dem(
+    interval_ds,
+    ndwi_thresh=0.1,
+    interp_intervals=200,
+    smooth_radius=20,
+    min_periods="auto",
+    debug=False,
+):
     """
     Calculates an estimate of intertidal elevation based on satellite
     imagery and tide data. Elevation is modelled by identifying the
@@ -345,6 +352,10 @@ def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=
         tide interval dimension. This produces smoother DEM surfaces
         than using the rolling median directly. Defaults to 20; set to
         None to deactivate.
+    min_periods : int or string, optional
+        Minimum number of valid datapoints required to calculate rolling
+        mean if `smooth_radius` is set. Default of "auto" will use
+        `int(smooth_radius / 2.0)`; `None` will use the size of the window.
 
     Returns
     -------
@@ -367,7 +378,9 @@ def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=
         smoothed_ds = interval_ds.rolling(
             interval=smooth_radius,
             center=False,
-            min_periods=1,  # int(smooth_radius / 2.0),
+            min_periods=int(smooth_radius / 2.0)
+            if min_periods == "auto"
+            else min_periods,
         ).mean()
     else:
         smoothed_ds = interval_ds
@@ -388,8 +401,14 @@ def pixel_dem(interval_ds, ndwi_thresh=0.1, interp_intervals=200, smooth_radius=
     always_wet = tide_thresh <= tide_min
     dem_flat = tide_thresh.where(~always_wet & ~always_dry)
 
-    # Export as xr.Dataset
-    return dem_flat.to_dataset(name="elevation")
+    # Convert to xr_dataset
+    dem_ds = dem_flat.to_dataset(name="elevation")
+
+    # If debug is True, return smoothed data as well
+    if debug:
+        return dem_ds, smoothed_ds
+
+    return dem_ds
 
 
 def pixel_dem_debug(
@@ -400,6 +419,7 @@ def pixel_dem_debug(
     ndwi_thresh=0.1,
     interp_intervals=200,
     smooth_radius=20,
+    min_periods="auto",
     certainty_method="mad",
     plot_style=None,
 ):
@@ -413,33 +433,21 @@ def pixel_dem_debug(
     flat_pixel = flat_unstacked.sel(x=x, y=y, method="nearest")
     interval_pixel = interval_unstacked.sel(x=x, y=y, method="nearest")
 
-    # Apply interval interpolation and rolling mean
-    interval_clean_pixel = (
-        interval_pixel.interp(
-            interval=np.linspace(0, interval_ds.interval.max(), interp_intervals),
-            method="linear",
-        )[["tide_m", "ndwi"]]
-        .rolling(
-            interval=smooth_radius,
-            center=False,
-            min_periods=int(smooth_radius / 2.0),
-        )
-        .mean()
-    )
-
-    if not isinstance(ndwi_thresh, float):
-        # Experiment with variable threshold
-        ndwi_thresh = xr.DataArray(
-            np.linspace(ndwi_thresh[0], ndwi_thresh[-1], interp_intervals),
-            coords={"interval": interval_clean_pixel.interval},
-        )
+    # # Experimental feature: support for variable threshold
+    # if not isinstance(ndwi_thresh, float):
+    #     ndwi_thresh = xr.DataArray(
+    #         np.linspace(ndwi_thresh[0], ndwi_thresh[-1], interp_intervals),
+    #         coords={"interval": interval_clean_pixel.interval},
+    #     )
 
     # Calculate DEM
-    flat_dem_pixel = pixel_dem(
-        interval_clean_pixel,
+    flat_dem_pixel, interval_smoothed_pixel = pixel_dem(
+        interval_pixel,
         ndwi_thresh=ndwi_thresh,
-        interp_intervals=None,
-        smooth_radius=None,
+        interp_intervals=interp_intervals,
+        smooth_radius=smooth_radius,
+        min_periods=min_periods,
+        debug=True,
     )
 
     # Calculate certainty
@@ -465,16 +473,16 @@ def pixel_dem_debug(
     interval_pixel.to_dataframe().rename({"ndwi": "rolling median"}, axis=1).plot(
         x="tide_m", y="rolling median", ax=plt.gca()
     )
-    interval_clean_pixel.to_dataframe().rename({"ndwi": "smoothed"}, axis=1).plot(
+    interval_smoothed_pixel.to_dataframe().rename({"ndwi": "smoothed"}, axis=1).plot(
         x="tide_m", y="smoothed", ax=plt.gca()
     )
 
     if not isinstance(ndwi_thresh, float):
         plt.plot(
-            interval_clean_pixel.tide_m.sel(
-                interval=~interval_clean_pixel.tide_m.isnull()
+            interval_smoothed_pixel.tide_m.sel(
+                interval=~interval_smoothed_pixel.tide_m.isnull()
             ),
-            ndwi_thresh.sel(interval=~interval_clean_pixel.tide_m.isnull()),
+            ndwi_thresh.sel(interval=~interval_smoothed_pixel.tide_m.isnull()),
             color="black",
             linestyle="--",
             lw=1,
