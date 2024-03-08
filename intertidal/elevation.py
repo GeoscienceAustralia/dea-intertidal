@@ -403,7 +403,7 @@ def pixel_dem(
         print(f"Applying rolling mean smoothing with radius {smooth_radius}")
         smoothed_ds = interval_ds.rolling(
             interval=smooth_radius,
-            center=True,
+            center=False,
             min_periods=int(smooth_radius / 2.0)
             if min_periods == "auto"
             else min_periods,
@@ -838,26 +838,15 @@ def elevation(
     run_id = "Processing" if run_id is None else run_id
 
     # Model tides into every pixel in the three-dimensional satellite
-    # dataset (x by y by time)
+    # dataset (x by y by time). If `model` is "ensemble" this will model
+    # tides by combining the best local tide models.
     log.info(f"{run_id}: Modelling tide heights for each pixel")
-    if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
-        # Use ensemble model combining multiple input ocean tide models
-        tide_m, _ = pixel_tides_ensemble(
-            satellite_ds,
-            directory=tide_model_dir,
-            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-            top_n=3,
-            reduce_method="mean",
-        )
-
-    else:
-        # Use single input ocean tide model
-        tide_m, _ = pixel_tides(
-            satellite_ds,
-            resample=True,
-            model=tide_model,
-            directory=tide_model_dir,
-        )
+    tide_m, _ = pixel_tides_ensemble(
+        ds=satellite_ds,
+        ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+        model=tide_model,
+        directory=tide_model_dir,
+    )
 
     # Set tide array pixels to nodata if the satellite data array pixels
     # contain nodata. This ensures that we ignore any tide observations
@@ -1200,19 +1189,21 @@ def intertidal_cli(
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
 
-            # Set time range
-            all_timerange = pd.date_range(
+            # Select times used for exposure modelling
+            all_times = pd.date_range(
                 start=round_date_strings(start_date, round_type="start"),
                 end=round_date_strings(end_date, round_type="end"),
                 freq=modelled_freq,
             )
 
-            # Calculate exposure (use only until exposure PR is accepted/merged)
+            # Calculate exposure
             ds["exposure"], tide_cq = exposure(
                 dem=ds.elevation,
-                time_range=all_timerange,
+                times=all_times,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
+                run_id=run_id,
+                log=log,
             )
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
