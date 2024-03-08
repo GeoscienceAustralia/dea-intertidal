@@ -4,21 +4,18 @@ import geopandas as gpd
 from dea_tools.coastal import pixel_tides, _pixel_tides_resample
 from dea_tools.spatial import interpolate_2d
 
+
 def pixel_tides_ensemble(
-    satellite_ds,
-    directory,
+    ds,
     ancillary_points,
+    model="ensemble",
     top_n=3,
-    models=None,
     interp_method="nearest",
-    times=None,
-    calculate_quantiles=None,
-    cutoff=None,
+    reduce_method="mean",
     **pixel_tides_kwargs,
-    
 ):
     """
-    Generate an ensemble tide model, choosing the best three tide models
+    Generate an ensemble tide model, combining the top local tide models
     for any coastal location using ancillary point data (e.g. altimetry
     observations or NDWI correlations along the coastline).
 
@@ -27,45 +24,66 @@ def pixel_tides_ensemble(
     models are modelled into a low resolution grid using `pixel_tides`.
     Ancillary point data is then loaded and interpolated to the same
     grid to serve as weightings. These weightings are used to retain
-    only the top three tidal models, and remaining top models are
+    only the top N tidal models, and remaining top models are reduced/
     combined into a single ensemble output for each time/x/y.
     The resulting ensemble tides are then resampled and reprojected to
     match the high-resolution satellite data.
 
     Parameters:
     -----------
-    satellite_ds : xarray.Dataset
-        Three-dimensional dataset containing satellite-derived
-        information (x by y by time).
-    directory : str
-        Directory containing tidal model data; see `pixel_tides`.
+    ds : xarray.Dataset
+        A dataset whose geobox (`ds.odc.geobox`) will be used to define
+        the spatial extent of the low resolution tide modelling grid.
     ancillary_points : str
         Path to a file containing point correlations for different tidal
         models.
-    times  :  tuple or None, optional
-        Tuple containing start and end time of time range to be used for
-        tide model in the format of "YYYY-MM-DD".
+    model : list or None, optional
+        The default of "ensemble" will combine results from "FES2014",
+        "FES2012", "EOT20", "TPXO8-atlas-v1", "TPXO9-atlas-v5", "GOT4.10"
+        and "HAMTIDE11" into a single locally optimised ensemble model.
+        All other options will skip the ensemble model step and
+        run `pixel_tides` directly instead.
     top_n : integer, optional
         The number of top models to use in the ensemble calculation.
-        Default is 3, which will calculate a median of the top 3 models.
-    models : list or None, optional
-        An optional list of tide models to use for the ensemble model.
-        Default is None, which will use "FES2014", "FES2012", "EOT20",
-        "TPXO8-atlas-v1", "TPXO9-atlas-v5", "HAMTIDE11", "GOT4.10".
+        Default is 3, which will reduce values from the top 3 models.
     interp_method : str, optional
         Interpolation method used to interpolate correlations onto the
         low-resolution tide grid. Default is "nearest".
+    reduce_method : str, optional
+        Method used to reduce values from the `top_n` tide models into
+        a single enemble output. Defaults to "mean", supports "median".
+    **pixel_tides_kwargs
+        All other optional keyword arguments to provide to the underlying
+        `pixel_tides` function.
 
     Returns:
     --------
-    tides_highres : xarray.Dataset
+    tides_highres_ensemble : xarray.Dataset
         High-resolution ensemble tidal heights dataset.
+    tides_lowres_ensemble : xarray.Dataset
+        Low-resolution ensemble tidal heights dataset.
     weights_ds : xarray.Dataset
         Dataset containing weights for each tidal model used in the ensemble.
     """
-    # Use default models if none provided
-    if models is None:
-        models = [
+
+    # Run pixel tides directly if "ensemble" is not specified
+    if (model != "ensemble") & ("ensemble" not in model):
+        return pixel_tides(
+            ds,
+            model=model,
+            **pixel_tides_kwargs,
+        )
+
+    # Otherwise, run pixel tides on all models in preperation for
+    # ensemble tide modelling
+    else:
+        print("Running ensemble tide modelling")
+        # Extract the `resample` param if it exists so we can run 
+        # `pixel_tides` with `resample=False`, and then resample later
+        resample_param = pixel_tides_kwargs.pop("resample", True)
+        
+        # Run `pixel_tides` on all tide models and return low-res output
+        ensemble_models = [
             "FES2014",
             "FES2012",
             "TPXO8-atlas-v1",
@@ -73,24 +91,20 @@ def pixel_tides_ensemble(
             "EOT20",
             "HAMTIDE11",
             "GOT4.10",
-                ]
-
-    tide_lowres = pixel_tides(
-                            satellite_ds,
-                            resample=False,
-                            calculate_quantiles=calculate_quantiles,
-                            times=times,
-                            model=models,
-                            directory=directory,
-                            cutoff=cutoff,
-                            )
+        ]
+        tides_lowres = pixel_tides(
+            ds,
+            resample=False,
+            model=ensemble_models,
+            **pixel_tides_kwargs,
+        )
 
     # Load ancillary points from file, reproject to match satellite
     # data, and drop empty points
     print("Generating ensemble tide model from point inputs")
     corr_gdf = (
-        gpd.read_file(ancillary_points)[models + ["geometry"]]
-        .to_crs(satellite_ds.odc.crs)
+        gpd.read_file(ancillary_points)[ensemble_models + ["geometry"]]
+        .to_crs(ds.odc.crs)
         .dropna()
     )
 
@@ -98,9 +112,9 @@ def pixel_tides_ensemble(
     # low-res tide grid
     out_list = []
 
-    for model in models:
+    for model in ensemble_models:
         out = interpolate_2d(
-            tide_lowres,
+            tides_lowres,
             x_coords=corr_gdf.geometry.x,
             y_coords=corr_gdf.geometry.y,
             z_coords=corr_gdf[model],
@@ -111,17 +125,37 @@ def pixel_tides_ensemble(
 
     # Combine along tide model dimension into a single xarray.Dataset
     weights_ds = xr.concat(out_list, dim="tide_model")
-
-    # Mask out all but the top N models, then take median of remaining
-    # to produce a single ensemble output for each time/x/y
-    tide_lowres_ensemble = tide_lowres.where(
-        (weights_ds.rank(dim="tide_model") > (len(models) - top_n))
-    ).median("tide_model")
-
-    # Resample/reproject ensemble tides to match high-res satellite data
-    tides_highres, tides_lowres = _pixel_tides_resample(
-        tides_lowres=tide_lowres_ensemble,
-        ds=satellite_ds,
+    
+    # Print models in order of correlation
+    print(
+        weights_ds.mean(dim=["x", "y"])
+        .to_dataframe("weights")
+        .sort_values("weights", ascending=False)
     )
 
-    return tides_highres, weights_ds
+    # Mask out all but the top N models
+    tides_top_n = tides_lowres.where(
+        (weights_ds.rank(dim="tide_model") > (len(ensemble_models) - top_n))
+    )
+
+    # Reduce remaining models to produce a single ensemble output
+    # for each time/x/y
+    if reduce_method == "median":
+        print("Reducing multiple model outputs using 'median'")
+        tides_lowres_ensemble = tides_top_n.median("tide_model")
+    elif reduce_method == "mean":
+        print("Reducing multiple model outputs using 'mean'")
+        tides_lowres_ensemble = tides_top_n.mean("tide_model")
+
+    # Optionally resample/reproject ensemble tides to match high-res 
+    # satellite data
+    if resample_param:
+        print("Reprojecting tides into original array")
+        tides_highres_ensemble, _ = _pixel_tides_resample(
+            tides_lowres=tides_lowres_ensemble, ds=ds
+        )
+        return tides_highres_ensemble, tides_lowres_ensemble
+
+    else:
+        print("Returning low resolution tide array")
+        return tides_lowres_ensemble
