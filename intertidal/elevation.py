@@ -1144,6 +1144,7 @@ def intertidal_cli(
             filter_gqa=True,
             max_cloudcover=90,
             skip_broken_datasets=True,
+            dataset_maturity="final",
         )
         satellite_ds.load()
 
