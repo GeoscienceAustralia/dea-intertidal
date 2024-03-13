@@ -1232,7 +1232,8 @@ def intertidal_cli(
         ds_prepared = prepare_for_export(ds)  # sets correct dtypes and nodata
 
         # Calculate additional tile-level tidal metadata attributes
-        metadata_dict = tidal_metadata(ds)
+        # (requires exposure/offsets to have been calculated)
+        metadata_dict = tidal_metadata(ds) if exposure_offsets else None
 
         # Export data and metadata
         export_dataset_metadata(

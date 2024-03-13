@@ -27,25 +27,25 @@ measurements:
       - uncertainty
 
   - name: exposure
-    dtype: int16
+    dtype: uint8
     units: "percent"
-    nodata: -999
+    nodata: 255
 
   - name: extents
-    dtype: int16
+    dtype: uint8
     units: "class"
-    nodata: -999
+    nodata: 255
     flags_definition:
       extents:
         description: Intertidal extents class
         bits: [0, 1, 2, 3, 4, 5, 6, 7]
         values:
-          0: test0
-          1: test1
-          2: test2
-          3: test3
-          4: test4
-          5: test4
+          0: Dry
+          1: Inland intermittent wet
+          2: Inland persistent wet
+          3: Tidal influenced persistent wet
+          4: Intertidal low confidence
+          5: Intertidal high confidence
 
   - name: ta_hat
     dtype: float32
@@ -75,23 +75,23 @@ measurements:
     aliases:
       - lat
   - name: ta_offset_high
-    dtype: int16
+    dtype: uint8
     units: "percent"
-    nodata: -999
+    nodata: 255
     aliases:
       - offset_high
 
   - name: ta_offset_low
-    dtype: int16
+    dtype: uint8
     units: "percent"
-    nodata: -999
+    nodata: 255
     aliases:
       - offset_low
 
   - name: ta_spread
-    dtype: int16
+    dtype: uint8
     units: "percent"
-    nodata: -999
+    nodata: 255
     aliases:
       - spread
 
@@ -103,9 +103,9 @@ measurements:
       - ndwi_corr
 
   - name: qa_ndwi_freq
-    dtype: int16
+    dtype: uint8
     units: "percent"
-    nodata: -999
+    nodata: 255
     aliases:
       - ndwi_freq
 
