@@ -1,4 +1,8 @@
-FROM osgeo/gdal:ubuntu-small-3.4.1
+# Base image with:
+# - Ubuntu 22.04
+# - Python 3.10.12
+# - GDAL 3.7.3, released 2023/10/30
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.7.3
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
@@ -15,7 +19,7 @@ RUN apt-get update && \
       wget \
       unzip \
       python3-pip \
-      libpq-dev python-dev \
+      libpq-dev \
     && apt-get autoclean && \
     apt-get autoremove && \
     rm -rf /var/lib/{apt,dpkg,cache,log}
@@ -27,7 +31,8 @@ RUN pip install pip-tools
 RUN mkdir -p /conf
 COPY requirements.in /conf/
 RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt /conf/requirements.in
-RUN pip install -r /conf/requirements.txt
+RUN pip install -r /conf/requirements.txt \
+    && pip install --no-cache-dir awscli
 
 # Copy source code and install it
 RUN mkdir -p /code
