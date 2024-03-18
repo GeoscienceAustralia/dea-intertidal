@@ -139,11 +139,13 @@ def map_raster(
         display(m)
 
 
-def preprocess_validation(modelled_ds, validation_ds, clean_slope=True):
+def preprocess_validation(
+    modelled_ds, validation_ds, uncertainty_ds=None, clean_slope=True
+):
     # Remove zero slope areas
     if clean_slope:
         import xrspatial.slope
-        
+
         # Calculate slope then identify invalid flat areas that are
         # highly likely to be ocean. Buffer these by 1 pixel so we
         # remove any pixels partially obscured by ocean.
@@ -161,5 +163,8 @@ def preprocess_validation(modelled_ds, validation_ds, clean_slope=True):
     invalid_data = modelled_nodata | validation_nodata
     validation_z = validation_ds.values[~invalid_data.values]
     modelled_z = modelled_ds.values[~invalid_data.values]
+    if uncertainty_ds is not None:
+        uncertainty_z = uncertainty_ds.values[~invalid_data.values]
+        return validation_z, modelled_z, uncertainty_z
 
     return validation_z, modelled_z
