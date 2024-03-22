@@ -808,11 +808,12 @@ def elevation(
         the per-pixel rolling median calculation, by default 0.15
     correct_seasonality : bool, optional
         If True, remove any seasonal signal from the tide height data
-        by subtracting monthly mean tide height from each value. This
-        can reduce false tide correlations in regions where tide heights
-        correlate with seasonal changes in surface water. Note that 
-        seasonally corrected tides are only used to identify potentially
-        tide influenced pixels - not for elevation modelling itself.
+        by subtracting monthly mean tide height from each value prior to
+        correlation calculations. This can reduce false tide correlations
+        in regions where tide heights correlate with seasonal changes in
+        surface water. Note that seasonally corrected tides are only used
+        to identify potentially tide influenced pixels - not for elevation
+        modelling itself.
     max_workers : int, optional
         Maximum number of worker processes to use for parallel execution
         in the per-pixel rolling median calculation. Defaults to None,
