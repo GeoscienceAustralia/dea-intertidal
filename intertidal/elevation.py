@@ -44,6 +44,7 @@ def ds_to_flat(
     max_freq=0.99,
     min_correlation=0.15,
     corr_method="pearson",
+    correct_seasonality=False,
     valid_mask=None,
 ):
     """
@@ -77,6 +78,13 @@ def ds_to_flat(
     corr_method : str, optional
         Correlation method to use. Defaults to "pearson", also supports
         "spearman".
+    correct_seasonality : bool, optional
+        If True, remove any seasonal signal from the tide height data
+        by subtracting monthly mean tide height from each value. This
+        can reduce false tide correlations in regions where tide heights
+        correlate with seasonal changes in surface water. Note that 
+        seasonally corrected tides are only used to identify potentially
+        tide influenced pixels - not for elevation modelling itself.
     valid_mask : xr.DataArray, optional
         A boolean mask used to optionally constrain the analysis area,
         with the same spatial dimensions as `satellite_ds`. For example,
@@ -123,13 +131,22 @@ def ds_to_flat(
     # correlation. This prevents small changes in NDWI beneath the water
     # surface from producing correlations with tide height.
     wet_dry = flat_ds[index] > ndwi_thresh
+  
+    # Use either tides directly or correct to remove seasonal signal
+    if correct_seasonality:
+        print("Removing seasonal signal before calculating tide correlations")
+        gb = flat_ds.tide_m.groupby('time.month')
+        tide_array = (gb - gb.mean())
+    else:
+        tide_array = flat_ds.tide_m  
+    
     if corr_method == "pearson":
-        corr = xr.corr(wet_dry, flat_ds.tide_m, dim="time").rename("qa_ndwi_corr")
+        corr = xr.corr(wet_dry, tide_array, dim="time").rename("qa_ndwi_corr")
     elif corr_method == "spearman":
         import xskillscore
 
         corr = xskillscore.spearman_r(
-            flat_ds[index], flat_ds.tide_m, dim="time", skipna=True, keep_attrs=True
+            flat_ds[index], tide_array, dim="time", skipna=True, keep_attrs=True
         ).rename("qa_ndwi_corr")
 
     # TODO: investigate alternative function from DEA Tools
@@ -752,6 +769,7 @@ def elevation(
     min_correlation=0.15,
     windows_n=100,
     window_prop_tide=0.15,
+    correct_seasonality=False,
     max_workers=None,
     tide_model="FES2014",
     tide_model_dir="/var/share/tide_models",
@@ -788,6 +806,13 @@ def elevation(
     window_prop_tide : float, optional
         Proportion of the tide range to use for each window radius in
         the per-pixel rolling median calculation, by default 0.15
+    correct_seasonality : bool, optional
+        If True, remove any seasonal signal from the tide height data
+        by subtracting monthly mean tide height from each value. This
+        can reduce false tide correlations in regions where tide heights
+        correlate with seasonal changes in surface water. Note that 
+        seasonally corrected tides are only used to identify potentially
+        tide influenced pixels - not for elevation modelling itself.
     max_workers : int, optional
         Maximum number of worker processes to use for parallel execution
         in the per-pixel rolling median calculation. Defaults to None,
@@ -873,6 +898,7 @@ def elevation(
         min_freq=min_freq,
         max_freq=max_freq,
         min_correlation=min_correlation,
+        correct_seasonality=correct_seasonality,
         valid_mask=valid_mask,
     )
 
@@ -1172,6 +1198,7 @@ def intertidal_cli(
             min_correlation=min_correlation,
             windows_n=windows_n,
             window_prop_tide=window_prop_tide,
+            correct_seasonality=True,
             tide_model=tide_model,
             tide_model_dir=tide_model_dir,
             run_id=run_id,
