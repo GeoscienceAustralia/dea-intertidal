@@ -1213,6 +1213,9 @@ def intertidal_cli(
             freq=ds.qa_ndwi_freq,
             corr=ds.qa_ndwi_corr,
             reclassified_aclum=reclassified_aclum,
+            min_freq=min_freq,
+            max_freq=max_freq,
+            min_correlation=min_correlation,
         )
 
         if exposure_offsets:

@@ -55,6 +55,9 @@ def extents(
     freq,
     corr,
     reclassified_aclum,
+    min_freq=0.01,
+    max_freq=0.99,
+    min_correlation=0.15,
 ):
     """
     Classify coastal ecosystems into broad classes based
@@ -128,7 +131,7 @@ def extents(
 
     """--------------------------------------------------------------------"""
     ## Set the upper and lower freq thresholds
-    upper, lower = 0.99, 0.01
+    upper, lower = max_freq, min_freq
 
     # Set NaN values (i.e. pixels masked out over deep water) in frequency to 1
     freq = freq.fillna(1)
@@ -139,10 +142,10 @@ def extents(
     wet = freq > upper
 
     ##### Separate intermittent_tidal (intertidal)
-    intertidal = intermittent & (corr >= 0.15)
+    intertidal = intermittent & (corr >= min_correlation)
 
     ##### Separate intermittent_nontidal
-    intermittent_nontidal = intermittent & (corr < 0.15)
+    intermittent_nontidal = intermittent & (corr < min_correlation)
 
     ##### Separate high and low confidence intertidal pixels
     intertidal_hc = intertidal & dem.notnull()
