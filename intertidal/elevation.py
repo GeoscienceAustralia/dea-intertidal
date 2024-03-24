@@ -82,7 +82,7 @@ def ds_to_flat(
         If True, remove any seasonal signal from the tide height data
         by subtracting monthly mean tide height from each value. This
         can reduce false tide correlations in regions where tide heights
-        correlate with seasonal changes in surface water. Note that 
+        correlate with seasonal changes in surface water. Note that
         seasonally corrected tides are only used to identify potentially
         tide influenced pixels - not for elevation modelling itself.
     valid_mask : xr.DataArray, optional
@@ -131,15 +131,15 @@ def ds_to_flat(
     # correlation. This prevents small changes in NDWI beneath the water
     # surface from producing correlations with tide height.
     wet_dry = flat_ds[index] > ndwi_thresh
-  
+
     # Use either tides directly or correct to remove seasonal signal
     if correct_seasonality:
         print("Removing seasonal signal before calculating tide correlations")
-        gb = flat_ds.tide_m.groupby('time.month')
-        tide_array = (gb - gb.mean())
+        gb = flat_ds.tide_m.groupby("time.month")
+        tide_array = gb - gb.mean()
     else:
-        tide_array = flat_ds.tide_m  
-    
+        tide_array = flat_ds.tide_m
+
     if corr_method == "pearson":
         corr = xr.corr(wet_dry, tide_array, dim="time").rename("qa_ndwi_corr")
     elif corr_method == "spearman":
@@ -558,10 +558,11 @@ def pixel_uncertainty(
     max_q=0.75,
 ):
     """
-    Calculate uncertainty bounds around a modelled elevation based on
-    observations that were misclassified by a given NDWI threshold.
+    Calculate one-sided uncertainty bounds around a modelled elevation
+    based on observations that were misclassified by a given NDWI
+    threshold.
 
-    The function identifies observations that were misclassified by the
+    Uncertainty is based observations that were misclassified by the
     modelled elevation, i.e., wet observations (NDWI > threshold) at
     lower tide heights than the modelled elevation, or dry observations
     (NDWI < threshold) at higher tide heights than the modelled
@@ -603,7 +604,8 @@ def pixel_uncertainty(
     -------
     dem_flat_low, dem_flat_high, dem_flat_uncertainty : xarray.DataArray
         The lower and upper uncertainty bounds around the modelled
-        elevation, and the summary uncertainty range between them.
+        elevation, and the summary uncertainty range between them
+        (expressed as one-sided uncertainty).
     misclassified_sum : xarray.DataArray
         The sum of individual satellite observations misclassified by
         the modelled elevation and NDWI threshold.
@@ -666,8 +668,9 @@ def pixel_uncertainty(
     dem_flat_low = np.minimum(uncertainty_low, flat_dem.elevation)
     dem_flat_high = np.maximum(uncertainty_high, flat_dem.elevation)
 
-    # Subtract low from high DEM to summarise uncertainy range
-    dem_flat_uncertainty = dem_flat_high - dem_flat_low
+    # Subtract low from high DEM to summarise uncertainty range
+    # (and divide by two to give one-sided uncertainty)
+    dem_flat_uncertainty = (dem_flat_high - dem_flat_low) / 2.0
 
     return (
         dem_flat_low,
@@ -1068,6 +1071,18 @@ def elevation(
     "in the per-pixel rolling median calculation, by default 0.15.",
 )
 @click.option(
+    "--correct_seasonality/--no-correct_seasonality",
+    is_flag=True,
+    default=False,
+    help="If True, remove any seasonal signal from the tide height data "
+    "by subtracting monthly mean tide height from each value prior to "
+    "correlation calculations. This can reduce false tide correlations "
+    "in regions where tide heights correlate with seasonal changes in "
+    "surface water. Note that seasonally corrected tides are only used "
+    "to identify potentially tide influenced pixels - not for elevation "
+    "modelling itself.",
+)
+@click.option(
     "--tide_model",
     type=str,
     multiple=True,
@@ -1126,6 +1141,7 @@ def intertidal_cli(
     min_correlation,
     windows_n,
     window_prop_tide,
+    correct_seasonality,
     tide_model,
     tide_model_dir,
     modelled_freq,
@@ -1199,7 +1215,7 @@ def intertidal_cli(
             min_correlation=min_correlation,
             windows_n=windows_n,
             window_prop_tide=window_prop_tide,
-            correct_seasonality=True,
+            correct_seasonality=correct_seasonality,
             tide_model=tide_model,
             tide_model_dir=tide_model_dir,
             run_id=run_id,

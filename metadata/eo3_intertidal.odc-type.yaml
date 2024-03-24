@@ -71,13 +71,13 @@ dataset:
       type: double
 
     # Intertidal-specific metadata below
-    intertidal_category:
+    intertidal_tr_class:
       description: |
         Tide range classification - one of microtidal|mesotidal|macrotidal
       indexed: false
       offset:
         - properties
-        - intertidal:category
+        - intertidal:tr_class
         
     intertidal_hat:
       description: |
