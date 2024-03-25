@@ -111,6 +111,7 @@ jobs:
       - name: Commit validation results into repository
         uses: stefanzweifel/git-auto-commit-action@v4
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         with:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'

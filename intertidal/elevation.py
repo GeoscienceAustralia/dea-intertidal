@@ -22,6 +22,7 @@ from intertidal.io import (
     load_data,
     load_topobathy_mask,
     load_aclum_mask,
+    load_ocean_mask,
     prepare_for_export,
     tidal_metadata,
     export_dataset_metadata,
@@ -31,7 +32,7 @@ from intertidal.utils import (
     round_date_strings,
 )
 from intertidal.tide_modelling import pixel_tides_ensemble
-from intertidal.extents import extents
+from intertidal.extents import extents, ocean_connection
 from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
 
@@ -82,7 +83,7 @@ def ds_to_flat(
         If True, remove any seasonal signal from the tide height data
         by subtracting monthly mean tide height from each value. This
         can reduce false tide correlations in regions where tide heights
-        correlate with seasonal changes in surface water. Note that 
+        correlate with seasonal changes in surface water. Note that
         seasonally corrected tides are only used to identify potentially
         tide influenced pixels - not for elevation modelling itself.
     valid_mask : xr.DataArray, optional
@@ -131,15 +132,15 @@ def ds_to_flat(
     # correlation. This prevents small changes in NDWI beneath the water
     # surface from producing correlations with tide height.
     wet_dry = flat_ds[index] > ndwi_thresh
-  
+
     # Use either tides directly or correct to remove seasonal signal
     if correct_seasonality:
         print("Removing seasonal signal before calculating tide correlations")
-        gb = flat_ds.tide_m.groupby('time.month')
-        tide_array = (gb - gb.mean())
+        gb = flat_ds.tide_m.groupby("time.month")
+        tide_array = gb - gb.mean()
     else:
-        tide_array = flat_ds.tide_m  
-    
+        tide_array = flat_ds.tide_m
+
     if corr_method == "pearson":
         corr = xr.corr(wet_dry, tide_array, dim="time").rename("qa_ndwi_corr")
     elif corr_method == "spearman":
@@ -558,10 +559,11 @@ def pixel_uncertainty(
     max_q=0.75,
 ):
     """
-    Calculate uncertainty bounds around a modelled elevation based on
-    observations that were misclassified by a given NDWI threshold.
+    Calculate one-sided uncertainty bounds around a modelled elevation
+    based on observations that were misclassified by a given NDWI
+    threshold.
 
-    The function identifies observations that were misclassified by the
+    Uncertainty is based observations that were misclassified by the
     modelled elevation, i.e., wet observations (NDWI > threshold) at
     lower tide heights than the modelled elevation, or dry observations
     (NDWI < threshold) at higher tide heights than the modelled
@@ -603,7 +605,8 @@ def pixel_uncertainty(
     -------
     dem_flat_low, dem_flat_high, dem_flat_uncertainty : xarray.DataArray
         The lower and upper uncertainty bounds around the modelled
-        elevation, and the summary uncertainty range between them.
+        elevation, and the summary uncertainty range between them
+        (expressed as one-sided uncertainty).
     misclassified_sum : xarray.DataArray
         The sum of individual satellite observations misclassified by
         the modelled elevation and NDWI threshold.
@@ -666,8 +669,9 @@ def pixel_uncertainty(
     dem_flat_low = np.minimum(uncertainty_low, flat_dem.elevation)
     dem_flat_high = np.maximum(uncertainty_high, flat_dem.elevation)
 
-    # Subtract low from high DEM to summarise uncertainy range
-    dem_flat_uncertainty = dem_flat_high - dem_flat_low
+    # Subtract low from high DEM to summarise uncertainty range
+    # (and divide by two to give one-sided uncertainty)
+    dem_flat_uncertainty = (dem_flat_high - dem_flat_low) / 2.0
 
     return (
         dem_flat_low,
@@ -763,6 +767,7 @@ def clean_edge_pixels(ds):
 def elevation(
     satellite_ds,
     valid_mask=None,
+    ocean_mask=None,
     ndwi_thresh=0.1,
     min_freq=0.01,
     max_freq=0.99,
@@ -790,6 +795,12 @@ def elevation(
         with the same spatial dimensions as `satellite_ds`. For example,
         this could be a mask generated from a topo-bathy DEM, used to
         limit the analysis to likely intertidal pixels. Default is None,
+        which will not apply a mask.
+    ocean_mask : xr.DataArray, optional
+        An optional mask identifying ocean pixels within the analysis
+        area, with the same spatial dimensions as `satellite_ds`.
+        If provided, this will be used to restrict the analysis to pixels
+        that are directly connected to ocean waters. Defaults is None,
         which will not apply a mask.
     ndwi_thresh : float, optional
         A threshold value for the normalized difference water index
@@ -950,6 +961,16 @@ def elevation(
     elevation_bands = [d for d in ds.data_vars if "elevation" in d]
     ds[elevation_bands] = clean_edge_pixels(ds[elevation_bands])
 
+    # Mask out any non-ocean connected elevation pixels.
+    # `~(ds.qa_ndwi_freq < min_freq)` ensures that nodata pixels are
+    # treated as wet
+    if ocean_mask is not None:
+        log.info(f"{run_id}: Restricting outputs to ocean-connected waters")
+        ocean_connected_mask = ocean_connection(
+            ~(ds.qa_ndwi_freq < min_freq), ocean_mask
+        )
+        ds[elevation_bands] = ds[elevation_bands].where(ocean_connected_mask)
+
     # Return output data and tide height array
     log.info(f"{run_id}: Successfully completed intertidal elevation modelling")
     return ds, tide_m
@@ -1068,6 +1089,18 @@ def elevation(
     "in the per-pixel rolling median calculation, by default 0.15.",
 )
 @click.option(
+    "--correct_seasonality/--no-correct_seasonality",
+    is_flag=True,
+    default=False,
+    help="If True, remove any seasonal signal from the tide height data "
+    "by subtracting monthly mean tide height from each value prior to "
+    "correlation calculations. This can reduce false tide correlations "
+    "in regions where tide heights correlate with seasonal changes in "
+    "surface water. Note that seasonally corrected tides are only used "
+    "to identify potentially tide influenced pixels - not for elevation "
+    "modelling itself.",
+)
+@click.option(
     "--tide_model",
     type=str,
     multiple=True,
@@ -1126,6 +1159,7 @@ def intertidal_cli(
     min_correlation,
     windows_n,
     window_prop_tide,
+    correct_seasonality,
     tide_model,
     tide_model_dir,
     modelled_freq,
@@ -1175,11 +1209,12 @@ def intertidal_cli(
         )
         satellite_ds.load()
 
-        # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid
+        # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid,
+        # urban land use class mask from ABARES CLUM, and ocean mask
+        # from geodata_coast_100k
         topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox.compat)
-
-        # Load urban land use class mask from ABARES CLUM
         reclassified_aclum = load_aclum_mask(dc, satellite_ds.odc.geobox.compat)
+        ocean_mask = load_ocean_mask(dc, satellite_ds.odc.geobox.compat)
 
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
@@ -1193,30 +1228,31 @@ def intertidal_cli(
         ds, tide_m = elevation(
             satellite_ds,
             valid_mask=topobathy_mask,
+            ocean_mask=ocean_mask,
             ndwi_thresh=ndwi_thresh,
             min_freq=min_freq,
             max_freq=max_freq,
             min_correlation=min_correlation,
             windows_n=windows_n,
             window_prop_tide=window_prop_tide,
-            correct_seasonality=True,
+            correct_seasonality=correct_seasonality,
             tide_model=tide_model,
             tide_model_dir=tide_model_dir,
             run_id=run_id,
             log=log,
         )
 
-        # Calculate extents
-        log.info(f"{run_id}: Calculating Intertidal Extents")
-        ds["extents"] = extents(
-            dem=ds.elevation,
-            freq=ds.qa_ndwi_freq,
-            corr=ds.qa_ndwi_corr,
-            reclassified_aclum=reclassified_aclum,
-            min_freq=min_freq,
-            max_freq=max_freq,
-            min_correlation=min_correlation,
-        )
+        # # Calculate extents (to be included in next version)
+        # log.info(f"{run_id}: Calculating Intertidal Extents")
+        # ds["extents"] = extents(
+        #     dem=ds.elevation,
+        #     freq=ds.qa_ndwi_freq,
+        #     corr=ds.qa_ndwi_corr,
+        #     reclassified_aclum=reclassified_aclum,
+        #     min_freq=min_freq,
+        #     max_freq=max_freq,
+        #     min_correlation=min_correlation,
+        # )
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
@@ -1251,7 +1287,6 @@ def intertidal_cli(
             ) = bias_offset(
                 tide_m=tide_m,
                 tide_cq=tide_cq,
-                extents=ds.extents,
                 lot_hot=True,
                 lat_hat=True,
             )
