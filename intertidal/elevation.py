@@ -961,10 +961,14 @@ def elevation(
     elevation_bands = [d for d in ds.data_vars if "elevation" in d]
     ds[elevation_bands] = clean_edge_pixels(ds[elevation_bands])
 
-    # Mask out any non-ocean connected elevation pixels
+    # Mask out any non-ocean connected elevation pixels.
+    # `~(ds.qa_ndwi_freq < min_freq)` ensures that nodata pixels are
+    # treated as wet
     if ocean_mask is not None:
         log.info(f"{run_id}: Restricting outputs to ocean-connected waters")
-        ocean_connected_mask = ocean_connection(ds.qa_ndwi_freq >= min_freq, ocean_mask)
+        ocean_connected_mask = ocean_connection(
+            ~(ds.qa_ndwi_freq < min_freq), ocean_mask
+        )
         ds[elevation_bands] = ds[elevation_bands].where(ocean_connected_mask)
 
     # Return output data and tide height array
@@ -1205,18 +1209,18 @@ def intertidal_cli(
         )
         satellite_ds.load()
 
-        # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid, 
+        # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid,
         # urban land use class mask from ABARES CLUM, and ocean mask
         # from geodata_coast_100k
-        topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox.compat)        
+        topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox.compat)
         reclassified_aclum = load_aclum_mask(dc, satellite_ds.odc.geobox.compat)
         ocean_mask = load_ocean_mask(dc, satellite_ds.odc.geobox.compat)
-        
+
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
         # a single dataset, so no need for a spatial/temporal query)
         dss_ancillary = dc.find_datasets(
-            product=["ga_ausbathytopo250m_2023", "abares_clum_2020",]
+            product=["ga_ausbathytopo250m_2023", "abares_clum_2020"]
         )
 
         # Calculate elevation
