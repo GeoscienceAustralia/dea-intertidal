@@ -248,44 +248,45 @@ def extents(
     return extents
 
 
+def ocean_connection(water, ocean_da, connectivity=2):
+    """
+    Identifies areas of water pixels that are adjacent to or directly
+    connected to intertidal pixels.
+
+    Parameters:
+    -----------
+    water : xarray.DataArray
+        An array containing True for water pixels.
+    ocean_da : xarray.DataArray
+        An array containing True for ocean pixels.
+    connectivity : integer, optional
+        An integer passed to the 'connectivity' parameter of the
+        `skimage.measure.label` function.
+
+    Returns:
+    --------
+    ocean_connection : xarray.DataArray
+        An array containing the a mask consisting of identified
+        ocean-connected pixels as True.
+    """
+
+    # First, break `water` array into unique, discrete
+    # regions/blobs.
+    blobs = xr.apply_ufunc(label, water, 0, False, connectivity)
+
+    # For each unique region/blob, use region properties to determine
+    # whether it overlaps with a feature from `intertidal`. If
+    # it does, then it is considered to be adjacent or directly connected
+    # to intertidal pixels
+    ocean_connection = blobs.isin(
+        [i.label for i in regionprops(blobs.values, ocean_da.values) if i.max_intensity]
+    )
+
+    return ocean_connection
+
+
+
 # from rasterio.features import sieve
-
-
-# def ocean_connection(water, ocean_da, connectivity=1):
-#     """
-#     Identifies areas of water pixels that are adjacent to or directly
-#     connected to intertidal pixels.
-
-#     Parameters:
-#     -----------
-#     water : xarray.DataArray
-#         An array containing True for water pixels.
-#     ocean_da : xarray.DataArray
-#         An array containing True for ocean pixels.
-#     connectivity : integer, optional
-#         An integer passed to the 'connectivity' parameter of the
-#         `skimage.measure.label` function.
-
-#     Returns:
-#     --------
-#     ocean_connection : xarray.DataArray
-#         An array containing the a mask consisting of identified
-#         ocean-connected pixels as True.
-#     """
-
-#     # First, break `water` array into unique, discrete
-#     # regions/blobs.
-#     blobs = xr.apply_ufunc(label, water, 0, False, connectivity)
-
-#     # For each unique region/blob, use region properties to determine
-#     # whether it overlaps with a feature from `intertidal`. If
-#     # it does, then it is considered to be adjacent or directly connected
-#     # to intertidal pixels
-#     ocean_connection = blobs.isin(
-#         [i.label for i in regionprops(blobs.values, ocean_da.values) if i.max_intensity]
-#     )
-
-#     return ocean_connection
 
 
 # def extents_ocean_masking(

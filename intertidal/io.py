@@ -622,61 +622,61 @@ def load_aclum_mask(
         return odc.geo.xr.xr_zeros(geobox).astype(bool)
 
 
-# def load_ocean_mask(
-#     dc,
-#     geobox,
-#     product="geodata_coast_100k",
-#     band="land",
-#     resampling="nearest",
-#     mask_invalid=False,
-# ):
-#     """
-#     Loads an ocean mask for the extents of the loaded satellite data.
-#     This is used to determine connectivity to the ocean for each wet or
-#     intertidal pixel.
+def load_ocean_mask(
+    dc,
+    geobox,
+    product="geodata_coast_100k",
+    band="land",
+    resampling="nearest",
+    mask_invalid=False,
+):
+    """
+    Loads an ocean mask for the extents of the loaded satellite data.
+    This is used to determine connectivity to the ocean for each wet or
+    intertidal pixel.
 
-#     Parameters
-#     ----------
-#     dc : Datacube
-#         A Datacube instance for loading data.
-#     geobox : ndarray
-#         The GeoBox of the loaded satellite data, used to ensure the data
-#         is loaded into the same pixel grid (e.g. resolution, extents, CRS).
-#     product : str, optional
-#         The name of the ocean mask dataset to load from the datacube.
-#         Defaults to "geodata_coast_100k".
-#     band : str, optional
-#         The name of the band containing the ocean classification.
-#         Defaults to "land".
-#     resampling : str, optional
-#         The resampling method to use, by default "nearest".
-#     mask_invalid : bool, optional
-#         Whether to mask invalid/nodata values in the array by setting
-#         them to NaN, by default True.
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    geobox : ndarray
+        The GeoBox of the loaded satellite data, used to ensure the data
+        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
+    product : str, optional
+        The name of the ocean mask dataset to load from the datacube.
+        Defaults to "geodata_coast_100k".
+    band : str, optional
+        The name of the band containing the ocean classification.
+        Defaults to "land".
+    resampling : str, optional
+        The resampling method to use, by default "nearest".
+    mask_invalid : bool, optional
+        Whether to mask invalid/nodata values in the array by setting
+        them to NaN, by default True.
 
-#     Returns
-#     -------
-#     ocean_mask : xarray.DataArray
-#         An output boolean mask, where True represent pixels to use in the
-#         following analysis.
-#     """
-#     try:
-#         # Load from datacube, reprojecting to GeoBox of input satellite data
-#         ocean_ds = dc.load(
-#             product="geodata_coast_100k", like=geobox, resampling=resampling
-#         ).squeeze("time")
+    Returns
+    -------
+    ocean_mask : xarray.DataArray
+        An output boolean mask, where True represent pixels to use in the
+        following analysis.
+    """
+    try:
+        # Load from datacube, reprojecting to GeoBox of input satellite data
+        ocean_ds = dc.load(
+            product="geodata_coast_100k", like=geobox, resampling=resampling
+        ).squeeze("time")
 
-#         # Mask invalid data
-#         if mask_invalid:
-#             ocean_ds = mask_invalid_data(ocean_ds)
+        # Mask invalid data
+        if mask_invalid:
+            ocean_ds = mask_invalid_data(ocean_ds)
 
-#         # Return ocean pixels as True
-#         ocean_mask = ocean_ds[band] == 0
-#         return ocean_mask
+        # Return ocean pixels as True
+        ocean_mask = ocean_ds[band] == 0
+        return ocean_mask
 
-#     # Return an array of all True (i.e. ocean) if no data is returned
-#     except AttributeError:
-#         return odc.geo.xr.xr_zeros(geobox) == 0
+    # Return an array of all True (i.e. ocean) if no data is returned
+    except AttributeError:
+        return odc.geo.xr.xr_zeros(geobox) == 0
 
 
 def _is_s3(path):
