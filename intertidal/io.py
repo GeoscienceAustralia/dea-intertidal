@@ -1133,14 +1133,10 @@ def export_dataset_metadata(
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
             # also ensures all previous data was written out correctly.
-            if "dea-public-data-dev" in output_location:
-                explorer_url = "https://explorer.dev.dea.ga.gov.au"
-            else:
-                explorer_url = "https://explorer.dea.ga.gov.au"
             _write_stac(
                 dataset_assembler,
                 destination_path=destination_path,
-                explorer_base_url=explorer_url,
+                explorer_base_url="https://explorer.dea.ga.gov.au",
             )
 
             # Either sync to S3 or copy files to local destination
