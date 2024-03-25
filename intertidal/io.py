@@ -533,7 +533,7 @@ def load_aclum_mask(
     product="abares_clum_2020",
     class_band="alum_class",
     resampling="nearest",
-    mask_invalid=True,
+    mask_invalid=False,
 ):
     """
     Loads an ABARES derived land use classification of Australia
@@ -566,55 +566,117 @@ def load_aclum_mask(
         An output boolean mask, where True equals intensive urban and
         False equals all other classes.
     """
-    # Load from datacube, reprojecting to GeoBox of input satellite data
-    aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
-        "time"
-    )
+    try:
+        # Load from datacube, reprojecting to GeoBox of input satellite data
+        aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
+            "time"
+        )
 
-    # Mask invalid data
-    if mask_invalid:
-        aclum_ds = mask_invalid_data(aclum_ds)
+        # Mask invalid data
+        if mask_invalid:
+            aclum_ds = mask_invalid_data(aclum_ds)
 
-    # Manually isolate the 'intensive urban' land use summary class, set
-    # all other pixels to False. For class definitions, refer to
-    # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
-    reclassified_aclum = aclum_ds[class_band].isin(
-        [
-            500,
-            530,
-            531,
-            532,
-            533,
-            534,
-            535,
-            536,
-            537,
-            538,
-            540,
-            541,
-            550,
-            551,
-            552,
-            553,
-            554,
-            555,
-            560,
-            561,
-            562,
-            563,
-            564,
-            565,
-            566,
-            567,
-            570,
-            571,
-            572,
-            573,
-            574,
-            575,
-        ]
-    )
-    return reclassified_aclum
+        # Manually isolate the 'intensive urban' land use summary class, set
+        # all other pixels to False. For class definitions, refer to
+        # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
+        reclassified_aclum = aclum_ds[class_band].isin(
+            [
+                500,
+                530,
+                531,
+                532,
+                533,
+                534,
+                535,
+                536,
+                537,
+                538,
+                540,
+                541,
+                550,
+                551,
+                552,
+                553,
+                554,
+                555,
+                560,
+                561,
+                562,
+                563,
+                564,
+                565,
+                566,
+                567,
+                570,
+                571,
+                572,
+                573,
+                574,
+                575,
+            ]
+        )
+        return reclassified_aclum
+
+    # Return an array of all False (i.e. no urban) if no data is returned
+    except AttributeError:
+        return odc.geo.xr.xr_zeros(geobox).astype(bool)
+
+
+def load_ocean_mask(
+    dc,
+    geobox,
+    product="geodata_coast_100k",
+    band="land",
+    resampling="nearest",
+    mask_invalid=False,
+):
+    """
+    Loads an ocean mask for the extents of the loaded satellite data.
+    This is used to determine connectivity to the ocean for each wet or
+    intertidal pixel.
+
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    geobox : ndarray
+        The GeoBox of the loaded satellite data, used to ensure the data
+        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
+    product : str, optional
+        The name of the ocean mask dataset to load from the datacube.
+        Defaults to "geodata_coast_100k".
+    band : str, optional
+        The name of the band containing the ocean classification.
+        Defaults to "land".
+    resampling : str, optional
+        The resampling method to use, by default "nearest".
+    mask_invalid : bool, optional
+        Whether to mask invalid/nodata values in the array by setting
+        them to NaN, by default True.
+
+    Returns
+    -------
+    ocean_mask : xarray.DataArray
+        An output boolean mask, where True represent pixels to use in the
+        following analysis.
+    """
+    try:
+        # Load from datacube, reprojecting to GeoBox of input satellite data
+        ocean_ds = dc.load(
+            product="geodata_coast_100k", like=geobox, resampling=resampling
+        ).squeeze("time")
+
+        # Mask invalid data
+        if mask_invalid:
+            ocean_ds = mask_invalid_data(ocean_ds)
+
+        # Return ocean pixels as True
+        ocean_mask = ocean_ds[band] == 0
+        return ocean_mask
+
+    # Return an array of all True (i.e. ocean) if no data is returned
+    except AttributeError:
+        return odc.geo.xr.xr_zeros(geobox) == 0
 
 
 def _is_s3(path):
@@ -782,12 +844,14 @@ def tidal_metadata(ds):
     )
 
     # Calculate category
-    metadata_dict["intertidal:category"] = (
+    metadata_dict["intertidal:tr_class"] = (
         "microtidal"
         if metadata_dict["intertidal:tr"] < 2
         else "mesotidal"
         if 2 <= metadata_dict["intertidal:tr"] <= 4
         else "macrotidal"
+        if metadata_dict["intertidal:tr"] > 4
+        else np.nan
     )
 
     return metadata_dict
@@ -1069,14 +1133,10 @@ def export_dataset_metadata(
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
             # also ensures all previous data was written out correctly.
-            if "dea-public-data-dev" in output_location:
-                explorer_url = "https://explorer.dev.dea.ga.gov.au"
-            else:
-                explorer_url = "https://explorer.dea.ga.gov.au"
             _write_stac(
                 dataset_assembler,
                 destination_path=destination_path,
-                explorer_base_url=explorer_url,
+                explorer_base_url="https://explorer.dea.ga.gov.au",
             )
 
             # Either sync to S3 or copy files to local destination

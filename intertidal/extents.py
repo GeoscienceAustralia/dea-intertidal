@@ -55,6 +55,9 @@ def extents(
     freq,
     corr,
     reclassified_aclum,
+    min_freq=0.01,
+    max_freq=0.99,
+    min_correlation=0.15,
 ):
     """
     Classify coastal ecosystems into broad classes based
@@ -128,7 +131,7 @@ def extents(
 
     """--------------------------------------------------------------------"""
     ## Set the upper and lower freq thresholds
-    upper, lower = 0.99, 0.01
+    upper, lower = max_freq, min_freq
 
     # Set NaN values (i.e. pixels masked out over deep water) in frequency to 1
     freq = freq.fillna(1)
@@ -139,10 +142,10 @@ def extents(
     wet = freq > upper
 
     ##### Separate intermittent_tidal (intertidal)
-    intertidal = intermittent & (corr >= 0.15)
+    intertidal = intermittent & (corr >= min_correlation)
 
     ##### Separate intermittent_nontidal
-    intermittent_nontidal = intermittent & (corr < 0.15)
+    intermittent_nontidal = intermittent & (corr < min_correlation)
 
     ##### Separate high and low confidence intertidal pixels
     intertidal_hc = intertidal & dem.notnull()
@@ -243,3 +246,103 @@ def extents(
     extents = extents.combine_first(0)
 
     return extents
+
+
+def ocean_connection(water, ocean_da, connectivity=2):
+    """
+    Identifies areas of water pixels that are adjacent to or directly
+    connected to intertidal pixels.
+
+    Parameters:
+    -----------
+    water : xarray.DataArray
+        An array containing True for water pixels.
+    ocean_da : xarray.DataArray
+        An array containing True for ocean pixels.
+    connectivity : integer, optional
+        An integer passed to the 'connectivity' parameter of the
+        `skimage.measure.label` function.
+
+    Returns:
+    --------
+    ocean_connection : xarray.DataArray
+        An array containing the a mask consisting of identified
+        ocean-connected pixels as True.
+    """
+
+    # First, break `water` array into unique, discrete
+    # regions/blobs.
+    blobs = xr.apply_ufunc(label, water, 0, False, connectivity)
+
+    # For each unique region/blob, use region properties to determine
+    # whether it overlaps with a feature from `intertidal`. If
+    # it does, then it is considered to be adjacent or directly connected
+    # to intertidal pixels
+    ocean_connection = blobs.isin(
+        [i.label for i in regionprops(blobs.values, ocean_da.values) if i.max_intensity]
+    )
+
+    return ocean_connection
+
+
+
+# from rasterio.features import sieve
+
+
+# def extents_ocean_masking(
+#     dem,
+#     freq,
+#     corr,
+#     ocean_mask,
+#     urban_mask,
+#     min_freq=0.01,
+#     max_freq=0.99,
+#     mostly_dry_freq=0.5,
+#     min_correlation=0.15,
+# ):
+#     """
+#     Experimental ocean masking extents code
+#     """
+#     # Set NaN values (i.e. pixels masked out over deep water) in frequency to 1
+#     freq = freq.fillna(1)
+
+#     # Identify broad classes based on wetness frequency
+#     intermittent = (freq >= min_freq) & (freq <= max_freq)  # wet and dynamic
+#     wet_all = freq >= min_freq  # all occasionally wet pixels incl. intertidal
+#     mostly_dry = freq < mostly_dry_freq  # dry for majority of the timeseries
+
+#     # Classify 'wet_all' pixels into 'wet_ocean' and 'wet_inland' based
+#     # on connectivity to ocean pixels, and mask out `wet_inland` pixels
+#     # identified as intensive urban use
+#     wet_ocean = ocean_connection(wet_all, (ocean_mask | (corr >= 0.5)))
+#     wet_inland = wet_all & ~wet_ocean & ~urban_mask
+
+#     # Distinguish mostly dry intermittent inland from other wet inland
+#     wet_inland_intermittent = wet_inland & mostly_dry
+
+#     # Separate all intertidal from high confidence intertidal pixels
+#     intertidal = intermittent & (corr >= min_correlation)
+#     intertidal_hc = dem.notnull() & wet_ocean
+
+#     # Identify intertidal fringe pixels (e.g. non-tidally correlated
+#     # ocean pixels that appear in close proximity to the intertidal zone
+#     # that are dry for at least half the timeseries.
+#     intertidal_dilated = mask_cleanup(mask=intertidal, mask_filters=[("dilation", 3)])
+#     intertidal_fringe = intertidal_dilated & wet_ocean & mostly_dry
+
+#     # Combine all layers
+#     extents = odc.geo.xr.xr_zeros(dem.odc.geobox).astype(np.uint8)
+#     extents.values[wet_ocean.values] = 3
+#     extents.values[wet_inland.values] = 2
+#     extents.values[wet_inland_intermittent.values] = 1
+#     extents.values[intertidal_fringe.values] = 0
+#     extents.values[intertidal.values] = 4
+
+#     # Reduce noise by sieving all classes except high confidence intertidal.
+#     # This merges small areas of isolated pixels with their most common neighbour
+#     extents.values[:] = sieve(extents, 3, connectivity=4)
+
+#     # Finally add intertidal high confidence extents over the top
+#     extents.values[intertidal_hc.values] = 5
+
+#     return extents

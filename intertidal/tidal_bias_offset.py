@@ -4,7 +4,7 @@ import numpy as np
 from dea_tools.spatial import subpixel_contours, points_on_line
 
 
-def bias_offset(tide_m, tide_cq, extents, lat_hat=True, lot_hot=None):
+def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
     """
     Calculate the pixel-based sensor-observed spread and high/low
     offsets in tide heights compared to the full modelled tide range.
@@ -21,10 +21,6 @@ def bias_offset(tide_m, tide_cq, extents, lat_hat=True, lot_hot=None):
         An xarray.DataArray representing modelled tidal heights for
         each pixel. Should have 'quantile', 'x' and 'y' in its
         dimensions.
-    extents : xr.DataArray
-        An xarray.DataArray representing 5 ecosystem class extents
-        of the intertidal zone. Should have the same
-        dimensions as `tide_m` and `tide_cq`.
     lat_hat : bool, optional
         Lowest/highest astronomical tides. This work considers the
         modelled tides to be equivalent to the astronomical tides.
@@ -67,22 +63,16 @@ def bias_offset(tide_m, tide_cq, extents, lat_hat=True, lot_hot=None):
     # heights as a percentage of the modelled highest and lowest tides.
     offset_hightide = (abs(max_mod - max_obs)) / mod_range * 100
     offset_lowtide = (abs(min_mod - min_obs)) / mod_range * 100
-
+    
     # Add the lowest and highest astronomical tides
-    valid_mask = extents.isin([5, 4, 3])
     if lat_hat:
-        lat = min_mod.where(valid_mask)
-        hat = max_mod.where(valid_mask)
+        lat = min_mod
+        hat = max_mod
 
     # Add the lowest and highest sensor-observed tides
     if lot_hot:
-        lot = min_obs.where(valid_mask)
-        hot = max_obs.where(valid_mask)
-
-    # Mask out non-intertidal pixels using ds extents
-    spread = spread.where(valid_mask)
-    offset_hightide = offset_hightide.where(valid_mask)
-    offset_lowtide = offset_lowtide.where(valid_mask)
+        lot = min_obs
+        hot = max_obs
 
     if lat_hat:
         if lot_hot:

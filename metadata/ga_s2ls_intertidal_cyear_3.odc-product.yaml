@@ -31,22 +31,6 @@ measurements:
     units: "percent"
     nodata: 255
 
-  - name: extents
-    dtype: uint8
-    units: "class"
-    nodata: 255
-    flags_definition:
-      extents:
-        description: Intertidal extents class
-        bits: [0, 1, 2, 3, 4, 5, 6, 7]
-        values:
-          0: Dry
-          1: Inland intermittent wet
-          2: Inland persistent wet
-          3: Tidal influenced persistent wet
-          4: Intertidal low confidence
-          5: Intertidal high confidence
-
   - name: ta_hat
     dtype: float32
     units: "metres above MSL"

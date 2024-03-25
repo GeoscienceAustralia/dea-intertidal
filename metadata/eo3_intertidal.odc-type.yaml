@@ -70,15 +70,7 @@ dataset:
         - eo:gsd
       type: double
 
-    # Intertidal-specific metadata below
-    intertidal_category:
-      description: |
-        Tide range classification - one of microtidal|mesotidal|macrotidal
-      indexed: false
-      offset:
-        - properties
-        - intertidal:category
-        
+    # Intertidal-specific metadata below       
     intertidal_hat:
       description: |
         Highest astronomical tide height (metres above Mean Sea Level)
@@ -144,6 +136,15 @@ dataset:
         - properties
         - intertidal:spread
 
+    intertidal_otr:
+      description: |
+        Observed tide range (difference between highest and lowest observed tides)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:otr
+
     intertidal_tr:
       description: |
         Tide range (difference between highest and lowest astronomical tides)
@@ -153,11 +154,10 @@ dataset:
         - properties
         - intertidal:tr
 
-    intertidal_otr:
+    intertidal_tr_class:
       description: |
-        Observed tide range (difference between highest and lowest observed tides)
+        Tide range classification - one of microtidal|mesotidal|macrotidal
       indexed: false
-      type: double
       offset:
         - properties
-        - intertidal:otr
+        - intertidal:tr_class
