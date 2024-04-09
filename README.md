@@ -32,7 +32,7 @@ The DEA Intertidal Github repository contains the following important sections:
   * `notebooks/Intertidal_CLI.ipynb`: For running the entire DEA Intertidal workflow via the Command Line Interface
   * `notebooks/Intertidal_workflow.ipynb`: For running the entire DEA Intertidal workflow via interactive notebook cells
   * `notebooks/Intertidal_elevation.ipynb`: For customising and running the DEA Intertidal Elevation portion of the workflow
-  * `notebooks/experimental/Intertidal_elevation_pc.ipynb`: For running DEA Intertidal Elevation on global satellite data loaded from Microsoft Planetary Computer using STAC metadata
+  * `notebooks/Intertidal_elevation_stac.ipynb`: For running DEA Intertidal Elevation on global satellite data loaded from Microsoft Planetary Computer using STAC metadata
 * `data`: Contains required `raw` input data files and output `interim` and `processed` outputs
 * `metadata`: Open Data Cube (ODC) metadata required for indexing DEA Intertidal into an ODC datacube
 * `tests`: Unit and integration tests, including automatically generated validation test results
