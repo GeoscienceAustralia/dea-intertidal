@@ -134,7 +134,7 @@ def export_intertidal_rasters(
 
 def intertidal_hillshade(
     elevation,
-    extents,
+    freq,
     azdeg=315,
     altdeg=45,
     dyx=10,
@@ -143,14 +143,14 @@ def intertidal_hillshade(
 ):
     """
     Create a hillshade array for an intertidal zone given an elevation
-    array and an extents array.
+    array and a frequency array.
 
     Parameters
     ----------
     elevation : str or xr.DataArray
-        An xr.DataArray or a path to the elevation raster file.
-    extents : str or xr.DataArray
-        xr.DataArray or a path to the extents raster file.
+        Elevation data
+    freq : str or xr.DataArray
+        NDWI frequency data
     azdeg : float, optional
         The azimuth angle of the light source, in degrees. Default is 315.
     altdeg : float, optional
@@ -174,23 +174,12 @@ def intertidal_hillshade(
     import matplotlib.pyplot as plt
     import xarray as xr
 
-    # Read data
-    if isinstance(elevation, str):
-        elevation = xr.open_rasterio(elevation).squeeze("band")
-    if isinstance(extents, str):
-        extents = xr.open_rasterio(extents).squeeze("band")
-
     # Fill upper and bottom of intertidal zone with min and max heights
     # so that hillshade can be applied across the entire raster
-    # elevation_filled = xr.where(extents == 0, elevation.min(), elevation)
-    # elevation_filled = xr.where(extents == 2, elevation.max(), elevation_filled)
-    elevation_filled = xr.where(extents == 0, elevation.max(), elevation)
-    elevation_filled = xr.where(extents == 2, elevation.min(), elevation_filled)
-    elevation_filled = xr.where(extents == 3, elevation.max(), elevation_filled)
-    elevation_filled = xr.where(extents == 4, elevation.max(), elevation_filled)
+    elev_min, elev_max = elevation.quantile([0, 1])    
+    elevation_filled = xr.where(elevation.isnull() & (freq < 50), elev_max, elevation).fillna(elev_min)
 
     from scipy.ndimage import gaussian_filter
-
     input_data = gaussian_filter(elevation_filled, sigma=1)
 
     # Create hillshade based on elevation data
@@ -207,17 +196,17 @@ def intertidal_hillshade(
 
     # Mask out non-intertidal pixels
     hillshade = np.where(
-        np.expand_dims(extents.values == 1, axis=-1), hillshade, np.nan
+        np.expand_dims(elevation.notnull().values, axis=-1), hillshade, np.nan
     )
 
     # Create a new xarray data array from the numpy array
     hillshaded_da = xr.DataArray(
-        hillshade,
+        hillshade * 255,
         dims=["y", "x", "variables"],
         coords={
             "y": elevation.y,
             "x": elevation.x,
-            "variables": ["red", "green", "blue", "alpha"],
+            "variables": ["r", "g", "b", "a"],
         },
     )
 

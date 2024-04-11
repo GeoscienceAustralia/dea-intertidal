@@ -70,7 +70,7 @@ def map_raster(
 
 
 def preprocess_validation(
-    modelled_ds, validation_ds, uncertainty_ds=None, clean_slope=True
+    validation_ds, modelled_ds, uncertainty_ds, lat, hat, clean_slope=True
 ):
     # Remove zero slope areas
     if clean_slope:
@@ -78,23 +78,23 @@ def preprocess_validation(
 
         # Calculate slope then identify invalid flat areas that are
         # highly likely to be ocean. Buffer these by 1 pixel so we
-        # remove any pixels partially obscured by ocean.
+        # remove any pixels partially obscured by ocean after
+        # reprojecting to 10 m resolution pixels.
         validation_slope = xrspatial.slope(agg=validation_ds)
         validation_flat = mask_cleanup(
             validation_slope == 0, mask_filters=[("dilation", 1)]
         )
         validation_ds = validation_ds.where(~validation_flat)
 
-    # Analyse only pixels that contain valid data in both
-    modelled_nodata = modelled_ds.isnull()
-    validation_nodata = validation_ds.isnull()
+    # Identify valid intertidal pixels for comparison
+    intertidal = (validation_ds >= lat) & (validation_ds <= hat)
 
-    # Export 1D modelled and validation data for valid data area
-    invalid_data = modelled_nodata | validation_nodata
-    validation_z = validation_ds.values[~invalid_data.values]
-    modelled_z = modelled_ds.values[~invalid_data.values]
-    if uncertainty_ds is not None:
-        uncertainty_z = uncertainty_ds.values[~invalid_data.values]
-        return validation_z, modelled_z, uncertainty_z
+    # Analyse only intertidal pixels that contain valid data in both
+    valid_data = intertidal & modelled_ds.notnull() & validation_ds.notnull()
 
-    return validation_z, modelled_z
+    # Export 1D modelled and validation data for valid data area    
+    validation_z = validation_ds.values[valid_data.values]
+    modelled_z = modelled_ds.values[valid_data.values]
+    uncertainty_z = uncertainty_ds.values[valid_data.values]
+
+    return validation_z, modelled_z, uncertainty_z
