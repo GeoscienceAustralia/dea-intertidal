@@ -13,10 +13,11 @@ import matplotlib.pyplot as plt
 from click.testing import CliRunner
 
 import eodatasets3.validate
+from dea_tools.validation import eval_metrics
 from dea_tools.datahandling import load_reproject
 
 from intertidal.elevation import intertidal_cli, elevation
-from intertidal.validation import eval_metrics, map_raster, preprocess_validation
+from intertidal.validation import map_raster, preprocess_validation
 
 
 @pytest.fixture()
