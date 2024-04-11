@@ -82,7 +82,7 @@ def test_dem_accuracy(
 
     # Preprocess and calculate accuracy statistics
     validation_z, modelled_z, _ = preprocess_validation(
-        validation_da, modelled_da, modelled_da, lat=-5, hat=5
+        validation_da, modelled_da, modelled_da, lat=-5, hat=5, clean_slope=False
     )
     accuracy_metrics = eval_metrics(x=validation_z, y=modelled_z, round=3)
 
