@@ -81,7 +81,9 @@ def test_dem_accuracy(
     )
 
     # Preprocess and calculate accuracy statistics
-    validation_z, modelled_z = preprocess_validation(modelled_da, validation_da, None)
+    validation_z, modelled_z, _ = preprocess_validation(
+        validation_da, modelled_da, modelled_da, lat=-5, hat=5
+    )
     accuracy_metrics = eval_metrics(x=validation_z, y=modelled_z, round=3)
 
     # Assert accuracy is within tolerance
@@ -260,7 +262,7 @@ def test_validate_metadata():
         [
             "metadata/ga_s2ls_intertidal_cyear_3.odc-product.yaml",
             "metadata/eo3_intertidal.odc-type.yaml",
-            "data/processed/ga_s2ls_intertidal_cyear_3/0-0-1/tes/ting/2021--P1Y/ga_s2ls_intertidal_cyear_3_testing_2021--P1Y_final.odc-metadata.yaml",            
+            "data/processed/ga_s2ls_intertidal_cyear_3/0-0-1/tes/ting/2021--P1Y/ga_s2ls_intertidal_cyear_3_testing_2021--P1Y_final.odc-metadata.yaml",
             "--thorough",
         ],
     )
