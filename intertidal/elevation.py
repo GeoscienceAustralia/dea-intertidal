@@ -1168,8 +1168,12 @@ def intertidal_cli(
 ):
     # Create a unique run ID for analysis based on input params and use
     # for logs
+    input_params = locals()
     run_id = f"[{output_version}] [{label_date}] [{study_area}]"
     log = configure_logging(run_id)
+    
+    # Record params in logs
+    log.info(f"{run_id}: Using parameters {input_params}")
 
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)

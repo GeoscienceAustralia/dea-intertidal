@@ -20,9 +20,9 @@
 
 ---
 
-The DEA Intertidal product suite maps the changing extent, elevation and topography of Australia’s exposed intertidal zone. It is  the next generation of  DEA’s intertidal products that have been used across government and industry to help better characterise and understand this complex zone that defines the interface between land and sea.   
+The DEA Intertidal product suite maps the changing elevation, exposure and tidal characteristics of Australia's exposed intertidal zone, the complex zone that defines the interface between land and sea. It is the next generation of DEA's intertidal products that have been used across government and industry to help better characterise and understand this complex zone that defines the interface between land and sea.
 
-Incorporating both Sentinel-2 and Landsat data, the product suite adds a temporal component to the elevation product for the intertidal zone, enabling users to better monitor and understand some of the most dynamic regions of Australia’s coastlines. With an improved tidal modelling capability, the product suite has been expanded to include a continental scale mapping of intertidal exposure over time, enabling scientists and managers to integrate the data into ecological and migratory species applications and modelling.  
+Incorporating both Sentinel-2 and Landsat data, the product suite provides an annual 10 m resolution elevation product for the intertidal zone, enabling users to better monitor and understand some of the most dynamic regions of Australia's coastlines. Utilising an improved tidal modelling capability, the product suite includes a continental scale mapping of intertidal exposure over time, enabling scientists and managers to integrate the data into ecological and migratory species applications and modelling.
 
 ## Repository structure
 
@@ -32,7 +32,7 @@ The DEA Intertidal Github repository contains the following important sections:
   * `notebooks/Intertidal_CLI.ipynb`: For running the entire DEA Intertidal workflow via the Command Line Interface
   * `notebooks/Intertidal_workflow.ipynb`: For running the entire DEA Intertidal workflow via interactive notebook cells
   * `notebooks/Intertidal_elevation.ipynb`: For customising and running the DEA Intertidal Elevation portion of the workflow
-  * `notebooks/experimental/Intertidal_elevation_pc.ipynb`: For running DEA Intertidal Elevation on global satellite data loaded from Microsoft Planetary Computer using STAC metadata
+  * `notebooks/Intertidal_elevation_stac.ipynb`: For running DEA Intertidal Elevation on global satellite data loaded from Microsoft Planetary Computer using STAC metadata
 * `data`: Contains required `raw` input data files and output `interim` and `processed` outputs
 * `metadata`: Open Data Cube (ODC) metadata required for indexing DEA Intertidal into an ODC datacube
 * `tests`: Unit and integration tests, including automatically generated validation test results
