@@ -90,11 +90,13 @@ def preprocess_validation(
     intertidal = (validation_ds >= lat) & (validation_ds <= hat)
 
     # Analyse only intertidal pixels that contain valid data in both
-    valid_data = intertidal & modelled_ds.notnull() & validation_ds.notnull()
+    valid_data = (
+        intertidal.values & modelled_ds.notnull().values & validation_ds.notnull().values
+    )
 
-    # Export 1D modelled and validation data for valid data area    
-    validation_z = validation_ds.values[valid_data.values]
-    modelled_z = modelled_ds.values[valid_data.values]
-    uncertainty_z = uncertainty_ds.values[valid_data.values]
+    # Export 1D modelled and validation data for valid data area
+    validation_z = validation_ds.values[valid_data]
+    modelled_z = modelled_ds.values[valid_data]
+    uncertainty_z = uncertainty_ds.values[valid_data]
 
     return validation_z, modelled_z, uncertainty_z
