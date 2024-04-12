@@ -20,9 +20,9 @@
 
 ---
 
-The DEA Intertidal product suite maps the changing extent, elevation and topography of Australia's exposed intertidal zone. It is the next generation of DEA's intertidal products that have been used across government and industry to help better characterise and understand this complex zone that defines the interface between land and sea.
+The DEA Intertidal product suite maps the changing elevation, exposure and tidal characteristics of Australia's exposed intertidal zone, the complex zone that defines the interface between land and sea. It is the next generation of DEA's intertidal products that have been used across government and industry to help better characterise and understand this complex zone that defines the interface between land and sea.
 
-Incorporating both Sentinel-2 and Landsat data, the product suite adds a temporal component to the elevation product for the intertidal zone, enabling users to better monitor and understand some of the most dynamic regions of Australia's coastlines. With an improved tidal modelling capability, the product suite has been expanded to include a continental scale mapping of intertidal exposure over time, enabling scientists and managers to integrate the data into ecological and migratory species applications and modelling.  
+Incorporating both Sentinel-2 and Landsat data, the product suite provides an annual 10 m resolution elevation product for the intertidal zone, enabling users to better monitor and understand some of the most dynamic regions of Australia's coastlines. Utilising an improved tidal modelling capability, the product suite includes a continental scale mapping of intertidal exposure over time, enabling scientists and managers to integrate the data into ecological and migratory species applications and modelling.
 
 ## Repository structure
 
