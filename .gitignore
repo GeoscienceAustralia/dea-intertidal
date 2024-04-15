@@ -9,6 +9,7 @@
 !*.yaml
 !*.yml
 !*.in
+!*.txt
 !**.github/workflows
 !*.gitignore
 !*.dockerignore

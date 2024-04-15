@@ -17,20 +17,31 @@ from numpy import interp
 
 from dea_tools.coastal import pixel_tides, model_tides
 from intertidal.tide_modelling import pixel_tides_ensemble
-from intertidal.utils import round_date_strings
+from intertidal.utils import configure_logging, round_date_strings
+
 
 def exposure(
             dem,
+  			times,
             start_date,
             end_date,
             modelled_freq = "30min",
-            tide_model="ensemble",
+            tide_model="FES2014",
             tide_model_dir="/var/share/tide_models",
             filters = ['unfiltered'], 
             filters_combined = None,
+  			run_id=None,
+  			log=None,
             ):
         
     """
+    Calculate intertidal exposure for each pixel, indicating the 
+    proportion of time that each pixel was "exposed" from tidal
+    inundation during the time period of interest.
+    
+    The exposure calculation is based on tide-height differences between
+    the elevation value and modelled tide height percentiles.
+    
     Calculate exposure percentage for each pixel based on tide-height
     differences between the elevation value and percentile values of the
     tide model for a given time range.
@@ -49,12 +60,15 @@ def exposure(
         include '30min' for 30 minute cadence or '1h' for a one-hourly 
         cadence. Defaults to '30min'.
     tide_model : str, optional
-        The tide model used to model tides, as supported by the `pyTMD`
-        Python package. Options include:
+        The tide model or a list of models used to model tides, as
+        supported by the `pyTMD` Python package. Options include:
         - "FES2014" (default; pre-configured on DEA Sandbox)
-        - "TPXO8-atlas"
         - "TPXO9-atlas-v5"
-        Defaults to 'ensemble' tide modelling.
+        - "TPXO8-atlas"
+        - "EOT20"
+        - "HAMTIDE11"
+        - "GOT4.10"
+        - "ensemble" (experimental: combine all above into single ensemble)
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
@@ -64,15 +78,19 @@ def exposure(
         modelling to calculate exposure. Defaults to ['unfiltered']
     filters_combined  :  list of two-object tuples, optional
         Defaults to None.
-        
+	run_id : string, optional
+        An optional string giving the name of the analysis; used to
+        prefix log entries.
+    log : logging.Logger, optional
+        Logger object, by default None.
 
     Returns
     -------
-    exposure : xarray.Dataset
+    exposure : xarray.DataArray
         An xarray.Dataset containing an array for each filter of
         the percentage time exposure of each pixel from seawater for 
         the duration of the modelling period `timerange`.
-    tide_cq : xarray.DataArray
+    tide_cq : xarray.DataArray ##Revise to dataset
         An xarray.DataArray containing the quantiled high temporal
         resolution tide modelling for each pixel. Dimesions should be
         'quantile', 'x' and 'y'.
@@ -97,14 +115,24 @@ def exposure(
     spatial filter
     - if filters is set to `None`, no exposure will be calculated and
     the program will fail unless a tuple is nominated in `filters_combined`
+
     """
+    # Set up logs if no log is passed in
+    if log is None:
+        log = configure_logging()
+
+    # Use run ID name for logs if it exists
+    run_id = "Processing" if run_id is None else run_id
+    # Create the tide-height percentiles from which to calculate
+    # exposure statistics
+    calculate_quantiles = np.linspace(0, 1, 101) #nb formerly 'pc_range'
+
     # Generate range of times covering entire period of satellite record for exposure and bias/offset calculation
     time_range = pd.date_range(
         start=round_date_strings(start_date, round_type="start"),
         end=round_date_strings(end_date, round_type="end"),
         freq=modelled_freq,
-    )
-    
+    )    
     # Separate 'filters' into spatial and temporal categories to define
     # which exposure workflow to use
     temporal_filters = ['dry', 'wet', 'summer', 'autumn', 'winter', 'spring', 'Jan', 'Feb', 'Mar', 'Apr', 
@@ -178,6 +206,7 @@ def exposure(
             # Use ensemble model combining multiple input ocean tide models
             ModelledTides, _ = pixel_tides_ensemble(
                 dem,
+                calculate_quantiles=calculate_quantiles,
                 times=time_range,
                 directory=tide_model_dir,
                 ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
@@ -190,6 +219,7 @@ def exposure(
             # Use single input ocean tide model
             ModelledTides, _ = pixel_tides(
                 dem,
+                calculate_quantiles=calculate_quantiles,
                 times=time_range,
                 resample=True,
                 model=tide_model,

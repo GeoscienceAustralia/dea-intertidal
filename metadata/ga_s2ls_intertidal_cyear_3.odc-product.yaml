@@ -1,0 +1,103 @@
+---
+name: ga_s2ls_intertidal_cyear_3
+metadata_type: eo3_intertidal
+description: Geoscience Australia Sentinel-2 Landsat Intertidal Calendar Year Collection 3
+
+license: CC-BY-4.0
+
+metadata:
+  product:
+    name: ga_s2ls_intertidal_cyear_3
+  properties:
+    odc:file_format: GeoTIFF
+    odc:product_family: intertidal
+    odc:producer: ga.gov.au
+
+measurements:
+  - name: elevation
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+
+  - name: elevation_uncertainty
+    dtype: float32
+    units: "metres"
+    nodata: .nan
+    aliases:
+      - uncertainty
+
+  - name: exposure
+    dtype: uint8
+    units: "percent"
+    nodata: 255
+
+  - name: ta_hat
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+    aliases:
+      - hat
+
+  - name: ta_hot
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+    aliases:
+      - hot
+
+  - name: ta_lot
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+    aliases:
+      - lot
+
+  - name: ta_lat
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+    aliases:
+      - lat
+  - name: ta_offset_high
+    dtype: uint8
+    units: "percent"
+    nodata: 255
+    aliases:
+      - offset_high
+
+  - name: ta_offset_low
+    dtype: uint8
+    units: "percent"
+    nodata: 255
+    aliases:
+      - offset_low
+
+  - name: ta_spread
+    dtype: uint8
+    units: "percent"
+    nodata: 255
+    aliases:
+      - spread
+
+  - name: qa_ndwi_corr
+    dtype: float32
+    units: "correlation"
+    nodata: .nan
+    aliases:
+      - ndwi_corr
+
+  - name: qa_ndwi_freq
+    dtype: uint8
+    units: "percent"
+    nodata: 255
+    aliases:
+      - ndwi_freq
+
+load:
+  crs: "EPSG:3577"
+  resolution:
+    y: -10
+    x: 10
+  align:
+    y: 0
+    x: 0

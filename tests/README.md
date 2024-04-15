@@ -10,11 +10,11 @@ Integration tests
 
 This directory contains tests that are run to verify that DEA Intertidal code runs correctly. The ``test_intertidal.py`` file runs a small-scale full workflow analysis over an intertidal flat in the Gulf of Carpentaria using the DEA Intertidal [Command Line Interface (CLI) tools](../notebooks/Intertidal_CLI.ipynb), and compares these results against a LiDAR validation DEM to produce some simple accuracy metrics.
 
-The latest integration test completed at **2024-01-08 15:51**. Compared to the previous run, it had an:
-- RMSE accuracy of **0.15 m ( :heavy_minus_sign: no change)**
+The latest integration test completed at **2024-04-12 10:45**. Compared to the previous run, it had an:
+- RMSE accuracy of **0.14 m ( :heavy_minus_sign: no change)**
 - MAE accuracy of **0.12 m ( :heavy_minus_sign: no change)**
-- Bias of **0.11 m ( :heavy_minus_sign: no change)**
-- Pearson correlation of **0.953 ( :heavy_minus_sign: no change)**
+- Bias of **0.12 m ( :heavy_minus_sign: no change)**
+- Pearson correlation of **0.975 ( :heavy_minus_sign: no change)**
 
 
 <img src="validation.jpg" width="950"/>
