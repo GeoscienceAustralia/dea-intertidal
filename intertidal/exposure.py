@@ -158,6 +158,9 @@ def exposure(
             filters.append(str(x[0])) if str(x[0]) not in filters else next
             filters.append(str(x[1])) if x[1] not in filters else next
     
+    # if filters is None:
+    #     filters.append('unfiltered')
+    
     if 'unfiltered' in filters:
         print('Calculating unfiltered exposure')
 
