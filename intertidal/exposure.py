@@ -209,7 +209,7 @@ def exposure(
             # Use ensemble model combining multiple input ocean tide models
             ModelledTides, _ = pixel_tides_ensemble(
                 dem,
-                calculate_quantiles=calculate_quantiles,
+                # calculate_quantiles=calculate_quantiles,
                 times=time_range,
                 directory=tide_model_dir,
                 ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
@@ -222,7 +222,7 @@ def exposure(
             # Use single input ocean tide model
             ModelledTides, _ = pixel_tides(
                 dem,
-                calculate_quantiles=calculate_quantiles,
+                # calculate_quantiles=calculate_quantiles,
                 times=time_range,
                 resample=True,
                 model=tide_model,
