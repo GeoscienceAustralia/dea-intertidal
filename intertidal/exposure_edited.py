@@ -72,35 +72,36 @@ def temporal_filters(x,
         timeranges['Nov'] = time_range.drop(time_range[time_range.month != 11])
     elif x == 'Dec':
         timeranges['Dec'] = time_range.drop(time_range[time_range.month != 12])
-    elif x == 'Daylight' or 'Night': 
+    elif x in ['Daylight', 'Night']:
+        print (f'Calculating {x}')
 
-        timezones = {'wa':'../../gdata1/data/boundaries/GEODATA_COAST_100K/western_australia/cstwacd_r.shp',
-                     'nt':'../../gdata1/data/boundaries/GEODATA_COAST_100K/northern_territory/cstntcd_r.shp',
-                     'sa':'../../gdata1/data/boundaries/GEODATA_COAST_100K/south_australia/cstsacd_r.shp',
-                     'qld':'../../gdata1/data/boundaries/GEODATA_COAST_100K/queensland/cstqldmd_r.shp',
-                     'nsw':'../../gdata1/data/boundaries/GEODATA_COAST_100K/new_south_wales/cstnswcd_r.shp',
-                     'vic':'../../gdata1/data/boundaries/GEODATA_COAST_100K/victoria/cstviccd_r.shp',
-                     'tas':'../../gdata1/data/boundaries/GEODATA_COAST_100K/tasmania/csttascd_r.shp'
-                     }
+#         timezones = {'wa':'../../gdata1/data/boundaries/GEODATA_COAST_100K/western_australia/cstwacd_r.shp',
+#                      'nt':'../../gdata1/data/boundaries/GEODATA_COAST_100K/northern_territory/cstntcd_r.shp',
+#                      'sa':'../../gdata1/data/boundaries/GEODATA_COAST_100K/south_australia/cstsacd_r.shp',
+#                      'qld':'../../gdata1/data/boundaries/GEODATA_COAST_100K/queensland/cstqldmd_r.shp',
+#                      'nsw':'../../gdata1/data/boundaries/GEODATA_COAST_100K/new_south_wales/cstnswcd_r.shp',
+#                      'vic':'../../gdata1/data/boundaries/GEODATA_COAST_100K/victoria/cstviccd_r.shp',
+#                      'tas':'../../gdata1/data/boundaries/GEODATA_COAST_100K/tasmania/csttascd_r.shp'
+#                      }
 
-        ## Determine the timezone of the pixels
-        ## Bring in the state polygons (note: native crs = epsg:4283)
-        wa = gpd.read_file(timezones['wa'])
-        nt = gpd.read_file(timezones['nt'])
-        sa = gpd.read_file(timezones['sa'])
-        qld = gpd.read_file(timezones['qld'])
-        nsw = gpd.read_file(timezones['nsw'])
-        vic = gpd.read_file(timezones['vic'])
-        tas = gpd.read_file(timezones['tas'])
+#         ## Determine the timezone of the pixels
+#         ## Bring in the state polygons (note: native crs = epsg:4283)
+#         wa = gpd.read_file(timezones['wa'])
+#         nt = gpd.read_file(timezones['nt'])
+#         sa = gpd.read_file(timezones['sa'])
+#         qld = gpd.read_file(timezones['qld'])
+#         nsw = gpd.read_file(timezones['nsw'])
+#         vic = gpd.read_file(timezones['vic'])
+#         tas = gpd.read_file(timezones['tas'])
 
-        # Merge the polygons to create single state/territory boundaries
-        wa = gpd.GeoSeries(unary_union(wa.geometry))
-        nt = gpd.GeoSeries(unary_union(nt.geometry))
-        sa = gpd.GeoSeries(unary_union(sa.geometry))
-        qld = gpd.GeoSeries(unary_union(qld.geometry))
-        nsw = gpd.GeoSeries(unary_union(nsw.geometry))
-        vic = gpd.GeoSeries(unary_union(vic.geometry))
-        tas = gpd.GeoSeries(unary_union(tas.geometry))
+#         # Merge the polygons to create single state/territory boundaries
+#         wa = gpd.GeoSeries(unary_union(wa.geometry))
+#         nt = gpd.GeoSeries(unary_union(nt.geometry))
+#         sa = gpd.GeoSeries(unary_union(sa.geometry))
+#         qld = gpd.GeoSeries(unary_union(qld.geometry))
+#         nsw = gpd.GeoSeries(unary_union(nsw.geometry))
+#         vic = gpd.GeoSeries(unary_union(vic.geometry))
+#         tas = gpd.GeoSeries(unary_union(tas.geometry))
 
 #         ## Note: day and night times will be calculated once per area-of-interest(ds)
 #         ## for the median latitude and longitude position of the aoi
@@ -137,40 +138,45 @@ def temporal_filters(x,
 #         tidepost_lat_4326, tidepost_lon_4326 = transformer_4326.transform(tidepost_lat_3577,
 #                                                                           tidepost_lon_3577)
 
+#         # Identify the central coordinate directly from the dem GeoBox
+#         tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs("EPSG:4326").coords[0]
+        
+#         ## Coordinate point to locate the sunriset calculation
+#         point_4326 = Point(tidepost_lon_4326, tidepost_lat_4326)
+
+#         ## Set the local timezone for the analysis area of interest
+#         if wa.contains(point_4283)[0] == True:
+#             timezone = 'Australia/West'
+#             local_tz = 8
+
+#         elif nt.contains(point_4283)[0] == True:
+#             timezone = 'Australia/North'
+#             local_tz = 9.5
+
+#         elif sa.contains(point_4283)[0] == True:
+#             timezone = 'Australia/South'
+#             local_tz = 9.5
+
+#         elif qld.contains(point_4283)[0] == True:
+#             timezone = 'Australia/Queensland'
+#             local_tz = 10
+
+#         elif nsw.contains(point_4283)[0] == True:
+#             timezone = 'Australia/NSW'
+#             local_tz = 10
+
+#         elif vic.contains(point_4283)[0] == True:
+#             timezone = 'Australia/Victoria'
+#             local_tz = 10
+
+#         elif tas.contains(point_4283)[0] == True:
+#             timezone = 'Australia/Tasmania'
+#             local_tz = 10
         # Identify the central coordinate directly from the dem GeoBox
         tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs("EPSG:4326").coords[0]
-        
+
         ## Coordinate point to locate the sunriset calculation
         point_4326 = Point(tidepost_lon_4326, tidepost_lat_4326)
-
-        ## Set the local timezone for the analysis area of interest
-        if wa.contains(point_4283)[0] == True:
-            timezone = 'Australia/West'
-            local_tz = 8
-
-        elif nt.contains(point_4283)[0] == True:
-            timezone = 'Australia/North'
-            local_tz = 9.5
-
-        elif sa.contains(point_4283)[0] == True:
-            timezone = 'Australia/South'
-            local_tz = 9.5
-
-        elif qld.contains(point_4283)[0] == True:
-            timezone = 'Australia/Queensland'
-            local_tz = 10
-
-        elif nsw.contains(point_4283)[0] == True:
-            timezone = 'Australia/NSW'
-            local_tz = 10
-
-        elif vic.contains(point_4283)[0] == True:
-            timezone = 'Australia/Victoria'
-            local_tz = 10
-
-        elif tas.contains(point_4283)[0] == True:
-            timezone = 'Australia/Tasmania'
-            local_tz = 10
 
         ## Calculate the local sunrise and sunset times
         # Place start and end dates in correct format
@@ -181,7 +187,7 @@ def temporal_filters(x,
                                   pd.to_datetime(start).day)
 
         # Make 'all_timerange' time-zone aware
-        localtides = time_range.tz_localize(tz=pytz.UTC).tz_convert(timezone)
+        localtides = time_range.tz_localize(tz=pytz.UTC)#.tz_convert(timezone)
 
         # Replace the UTC datetimes from all_timerange with local times
         modelledtides = pd.DataFrame(index = localtides)
@@ -191,6 +197,9 @@ def temporal_filters(x,
         diff = pd.to_datetime(end) - pd.to_datetime(start)
         diff = int(ceil(diff.days/365))
 
+        # Set UTC time as the local_tz
+        local_tz=0
+        
         ## Model sunrise and sunset
         sun_df = sunriset.to_pandas(startdate, tidepost_lat_4326, tidepost_lon_4326, local_tz, diff)
 
