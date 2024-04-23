@@ -6,6 +6,7 @@ import datetime
 import rioxarray
 import numpy as np
 import pandas as pd
+import xarray as xr
 import seaborn as sns
 from mdutils import Html
 from mdutils.mdutils import MdUtils
@@ -23,12 +24,9 @@ from intertidal.validation import map_raster, preprocess_validation
 @pytest.fixture()
 def satellite_ds():
     """
-    Loads a timeseries of satellite data from a .pickle file.
-    TODO: Replace this with data loaded directly from datacube
-    after adding access to prod database.
+    Loads a pre-generated timeseries of satellite data from NetCDF.
     """
-    with open("tests/data/satellite_ds.pickle", "rb") as handle:
-        return pickle.load(handle)
+    return xr.open_dataset("tests/data/satellite_ds.pickle")
 
 
 @pytest.mark.dependency()
