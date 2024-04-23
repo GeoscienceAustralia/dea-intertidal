@@ -26,7 +26,7 @@ def satellite_ds():
     """
     Loads a pre-generated timeseries of satellite data from NetCDF.
     """
-    return xr.open_dataset("tests/data/satellite_ds.pickle")
+    return xr.open_dataset("tests/data/satellite_ds.nc")
 
 
 @pytest.mark.dependency()
