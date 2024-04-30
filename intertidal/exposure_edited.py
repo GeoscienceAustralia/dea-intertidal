@@ -19,35 +19,40 @@ from dea_tools.coastal import pixel_tides, model_tides
 from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.utils import configure_logging, round_date_strings
 
+
 def temporal_filters(x,
                      timeranges,
                      time_range,
                      dem):
-    
+
     if x == 'dry':
-        timeranges['dry'] = time_range.drop(time_range[(time_range.month == 10) ## Wet season: Oct-Mar
-                |(time_range.month == 11)
-                |(time_range.month == 12)
-                |(time_range.month == 1)
-                |(time_range.month == 2)
-                |(time_range.month == 3)
+        timeranges['dry'] = time_range.drop(time_range[(time_range.month == 10)  # Wet season: Oct-Mar
+                | (time_range.month == 11)
+                | (time_range.month == 12)
+                | (time_range.month == 1)
+                | (time_range.month == 2)
+                | (time_range.month == 3)
                 ])
     elif x == 'wet':
-        timeranges['wet'] = time_range.drop(time_range[(time_range.month == 4) ## Dry season: Apr-Sep
-                |(time_range.month == 5)
-                |(time_range.month == 6)
-                |(time_range.month == 7)
-                |(time_range.month == 8)
-                |(time_range.month == 9)
+        timeranges['wet'] = time_range.drop(time_range[(time_range.month == 4)  # Dry season: Apr-Sep
+                | (time_range.month == 5)
+                | (time_range.month == 6)
+                | (time_range.month == 7)
+                | (time_range.month == 8)
+                | (time_range.month == 9)
                 ])
     elif x == 'summer':
-        timeranges['summer'] = time_range.drop(time_range[time_range.quarter != 1])
+        timeranges['summer'] = time_range.drop(
+            time_range[time_range.quarter != 1])
     elif x == 'autumn':
-        timeranges['autumn'] = time_range.drop(time_range[time_range.quarter != 2])
+        timeranges['autumn'] = time_range.drop(
+            time_range[time_range.quarter != 2])
     elif x == 'winter':
-        timeranges['winter'] = time_range.drop(time_range[time_range.quarter != 3])
+        timeranges['winter'] = time_range.drop(
+            time_range[time_range.quarter != 3])
     elif x == 'spring':
-        timeranges['spring'] = time_range.drop(time_range[time_range.quarter != 4])
+        timeranges['spring'] = time_range.drop(
+            time_range[time_range.quarter != 4])
     elif x == 'Jan':
         timeranges['Jan'] = time_range.drop(time_range[time_range.month != 1])
     elif x == 'Feb':
@@ -73,7 +78,85 @@ def temporal_filters(x,
     elif x == 'Dec':
         timeranges['Dec'] = time_range.drop(time_range[time_range.month != 12])
     elif x in ['Daylight', 'Night']:
-        print (f'Calculating {x}')
+        print(f'Calculating {x}')
+
+        # Identify the central coordinate directly from the dem GeoBox
+        tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs(
+            "EPSG:4326").coords[0]
+
+        # Coordinate point to locate the sunriset calculation
+        point_4326 = Point(tidepost_lon_4326, tidepost_lat_4326)
+
+        # Calculate the local sunrise and sunset times
+        # Place start and end dates in correct format
+        start = time_range[0]
+        end = time_range[-1]
+        startdate = datetime.date(pd.to_datetime(start).year,
+                                  pd.to_datetime(start).month,
+                                  pd.to_datetime(start).day)
+
+        # Make 'all_timerange' time-zone aware
+        localtides = time_range.tz_localize(
+            tz=pytz.UTC)  # .tz_convert(timezone)
+
+        # Replace the UTC datetimes from all_timerange with local times
+        modelledtides = pd.DataFrame(index=localtides)
+
+        # Return the difference in years for the time-period.
+        # Round up to ensure all modelledtide datetimes are captured in the solar model
+        diff = pd.to_datetime(end) - pd.to_datetime(start)
+        diff = int(ceil(diff.days/365))
+
+        local_tz = 0
+
+        # Model sunrise and sunset
+        sun_df = sunriset.to_pandas(
+            startdate, tidepost_lat_4326, tidepost_lon_4326, local_tz, diff)
+
+        # Set the index as a datetimeindex to match the modelledtide df
+        sun_df = sun_df.set_index(pd.DatetimeIndex(sun_df.index))
+
+        # Append the date to each Sunrise and Sunset time
+        sun_df['Sunrise dt'] = sun_df.index + sun_df['Sunrise']
+        sun_df['Sunset dt'] = sun_df.index + (sun_df['Sunset'])
+
+        # Create new dataframes where daytime and nightime datetimes are recorded, then merged
+        # on a new `Sunlight` column
+        daytime = pd.DataFrame(
+            data='Sunrise', index=sun_df['Sunrise dt'], columns=['Sunlight'])
+        nighttime = pd.DataFrame(
+            data='Sunset', index=sun_df['Sunset dt'], columns=['Sunlight'])
+        DayNight = pd.concat([daytime, nighttime], join='outer')
+        DayNight.sort_index(inplace=True)
+        DayNight.index.rename('Datetime', inplace=True)
+
+        # Create an xarray object from the merged day/night dataframe
+        day_night = xr.Dataset.from_dataframe(DayNight)
+
+        # Remove local timezone timestamp column in modelledtides dataframe. Xarray doesn't handle
+        # timezone aware datetimeindexes 'from_dataframe' very well.
+        modelledtides.index = modelledtides.index.tz_localize(tz=None)
+
+        # Create an xr Dataset from the modelledtides pd.dataframe
+        mt = modelledtides.to_xarray()
+
+        # Filter the modelledtides (mt) by the daytime, nighttime datetimes from the sunriset module
+        # Modelled tides are designated as either day or night by propogation of the last valid index
+        # value forward
+        Solar = day_night.sel(Datetime=mt.index, method='ffill')
+
+        # Assign the day and night tideheight datasets
+        SolarDayTides = mt.where(Solar.Sunlight == 'Sunrise', drop=True)
+        SolarNightTides = mt.where(Solar.Sunlight == 'Sunset', drop=True)
+
+        # Extract DatetimeIndexes to use in exposure calculations
+        all_timerange_day = pd.DatetimeIndex(SolarDayTides.index)
+        all_timerange_night = pd.DatetimeIndex(SolarNightTides.index)
+
+        if x == 'Daylight':
+            timeranges['Daylight'] = all_timerange_day
+        if x == 'Night':
+            timeranges['Night'] = all_timerange_night
 
 #         timezones = {'wa':'../../gdata1/data/boundaries/GEODATA_COAST_100K/western_australia/cstwacd_r.shp',
 #                      'nt':'../../gdata1/data/boundaries/GEODATA_COAST_100K/northern_territory/cstntcd_r.shp',
@@ -114,24 +197,24 @@ def temporal_filters(x,
 #         ## Translate the crs of the tidepost to determine (1) local timezone
 #         ## and (2) the local sunrise and sunset times:
 
-#         ## (1) Create a transform to convert default epsg3577 coords to epsg4283 to compare 
+#         ## (1) Create a transform to convert default epsg3577 coords to epsg4283 to compare
 #         ## against state/territory boundary polygons and assign a timezone
 
 #         ## GDA94 CRS (degrees)
 #         crs_4283 = CRS.from_epsg(4283)
 #         ## Transfer coords from/to
-#         transformer_4283 = Transformer.from_crs(crs_3577, crs_4283) 
+#         transformer_4283 = Transformer.from_crs(crs_3577, crs_4283)
 #         ## Translate tidepost coords
 #         tidepost_lat_4283, tidepost_lon_4283 = transformer_4283.transform(tidepost_lat_3577,
 #                                                                           tidepost_lon_3577)
-#         ## Coordinate point to test for timezone   
+#         ## Coordinate point to test for timezone
 #         point_4283 = Point(tidepost_lon_4283, tidepost_lat_4283)
 
-#         ## (2) Create a transform to convert default epsg3577 coords to epsg4326 for use in 
+#         ## (2) Create a transform to convert default epsg3577 coords to epsg4326 for use in
 #         ## sunise/sunset library
 
 #         ## World WGS84 (degrees)
-#         crs_4326 = CRS.from_epsg(4326) 
+#         crs_4326 = CRS.from_epsg(4326)
 #         ## Transfer coords from/to
 #         transformer_4326 = Transformer.from_crs(crs_3577, crs_4326)
 #         ## Translate the tidepost coords
@@ -140,7 +223,7 @@ def temporal_filters(x,
 
 #         # Identify the central coordinate directly from the dem GeoBox
 #         tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs("EPSG:4326").coords[0]
-        
+
 #         ## Coordinate point to locate the sunriset calculation
 #         point_4326 = Point(tidepost_lon_4326, tidepost_lat_4326)
 
@@ -172,80 +255,85 @@ def temporal_filters(x,
 #         elif tas.contains(point_4283)[0] == True:
 #             timezone = 'Australia/Tasmania'
 #             local_tz = 10
-        # Identify the central coordinate directly from the dem GeoBox
-        tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs("EPSG:4326").coords[0]
+#         # Identify the central coordinate directly from the dem GeoBox
+#         tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs(
+#             "EPSG:4326").coords[0]
 
-        ## Coordinate point to locate the sunriset calculation
-        point_4326 = Point(tidepost_lon_4326, tidepost_lat_4326)
+#         # Coordinate point to locate the sunriset calculation
+#         point_4326 = Point(tidepost_lon_4326, tidepost_lat_4326)
 
-        ## Calculate the local sunrise and sunset times
-        # Place start and end dates in correct format
-        start = time_range[0]
-        end = time_range[-1]
-        startdate = datetime.date(pd.to_datetime(start).year, 
-                                  pd.to_datetime(start).month, 
-                                  pd.to_datetime(start).day)
+#         # Calculate the local sunrise and sunset times
+#         # Place start and end dates in correct format
+#         start = time_range[0]
+#         end = time_range[-1]
+#         startdate = datetime.date(pd.to_datetime(start).year,
+#                                   pd.to_datetime(start).month,
+#                                   pd.to_datetime(start).day)
 
-        # Make 'all_timerange' time-zone aware
-        localtides = time_range.tz_localize(tz=pytz.UTC)#.tz_convert(timezone)
+#         # Make 'all_timerange' time-zone aware
+#         localtides = time_range.tz_localize(
+#             tz=pytz.UTC)  # .tz_convert(timezone)
 
-        # Replace the UTC datetimes from all_timerange with local times
-        modelledtides = pd.DataFrame(index = localtides)
+#         # Replace the UTC datetimes from all_timerange with local times
+#         modelledtides = pd.DataFrame(index=localtides)
 
-        # Return the difference in years for the time-period. 
-        # Round up to ensure all modelledtide datetimes are captured in the solar model
-        diff = pd.to_datetime(end) - pd.to_datetime(start)
-        diff = int(ceil(diff.days/365))
+#         # Return the difference in years for the time-period.
+#         # Round up to ensure all modelledtide datetimes are captured in the solar model
+#         diff = pd.to_datetime(end) - pd.to_datetime(start)
+#         diff = int(ceil(diff.days/365))
 
-        # Set UTC time as the local_tz
-        local_tz=0
-        
-        ## Model sunrise and sunset
-        sun_df = sunriset.to_pandas(startdate, tidepost_lat_4326, tidepost_lon_4326, local_tz, diff)
+#         # Set UTC time as the local_tz
+#         local_tz = 0
 
-        ## Set the index as a datetimeindex to match the modelledtide df
-        sun_df = sun_df.set_index(pd.DatetimeIndex(sun_df.index))
+#         # Model sunrise and sunset
+#         sun_df = sunriset.to_pandas(
+#             startdate, tidepost_lat_4326, tidepost_lon_4326, local_tz, diff)
 
-        ## Append the date to each Sunrise and Sunset time
-        sun_df['Sunrise dt'] = sun_df.index + sun_df['Sunrise']
-        sun_df['Sunset dt'] = sun_df.index + (sun_df['Sunset'])
+#         # Set the index as a datetimeindex to match the modelledtide df
+#         sun_df = sun_df.set_index(pd.DatetimeIndex(sun_df.index))
 
-        ## Create new dataframes where daytime and nightime datetimes are recorded, then merged 
-        ## on a new `Sunlight` column
-        daytime=pd.DataFrame(data = 'Sunrise', index=sun_df['Sunrise dt'], columns=['Sunlight'])
-        nighttime=pd.DataFrame(data = 'Sunset', index=sun_df['Sunset dt'], columns=['Sunlight'])
-        DayNight = pd.concat([daytime, nighttime], join='outer')
-        DayNight.sort_index(inplace=True)
-        DayNight.index.rename('Datetime', inplace=True)
+#         # Append the date to each Sunrise and Sunset time
+#         sun_df['Sunrise dt'] = sun_df.index + sun_df['Sunrise']
+#         sun_df['Sunset dt'] = sun_df.index + (sun_df['Sunset'])
 
-        ## Create an xarray object from the merged day/night dataframe
-        day_night = xr.Dataset.from_dataframe(DayNight)
+#         # Create new dataframes where daytime and nightime datetimes are recorded, then merged
+#         # on a new `Sunlight` column
+#         daytime = pd.DataFrame(
+#             data='Sunrise', index=sun_df['Sunrise dt'], columns=['Sunlight'])
+#         nighttime = pd.DataFrame(
+#             data='Sunset', index=sun_df['Sunset dt'], columns=['Sunlight'])
+#         DayNight = pd.concat([daytime, nighttime], join='outer')
+#         DayNight.sort_index(inplace=True)
+#         DayNight.index.rename('Datetime', inplace=True)
 
-        ## Remove local timezone timestamp column in modelledtides dataframe. Xarray doesn't handle 
-        ## timezone aware datetimeindexes 'from_dataframe' very well.
-        modelledtides.index = modelledtides.index.tz_localize(tz=None)
+#         # Create an xarray object from the merged day/night dataframe
+#         day_night = xr.Dataset.from_dataframe(DayNight)
 
-        ## Create an xr Dataset from the modelledtides pd.dataframe
-        mt = modelledtides.to_xarray()
+#         # Remove local timezone timestamp column in modelledtides dataframe. Xarray doesn't handle
+#         # timezone aware datetimeindexes 'from_dataframe' very well.
+#         modelledtides.index = modelledtides.index.tz_localize(tz=None)
 
-        ## Filter the modelledtides (mt) by the daytime, nighttime datetimes from the sunriset module
-        ## Modelled tides are designated as either day or night by propogation of the last valid index 
-        ## value forward
-        Solar=day_night.sel(Datetime=mt.index, method='ffill')
+#         # Create an xr Dataset from the modelledtides pd.dataframe
+#         mt = modelledtides.to_xarray()
 
-        ## Assign the day and night tideheight datasets
-        SolarDayTides = mt.where(Solar.Sunlight=='Sunrise', drop=True)
-        SolarNightTides = mt.where(Solar.Sunlight=='Sunset', drop=True)
+#         # Filter the modelledtides (mt) by the daytime, nighttime datetimes from the sunriset module
+#         # Modelled tides are designated as either day or night by propogation of the last valid index
+#         # value forward
+#         Solar = day_night.sel(Datetime=mt.index, method='ffill')
 
-        ## Extract DatetimeIndexes to use in exposure calculations
-        all_timerange_day = pd.DatetimeIndex(SolarDayTides.index)
-        all_timerange_night = pd.DatetimeIndex(SolarNightTides.index)
+#         # Assign the day and night tideheight datasets
+#         SolarDayTides = mt.where(Solar.Sunlight == 'Sunrise', drop=True)
+#         SolarNightTides = mt.where(Solar.Sunlight == 'Sunset', drop=True)
 
-        if x == 'Daylight':
-            timeranges['Daylight'] = all_timerange_day
-        if x == 'Night':
-            timeranges['Night'] = all_timerange_night
-    
+#         # Extract DatetimeIndexes to use in exposure calculations
+#         all_timerange_day = pd.DatetimeIndex(SolarDayTides.index)
+#         all_timerange_night = pd.DatetimeIndex(SolarNightTides.index)
+
+#         if x == 'Daylight':
+#             timeranges['Daylight'] = all_timerange_day
+#         if x == 'Night':
+#             timeranges['Night'] = all_timerange_night
+
     return timeranges
 
 def spatial_filters(
@@ -907,7 +995,6 @@ def exposure(
 
 
     return exposure, tide_cq_dict
-
 
 
 
