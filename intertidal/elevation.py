@@ -33,7 +33,7 @@ from intertidal.utils import (
 )
 from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.extents import extents, ocean_connection
-from intertidal.exposure import exposure
+from intertidal.exposure_edited import exposure
 from intertidal.tidal_bias_offset import bias_offset
 
 
@@ -1268,15 +1268,29 @@ def intertidal_cli(
                 freq=modelled_freq,
             )
 
+            # # Calculate exposure
+            # ds["exposure"], tide_cq = exposure(
+            #     dem=ds.elevation,
+            #     times=all_times,
+            #     tide_model=tide_model,
+            #     tide_model_dir=tide_model_dir,
+            #     run_id=run_id,
+            #     log=log,
+            # )
+            
             # Calculate exposure
-            ds["exposure"], tide_cq = exposure(
+            exposure_filters, tide_cq_dict = exposure(
                 dem=ds.elevation,
-                times=all_times,
+                start_date=start_date,
+                end_date=end_date,
+                modelled_freq = modelled_freq,
                 tide_model=tide_model,
-                tide_model_dir=tide_model_dir,
-                run_id=run_id,
-                log=log,
+                tide_model_dir=tide_model_dir
             )
+            
+            # Translate unfiltered exposure outputs to match continental product suite
+            ds['exposure']=exposure_filters['unfiltered']
+            tide_cq=tide_cq_dict['unfiltered']
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(f"{run_id}: Calculating spread, offset and HAT/LAT/LOT/HOT layers")

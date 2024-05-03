@@ -478,7 +478,7 @@ def exposure(
     all_filters = ['unfiltered']+temp_filters+sptl_filters
     
     for x in filters:
-        assert x in all_filters, f'Nominated filter {x} is not in {all_filters}. Check spelling and retry'
+        assert x in all_filters, f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'
         # if x not in all_filters:
         #     exit()    
 
