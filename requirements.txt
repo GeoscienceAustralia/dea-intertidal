@@ -178,7 +178,7 @@ distributed==2024.3.1
     #   dask-ml
     #   datacube
     #   odc-algo
-eodatasets3==0.30.4
+eodatasets3==0.30.5
     # via -r requirements.in
 exceptiongroup==1.2.0
     # via
@@ -312,7 +312,7 @@ markupsafe==2.1.5
     # via
     #   jinja2
     #   werkzeug
-matplotlib==3.8.3
+matplotlib==3.8.4
     # via
     #   -r requirements.in
     #   datacube-ows
@@ -427,7 +427,7 @@ packaging==24.0
     #   scikit-image
     #   setuptools-scm
     #   xarray
-pandas==2.2.1
+pandas==2.2.2
     # via
     #   -r requirements.in
     #   dask-ml
@@ -587,7 +587,7 @@ requests==2.31.0
     #   owslib
     #   planetary-computer
     #   pystac-client
-rioxarray==0.15.2
+rioxarray==0.15.5
     # via
     #   -r requirements.in
     #   dea-tools
@@ -608,14 +608,14 @@ scikit-image==0.22.0
     #   -r requirements.in
     #   dea-tools
     #   odc-algo
-scikit-learn==1.4.1.post1
+scikit-learn==1.4.2
     # via
     #   -r requirements.in
     #   dask-glm
     #   dask-ml
     #   dea-tools
     #   xskillscore
-scipy==1.12.0
+scipy==1.13.0
     # via
     #   -r requirements.in
     #   dask-glm
