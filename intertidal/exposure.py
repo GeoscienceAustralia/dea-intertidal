@@ -465,37 +465,36 @@ def exposure(
     all_filters = temp_filters+sptl_filters+['unfiltered']
     
     for x in filters:
-        assert x in all_filters, f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'
-        # if x not in all_filters:
-        #     exit()    
+        assert x in all_filters, f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'  
 
     # Calculate exposure using pixel-based tide modelling for unfiltered, all of epoch time period
     if 'unfiltered' in filters:
         print('-----\nCalculating unfiltered exposure')
 
-        if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
+        # if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
             # Use ensemble model combining multiple input ocean tide models
-            tide_cq, _ = pixel_tides_ensemble(
-                                    dem,
-                                    calculate_quantiles=calculate_quantiles,
-                                    times=time_range,
-                                    directory=tide_model_dir,
-                                    ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-                                    top_n=3,
-                                    reduce_method='mean',
-                                    resolution=3000,
-                                    )
+        tide_cq, _ = pixel_tides_ensemble(
+                                dem,
+                                model=tide_model,
+                                calculate_quantiles=calculate_quantiles,
+                                times=time_range,
+                                directory=tide_model_dir,
+                                ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+                                # top_n=3,
+                                # reduce_method='mean',
+                                # resolution=3000,
+                                )
 
-        else:
-            # Use single input ocean tide model
-            tide_cq, _ = pixel_tides(
-                                    dem,
-                                    resample=True,
-                                    calculate_quantiles=calculate_quantiles,
-                                    times=time_range,
-                                    model=tide_model,
-                                    directory=tide_model_dir,
-                                    )       
+        # else:
+        #     # Use single input ocean tide model
+        #     tide_cq, _ = pixel_tides(
+        #                             dem,
+        #                             resample=True,
+        #                             calculate_quantiles=calculate_quantiles,
+        #                             times=time_range,
+        #                             model=tide_model,
+        #                             directory=tide_model_dir,
+        #                             )       
 
         # Add tide_cq to output dict
         tide_cq_dict['unfiltered']=tide_cq
@@ -512,27 +511,29 @@ def exposure(
     # Reduce the tide-model to the mean for the area of interest (reduce compute).
     if any (x in sptl_filters for x in filters):
         print ('-----\nCalculating tide model for spatial filters')
-        if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
+        # if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
             # Use ensemble model combining multiple input ocean tide models
-            ModelledTides, _ = pixel_tides_ensemble(
-                dem,
-                times=time_range,
-                directory=tide_model_dir,
-                ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-                top_n=3,
-                reduce_method='mean',
-                resolution=3000,
-            )
+        ModelledTides = pixel_tides_ensemble(
+            dem,
+            times=time_range,
+            directory=tide_model_dir,
+            model = tide_model,
+            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+            # top_n=3,
+            # reduce_method='mean',
+            # resolution=3000,
+            resample=False
+        )
 
-        else:
-            # Use single input ocean tide model
-            ModelledTides, _ = pixel_tides(
-                dem,
-                times=time_range,
-                resample=True,
-                model=tide_model,
-                directory=tide_model_dir,
-            )
+        # else:
+        #     # Use single input ocean tide model
+        #     ModelledTides, _ = pixel_tides(
+        #         dem,
+        #         times=time_range,
+        #         resample=True,
+        #         model=tide_model,
+        #         directory=tide_model_dir,
+        #     )
            
         ## To reduce compute, average across the y and x dimensions
         modelledtides_flat = ModelledTides.mean(dim=["x","y"])
@@ -583,30 +584,32 @@ def exposure(
         # Print
         print(f'-----\nCalculating {x} exposure')
         
-        if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
+        # if (tide_model[0] == "ensemble") or (tide_model == "ensemble"):
             # Use ensemble model combining multiple input ocean tide models
-            tide_cq, _ = pixel_tides_ensemble(
-                dem,
-                calculate_quantiles=calculate_quantiles,
-                times=timeranges[str(x)],
-                directory=tide_model_dir,
-                ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-                top_n=3,
-                reduce_method='mean',
-                resolution=3000,
-            )
+        tide_cq = pixel_tides_ensemble(
+            dem,
+            calculate_quantiles=calculate_quantiles,
+            times=timeranges[str(x)],
+            directory=tide_model_dir,
+            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+            # top_n=3,
+            # reduce_method='mean',
+            # resolution=3000,
+            model=tide_model,
+            resample=False
+        )
 
-        else:
-            # Use single input ocean tide model
-            # tide_cq, _ = pixel_tides_ensemble(
-            tide_cq, _ = pixel_tides(
-                                    dem,
-                                    resample=True,
-                                    calculate_quantiles=calculate_quantiles,
-                                    times=timeranges[str(x)],
-                                    model=tide_model,
-                                    directory=tide_model_dir,
-            )
+        # else:
+        #     # Use single input ocean tide model
+        #     # tide_cq, _ = pixel_tides_ensemble(
+        #     tide_cq, _ = pixel_tides(
+        #                             dem,
+        #                             resample=True,
+        #                             calculate_quantiles=calculate_quantiles,
+        #                             times=timeranges[str(x)],
+        #                             model=tide_model,
+        #                             directory=tide_model_dir,
+        #     )
 
         # Add tide_cq to output dict
         tide_cq_dict[str(x)]=tide_cq
