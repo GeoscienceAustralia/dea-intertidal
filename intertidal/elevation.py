@@ -33,7 +33,7 @@ from intertidal.utils import (
 )
 from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.extents import extents, ocean_connection
-from intertidal.exposure_edited import exposure
+from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
 
 
@@ -1260,23 +1260,6 @@ def intertidal_cli(
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
-
-            # Select times used for exposure modelling
-            all_times = pd.date_range(
-                start=round_date_strings(start_date, round_type="start"),
-                end=round_date_strings(end_date, round_type="end"),
-                freq=modelled_freq,
-            )
-
-            # # Calculate exposure
-            # ds["exposure"], tide_cq = exposure(
-            #     dem=ds.elevation,
-            #     times=all_times,
-            #     tide_model=tide_model,
-            #     tide_model_dir=tide_model_dir,
-            #     run_id=run_id,
-            #     log=log,
-            # )
             
             # Calculate exposure
             exposure_filters, tide_cq_dict = exposure(

@@ -24,9 +24,12 @@ def temporal_filters(x,
                      timeranges,
                      time_range,
                      dem):
+    """
+    Identify and extract temporal-specific dates and times to feed 
+    into tidal modelling for custom exposure calculations.
+    """
 
     if x == 'Dry':
-        # print(f'Calculating {x} timerange')
         timeranges['Dry'] = time_range.drop(time_range[(time_range.month == 10)  # Wet season: Oct-Mar
                 | (time_range.month == 11)
                 | (time_range.month == 12)
@@ -35,7 +38,6 @@ def temporal_filters(x,
                 | (time_range.month == 3)
                 ])
     elif x == 'Wet':
-        # print(f'Calculating {x} timerange')
         timeranges['Wet'] = time_range.drop(time_range[(time_range.month == 4)  # Dry season: Apr-Sep
                 | (time_range.month == 5)
                 | (time_range.month == 6)
@@ -44,59 +46,42 @@ def temporal_filters(x,
                 | (time_range.month == 9)
                 ])
     elif x == 'Summer':
-        # print(f'Calculating {x} timerange')
         timeranges['Summer'] = time_range.drop(
             time_range[time_range.quarter != 1])
     elif x == 'Autumn':
-        # print(f'Calculating {x} timerange')
         timeranges['Autumn'] = time_range.drop(
             time_range[time_range.quarter != 2])
     elif x == 'Winter':
-        # print(f'Calculating {x} timerange')
         timeranges['Winter'] = time_range.drop(
             time_range[time_range.quarter != 3])
     elif x == 'Spring':
-        # print(f'Calculating {x} timerange')
         timeranges['Spring'] = time_range.drop(
             time_range[time_range.quarter != 4])
     elif x == 'Jan':
-        # print(f'Calculating {x} timerange')
         timeranges['Jan'] = time_range.drop(time_range[time_range.month != 1])
     elif x == 'Feb':
-        # print(f'Calculating {x} timerange')
         timeranges['Feb'] = time_range.drop(time_range[time_range.month != 2])
     elif x == 'Mar':
-        # print(f'Calculating {x} timerange')
         timeranges['Mar'] = time_range.drop(time_range[time_range.month != 3])
     elif x == 'Apr':
-        # print(f'Calculating {x} timerange')
         timeranges['Apr'] = time_range.drop(time_range[time_range.month != 4])
     elif x == 'May':
-        # print(f'Calculating {x} timerange')
         timeranges['May'] = time_range.drop(time_range[time_range.month != 5])
     elif x == 'Jun':
-        # print(f'Calculating {x} timerange')
         timeranges['Jun'] = time_range.drop(time_range[time_range.month != 6])
     elif x == 'Jul':
-        # print(f'Calculating {x} timerange')
         timeranges['Jul'] = time_range.drop(time_range[time_range.month != 7])
     elif x == 'Aug':
-        # print(f'Calculating {x} timerange')
         timeranges['Aug'] = time_range.drop(time_range[time_range.month != 8])
     elif x == 'Sep':
-        # print(f'Calculating {x} timerange')
         timeranges['Sep'] = time_range.drop(time_range[time_range.month != 9])
     elif x == 'Oct':
-        # print(f'Calculating {x} timerange')
         timeranges['Oct'] = time_range.drop(time_range[time_range.month != 10])
     elif x == 'Nov':
-        # print(f'Calculating {x} timerange')
         timeranges['Nov'] = time_range.drop(time_range[time_range.month != 11])
     elif x == 'Dec':
-        # print(f'Calculating {x} timerange')
         timeranges['Dec'] = time_range.drop(time_range[time_range.month != 12])
     elif x in ['Daylight', 'Night']:
-        # print(f'Calculating {x} timerange')
 
         # Identify the central coordinate directly from the dem GeoBox
         tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs(
@@ -115,7 +100,7 @@ def temporal_filters(x,
 
         # Make 'all_timerange' time-zone aware
         localtides = time_range.tz_localize(
-            tz=pytz.UTC)  # .tz_convert(timezone)
+            tz=pytz.UTC) 
 
         # Replace the UTC datetimes from all_timerange with local times
         modelledtides = pd.DataFrame(index=localtides)
@@ -136,7 +121,7 @@ def temporal_filters(x,
 
         # Append the date to each Sunrise and Sunset time
         sun_df['Sunrise dt'] = sun_df.index + sun_df['Sunrise']
-        sun_df['Sunset dt'] = sun_df.index + (sun_df['Sunset'])
+        sun_df['Sunset dt'] = sun_df.index + sun_df['Sunset']
 
         # Create new dataframes where daytime and nightime datetimes are recorded, then merged
         # on a new `Sunlight` column
@@ -181,7 +166,7 @@ def temporal_filters(x,
 def spatial_filters(
                     modelled_freq,
                     x,
-                    stacked_everything,
+                    modelledtides_flat,
                     ModelledTides,
                     timeranges,
                     calculate_quantiles,
@@ -189,146 +174,118 @@ def spatial_filters(
                     dem,
                     exposure
                     ):
+        """
+    Identify and extract spatial-specific dates and times to feed 
+    into tidal modelling for custom exposure calculations.
+    """
     
     # Extract the modelling freq units
     # Split the number and text characters in modelled_freq
     freq_time = int(re.findall(r'(\d+)(\w+)', modelled_freq)[0][0])
     freq_unit = str(re.findall(r'(\d+)(\w+)', modelled_freq)[0][-1])
-
     # Extract the number of modelled timesteps per 14 days (half lunar cycle) for neap/spring calcs
     mod_timesteps = pd.Timedelta((29.5/2),"d")/pd.Timedelta(freq_time, freq_unit)
-
     ## Identify kwargs for peak detection algorithm
     order=(int(mod_timesteps/2))
 
     ## Calculate the spring highest and spring lowest tides per 14 day half lunar cycle
-
     if x in ['Spring_high', 'Spring_low', 'Neap_high', 'Neap_low']:
 
-        # print (f'Calculating {x} exposure')
-
-        #1D tide modelling workflow
-
-        ## apply the peak detection routine
+        # 1D tide modelling workflow
+        # apply the peak detection routine
         if x in ['Spring_high', 'Neap_high']:
-            stacked_everything_peaks = argrelmax(stacked_everything.values, order=order)[0]
+            modelledtides_flat_peaks = argrelmax(modelledtides_flat.values, order=order)[0]
         if x in ['Spring_low', 'Neap_low']:
-            stacked_everything_peaks = argrelmin(stacked_everything.values, order=order)[0]
+            modelledtides_flat_peaks = argrelmin(modelledtides_flat.values, order=order)[0]
         if x == 'Neap_high':       
             ## apply the peak detection routine to calculate all the high tide maxima
-            Max_testarray = argrelmax(stacked_everything.values)[0]
-
-            Max_testarray = stacked_everything.isel(time=Max_testarray)
+            tide_maxima = argrelmax(modelledtides_flat.values)[0]
+            tide_maxima = modelledtides_flat.isel(time=tide_maxima)
             ## extract all hightide peaks
-            Max_testarray = ModelledTides.to_dataset().sel(time=Max_testarray.time)
+            tide_maxima = ModelledTides.to_dataset().sel(time=tide_maxima.time)
             ## repeat the peak detection to identify neap high tides (minima in the high tide maxima)
-            stacked_everything2 = Max_testarray.mean(dim=["x","y"])
+            modelledtides_flat2 = tide_maxima.mean(dim=["x","y"])
             ## extract neap high tides based on a half lunar cycle - determined as the fraction of all high tide points relative to the number of spring high tide values
-            order_nh = int(ceil((len(Max_testarray.time)/(len(stacked_everything_peaks))/2)))
+            order_nh = int(ceil((len(tide_maxima.time)/(len(modelledtides_flat_peaks))/2)))
             ## apply the peak detection routine to calculate all the neap high tide minima within the high tide peaks
-            neap_peaks = argrelmin(stacked_everything2.tide_m.values, order=order_nh)[0] 
+            neap_peaks = argrelmin(modelledtides_flat2.tide_m.values, order=order_nh)[0] 
 
         if x == 'Neap_low':       
             ## apply the peak detection routine to calculate all the high tide maxima
-            Max_testarray = argrelmin(stacked_everything.values)[0]
-
-            Max_testarray = stacked_everything.isel(time=Max_testarray)
+            tide_maxima = argrelmin(modelledtides_flat.values)[0]
+            tide_maxima = modelledtides_flat.isel(time=tide_maxima)
             ## extract all hightide peaks
-            Max_testarray = ModelledTides.to_dataset().sel(time=Max_testarray.time)
+            tide_maxima = ModelledTides.to_dataset().sel(time=tide_maxima.time)
             ## repeat the peak detection to identify neap high tides (maxima in the low tide minima)
-            stacked_everything2 = Max_testarray.mean(dim=["x","y"])
+            modelledtides_flat2 = tide_maxima.mean(dim=["x","y"])
             ## extract neap low tides based on 14 day half lunar cycle - determined as the fraction of all high tide points relative to the number of spring high tide values
-            order_nh = int(ceil((len(Max_testarray.time)/(len(stacked_everything_peaks))/2)))
+            order_nl = int(ceil((len(tide_maxima.time)/(len(modelledtides_flat_peaks))/2)))
             ## apply the peak detection routine to calculate all the neap high tide minima within the high tide peaks
-            neap_peaks = argrelmax(stacked_everything2.tide_m.values, order=order_nh)[0]
+            neap_peaks = argrelmax(modelledtides_flat2.tide_m.values, order=order_nl)[0]
 
         if x in ['Neap_high', 'Neap_low']: 
             ## extract neap high tides
-            neappeaks = Max_testarray.isel(time=neap_peaks)
-
+            neappeaks = tide_maxima.isel(time=neap_peaks)
             timeranges[str(x)]=pd.to_datetime(neappeaks.time)
-
             # Extract the peak height dates
             tide_cq = neappeaks.quantile(q=calculate_quantiles,dim='time')
 
         if x in ['Spring_high', 'Spring_low']:  
             # select for indices associated with peaks
-            springpeaks = stacked_everything.isel(time=stacked_everything_peaks)
-
+            springpeaks = modelledtides_flat.isel(time=modelledtides_flat_peaks)
             # Select dates associated with detected peaks
             springpeaks = ModelledTides.to_dataset().sel(time=springpeaks.time)
-
             # Save datetimes for calculation of combined filter exposure
             timeranges[str(x)]=pd.to_datetime(springpeaks.time)
-
             # Extract the peak height dates
             tide_cq = springpeaks.quantile(q=calculate_quantiles,dim='time')
 
-    if x == 'Hightide':
-        # print (f'Calculating {x} exposure')
-        
+    if x == 'Hightide':      
         # calculate all the high tide maxima
-        high_peaks = argrelmax(stacked_everything.values)[0]
-
+        high_peaks = argrelmax(modelledtides_flat.values)[0]
         # extract all hightide peaks
-        high_peaks2 = stacked_everything.isel(time=high_peaks)
-
+        high_peaks2 = modelledtides_flat.isel(time=high_peaks)
         # identify all lower hightide peaks
         lowhigh_peaks = argrelmin(high_peaks2.values)[0]
-
         # extract all lower hightide peaks
         lowhigh_peaks2 = high_peaks2.isel(time=lowhigh_peaks)
-
         # interpolate the lower hightide curve
-        low_high_linear = interp(np.arange(0,len(stacked_everything)),
+        low_high_linear = interp(np.arange(0,len(modelledtides_flat)),
                                  high_peaks[lowhigh_peaks],
                                  lowhigh_peaks2.values)
         # Extract all tides higher than/equal to the extrapolated lowest high tide line
-        hightide = stacked_everything.where(stacked_everything >= low_high_linear, drop=True)
-        
+        hightide = modelledtides_flat.where(modelledtides_flat >= low_high_linear, drop=True)
         ## Save datetimes for calculation of combined filter exposure
         timeranges[str(x)] = pd.to_datetime(hightide.time)
-
         tide_cq = hightide.quantile(q=calculate_quantiles,dim='time').to_dataset()
 
-    if x == 'Lowtide':
-        # print (f'Calculating {x} exposure')
-        
+    if x == 'Lowtide':       
         # calculate all the low tide maxima
-        low_peaks = argrelmin(stacked_everything.values)[0]
-
+        low_peaks = argrelmin(modelledtides_flat.values)[0]
         # extract all lowtide peaks
-        low_peaks2 = stacked_everything.isel(time=low_peaks)
-
+        low_peaks2 = modelledtides_flat.isel(time=low_peaks)
         # identify all higher lowtide peaks
         highlow_peaks = argrelmax(low_peaks2.values)[0]
-
         # extract all higher lowtide peaks
         highlow_peaks2 = low_peaks2.isel(time=highlow_peaks)
-
         # interpolate the higher lowtide curve
-        high_low_linear = interp(np.arange(0,len(stacked_everything)),
+        high_low_linear = interp(np.arange(0,len(modelledtides_flat)),
                                  low_peaks[highlow_peaks],
                                  highlow_peaks2.values)
         # Extract all tides lower than/equal to the extrapolated higher lowtide line
-        lowtide = stacked_everything.where(stacked_everything <= high_low_linear, drop=True)
-        
+        lowtide = modelledtides_flat.where(modelledtides_flat <= high_low_linear, drop=True)
         ## Save datetimes for calculation of combined filter exposure
         timeranges[str(x)] = pd.to_datetime(lowtide.time)
-
         tide_cq = lowtide.quantile(q=calculate_quantiles,dim='time').to_dataset()
 
     # Add tide_cq to output dict
     tide_cq_dict[str(x)]=tide_cq.tide_m
-
     # Calculate the tide-height difference between the elevation value and
     # each percentile value per pixel
     diff = abs(tide_cq.tide_m - dem)
-
     # Take the percentile of the smallest tide-height difference as the
     # exposure % per pixel
     idxmin = diff.idxmin(dim="quantile")
-
     # Convert to percentage
     exposure[str(x)] = idxmin * 100 
     
@@ -341,7 +298,6 @@ def exposure(
             modelled_freq = "30min",
             tide_model="FES2014",
             tide_model_dir="/var/share/tide_models",
-            # filters = ['unfiltered'],
             filters = None,
             filters_combined = None,
   			run_id=None,
@@ -349,25 +305,29 @@ def exposure(
             ):
         
     """
-    Calculate intertidal exposure for each pixel, indicating the 
+    Calculate intertidal exposure, indicating the 
     proportion of time that each pixel was "exposed" from tidal
     inundation during the time period of interest.
     
     The exposure calculation is based on tide-height differences between
     the elevation value and modelled tide height percentiles.
     
-    Calculate exposure percentage for each pixel based on tide-height
-    differences between the elevation value and percentile values of the
-    tide model for a given time range.
+    For an 'unfiltered', all of epoch-time, analysis, exposure is
+    calculated per pixel. All of the filter options calculate
+    exposure from a high temporal resolution tide model that is generated
+    for the center of the nominated area of interest only.
 
     Parameters
     ----------
     dem : xarray.DataArray
         xarray.DataArray containing Digital Elevation Model (DEM) data
         and coordinates and attributes metadata.
-    time_range : tuple
-        Tuple containing start and end time of time range to be used for
-        tide model in the format of "YYYY-MM-DD".
+    start_date  : str
+        A string containing the start year of the desired analysis period
+        as "YYYY". Note: analysis will start from "YYYY-01-01".
+    end_date  :  str
+        A string containing the end year of the desired analysis period
+        as "YYYY". Note: analysis will end at "YYYY-12-31".
     modelled_freq  :  str
         A pandas time offset alias for the frequency with which to 
         calculate the tide model during exposure calculations. Examples
@@ -388,11 +348,44 @@ def exposure(
         "/var/share/tide_models"; for more information about the
         directory structure, refer to `dea_tools.coastal.model_tides`.
     filters  :  list of strings, optional
-        A list of customisation options to input into the tidal
-        modelling to calculate exposure. Defaults to ['unfiltered'] if 
-        none supplied.
+        An optional list of customisation options to input into the tidal
+        modelling to calculate exposure. Filters include the following:
+        - 'unfiltered' calculates exposure for the full input time period,
+        - 'Dry' season, defined as April to September,
+        - 'Wet' season, defined as October to March,
+        - 'Summer',
+        - 'Autumn',
+        - 'Winter',
+        - 'Spring',
+        - 'Jan',
+        - 'Feb',
+        - 'Mar',
+        - 'Apr',
+        - 'May',
+        - 'Jun',
+        - 'Jul',
+        - 'Aug',
+        - 'Sep',
+        - 'Oct',
+        - 'Nov',
+        - 'Dec',
+        - 'Daylight', all tide heights occurring between sunrise and sunset in daily UTC time,
+        - 'Night', all tide heights occurring between sunset and sunrise in daily UTC time,
+        - 'Spring_high', high tide exposure during the fortnightly spring tide cycle,
+        - 'Spring_low', low tide exposure during the fortnightly spring tide cycle,
+        - 'Neap_high', high tide exposure during the fortnightly neap tide cycle,
+        - 'Neap_low', low tide exposure during the fortnightly neap tide cycle,
+        - 'Hightide', all tide heights greater than or equal to the local lowest high 
+        tide heights in high temporal resolution tidal modelling,
+        - 'Lowtide' all tide heights lower than or equal to the local highest low tide 
+        heights in high temporal resolution tidal modelling,
+        Defaults to ['unfiltered'] if none supplied.
     filters_combined  :  list of two-object tuples, optional
-        Defaults to None.
+        An optional list of paired customisation options from which to calculate exposure.
+        Filters must be sourced from the list under 'filters' and include one temporal and one 
+        spatial filter - defined in the `Notes` below. Example to calculate
+        exposure during daylight hours (temporal) in the wet season (spatial) is 
+        [('Wet', 'Daylight')]. Multiple tuple pairs are supported. Defaults to None.
 	run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
@@ -401,13 +394,13 @@ def exposure(
 
     Returns
     -------
-    exposure : xarray.DataArray
-        An xarray.Dataset containing an array for each filter of
-        the percentage time exposure of each pixel from seawater for 
-        the duration of the modelling period `timerange`.
-    tide_cq : xarray.DataArray ##Revise to dataset
-        An xarray.DataArray containing the quantiled high temporal
-        resolution tide modelling for each pixel. Dimesions should be
+    exposure : dict
+        A dictionary of xarray.Datasets containing a named exposure dataset for each 
+        nominated filter, representing the percentage time exposurs of each pixel from seawater 
+        for the duration of the associated filtered time period between `start` and `end`.
+    tide_cq : dict 
+        A dictionary of xarray.Datasets containing a named dataset of the quantiled high temporal
+        resolution tide modelling for each filter. Dimesions should be
         'quantile', 'x' and 'y'.
 
     Notes
@@ -419,17 +412,11 @@ def exposure(
     - The 'idxmin' variable is the index of the smallest tide-height
     difference (i.e., maximum similarity) per pixel and is equivalent
     to the exposure percent.
-    - filters = 'unfiltered' produces exposure for the full input time 
-    period.
     - temporal filters include any of: 'Dry', 'Wet', 'Summer', 'Autumn', 
     'Winter', 'Spring', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 
     'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Daylight', 'Night'
     - spatial filters include any of: 'Spring_high', 'Spring_low', 
     'Neap_high', 'Neap_low', 'Hightide', 'Lowtide'
-    - filters_combined can be any combination of one temporal and one 
-    spatial filter
-    - if filters is set to `None`, no exposure will be calculated and
-    the program will fail unless a tuple is nominated in `filters_combined`
 
     """
     # Set up logs if no log is passed in
@@ -475,7 +462,7 @@ def exposure(
             filters.append(str(x[1])) if x[1] not in filters else next
             
     # Return error for incorrect filter-names
-    all_filters = ['unfiltered']+temp_filters+sptl_filters
+    all_filters = temp_filters+sptl_filters+['unfiltered']
     
     for x in filters:
         assert x in all_filters, f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'
@@ -512,19 +499,14 @@ def exposure(
 
         # Add tide_cq to output dict
         tide_cq_dict['unfiltered']=tide_cq
-
         # Calculate the tide-height difference between the elevation value and
         # each percentile value per pixel
         diff = abs(tide_cq - dem)
-
         # Take the percentile of the smallest tide-height difference as the
         # exposure % per pixel
         idxmin = diff.idxmin(dim="quantile")
-
         # Convert to percentage
         exposure['unfiltered'] = idxmin * 100
-
-        # return exposure
     
     # Prepare for spatial filtering. Calculate the pixel-based all-epoch high res tide model.
     # Reduce the tide-model to the mean for the area of interest (reduce compute).
@@ -553,7 +535,7 @@ def exposure(
             )
            
         ## To reduce compute, average across the y and x dimensions
-        stacked_everything = ModelledTides.mean(dim=["x","y"])
+        modelledtides_flat = ModelledTides.mean(dim=["x","y"])
     
     # Filter the input timerange to include only dates or tide ranges of interest
     # if filters is not None:
@@ -572,7 +554,7 @@ def exposure(
             timeranges, tide_cq_dict, exposure = spatial_filters(
                                                                 modelled_freq,
                                                                 x,
-                                                                stacked_everything,
+                                                                modelledtides_flat,
                                                                 ModelledTides,
                                                                 timeranges,
                                                                 calculate_quantiles,
@@ -628,15 +610,12 @@ def exposure(
 
         # Add tide_cq to output dict
         tide_cq_dict[str(x)]=tide_cq
-
         # Calculate the tide-height difference between the elevation value and
         # each percentile value per pixel
         diff = abs(tide_cq - dem)
-
         # Take the percentile of the smallest tide-height difference as the
         # exposure % per pixel
         idxmin = diff.idxmin(dim="quantile")
-
         # Convert to percentage
         exposure[str(x)] = idxmin * 100
 
