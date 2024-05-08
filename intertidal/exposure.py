@@ -200,28 +200,28 @@ def spatial_filters(
         if x == 'Neap_high':       
             ## apply the peak detection routine to calculate all the high tide maxima
             tide_maxima = argrelmax(modelledtides_flat.values)[0]
-            tide_maxima = modelledtides_flat.isel(time=tide_maxima)
-            ## extract all hightide peaks
-            tide_maxima = ModelledTides.to_dataset().sel(time=tide_maxima.time)
-            ## repeat the peak detection to identify neap high tides (minima in the high tide maxima)
-            modelledtides_flat2 = tide_maxima.mean(dim=["x","y"])
+            tide_maxima = modelledtides_flat.isel(time=tide_maxima).to_dataset()
+            # ## extract all hightide peaks
+            # tide_maxima = ModelledTides.to_dataset().sel(time=tide_maxima.time)
+            # ## repeat the peak detection to identify neap high tides (minima in the high tide maxima)
+            # modelledtides_flat2 = tide_maxima.mean(dim=["x","y"])
             ## extract neap high tides based on a half lunar cycle - determined as the fraction of all high tide points relative to the number of spring high tide values
             order_nh = int(ceil((len(tide_maxima.time)/(len(modelledtides_flat_peaks))/2)))
             ## apply the peak detection routine to calculate all the neap high tide minima within the high tide peaks
-            neap_peaks = argrelmin(modelledtides_flat2.tide_m.values, order=order_nh)[0] 
+            neap_peaks = argrelmin(tide_maxima.tide_m.values, order=order_nh)[0] 
 
         if x == 'Neap_low':       
-            ## apply the peak detection routine to calculate all the high tide maxima
+            ## apply the peak detection routine to calculate all the low tide maxima
             tide_maxima = argrelmin(modelledtides_flat.values)[0]
-            tide_maxima = modelledtides_flat.isel(time=tide_maxima)
-            ## extract all hightide peaks
-            tide_maxima = ModelledTides.to_dataset().sel(time=tide_maxima.time)
-            ## repeat the peak detection to identify neap high tides (maxima in the low tide minima)
-            modelledtides_flat2 = tide_maxima.mean(dim=["x","y"])
+            tide_maxima = modelledtides_flat.isel(time=tide_maxima).to_dataset()
+            # ## extract all lowtide peaks
+            # tide_maxima = ModelledTides.to_dataset().sel(time=tide_maxima.time)
+            # ## repeat the peak detection to identify neap low tides (maxima in the low tide minima)
+            # modelledtides_flat2 = tide_maxima.mean(dim=["x","y"])
             ## extract neap low tides based on 14 day half lunar cycle - determined as the fraction of all high tide points relative to the number of spring high tide values
             order_nl = int(ceil((len(tide_maxima.time)/(len(modelledtides_flat_peaks))/2)))
-            ## apply the peak detection routine to calculate all the neap high tide minima within the high tide peaks
-            neap_peaks = argrelmax(modelledtides_flat2.tide_m.values, order=order_nl)[0]
+            ## apply the peak detection routine to calculate all the neap low tide maxima within the low tide peaks
+            neap_peaks = argrelmax(tide_maxima.tide_m.values, order=order_nl)[0]
 
         if x in ['Neap_high', 'Neap_low']: 
             ## extract neap high tides
@@ -232,9 +232,9 @@ def spatial_filters(
 
         if x in ['Spring_high', 'Spring_low']:  
             # select for indices associated with peaks
-            springpeaks = modelledtides_flat.isel(time=modelledtides_flat_peaks)
-            # Select dates associated with detected peaks
-            springpeaks = ModelledTides.to_dataset().sel(time=springpeaks.time)
+            springpeaks = modelledtides_flat.isel(time=modelledtides_flat_peaks).to_dataset()
+            # # Select dates associated with detected peaks
+            # springpeaks = ModelledTides.to_dataset().sel(time=springpeaks.time)
             # Save datetimes for calculation of combined filter exposure
             timeranges[str(x)]=pd.to_datetime(springpeaks.time)
             # Extract the peak height dates
