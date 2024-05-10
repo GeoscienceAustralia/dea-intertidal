@@ -470,18 +470,45 @@ def exposure(
     for x in filters:
         assert x in all_filters, f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'  
 
+    # Calculate a tidal model. Run at pixel resolution if any filter is 'unfiltered' else run at low res
+    if 'unfiltered' in filters:
+        tide_cq, _ = pixel_tides_ensemble(
+                        dem,
+                        model=tide_model,
+                        calculate_quantiles=calculate_quantiles,
+                        times=time_range,
+                        directory=tide_model_dir,
+                        ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+                        )
+        tide_cq_flat = tide_cq.mean(dim=["x","y"])
+    else:
+        #Calculate a low spatial res tidal model
+        tide_cq = pixel_tides_ensemble(
+                            dem,
+                            model=tide_model,
+                            # calculate_quantiles=calculate_quantiles,
+                            times=time_range,
+                            directory=tide_model_dir,
+                            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+                            resample=False
+                            )
+    
+        # Flatten low res tidal model
+        ## To reduce compute, average across the y and x dimensions
+        tide_cq_flat = tide_cq.mean(dim=["x","y"])
+        
     # Calculate exposure using pixel-based tide modelling for unfiltered, all of epoch time period
     if 'unfiltered' in filters:
         print('-----\nCalculating unfiltered exposure')
 
-        tide_cq, _ = pixel_tides_ensemble(
-                                dem,
-                                model=tide_model,
-                                calculate_quantiles=calculate_quantiles,
-                                times=time_range,
-                                directory=tide_model_dir,
-                                ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-                                )
+        # tide_cq, _ = pixel_tides_ensemble(
+        #                         dem,
+        #                         model=tide_model,
+        #                         calculate_quantiles=calculate_quantiles,
+        #                         times=time_range,
+        #                         directory=tide_model_dir,
+        #                         ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+        #                         )
 
         # Add tide_cq to output dict
         tide_cq_dict['unfiltered']=tide_cq
@@ -496,21 +523,21 @@ def exposure(
     
     # Prepare for spatial filtering. Calculate the pixel-based all-epoch high res tide model.
     # Reduce the tide-model to the mean for the area of interest (reduce compute).
-    if any (x in sptl_filters for x in filters):
-        print ('-----\nCalculating tide model for spatial filters')
-        # Use low res modelling for spatial filters
-        ModelledTides = pixel_tides_ensemble(
-            dem,
-            times=time_range,
-            directory=tide_model_dir,
-            model = tide_model,
-            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-            resample=False
-        )
+#     if any (x in sptl_filters for x in filters):
+#         print ('-----\nCalculating tide model for spatial filters')
+#         # Use low res modelling for spatial filters
+#         ModelledTides = pixel_tides_ensemble(
+#             dem,
+#             times=time_range,
+#             directory=tide_model_dir,
+#             model = tide_model,
+#             ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+#             resample=False
+#         )
 
-        ## To reduce compute, average across the y and x dimensions
-        modelledtides_flat = ModelledTides.mean(dim=["x","y"])
-    
+#         ## To reduce compute, average across the y and x dimensions
+#         modelledtides_flat = ModelledTides.mean(dim=["x","y"])
+     
     # Filter the input timerange to include only dates or tide ranges of interest
     # if filters is not None:
     for x in filters:
@@ -528,8 +555,8 @@ def exposure(
             timeranges, tide_cq_dict, exposure = spatial_filters(
                                                                 modelled_freq,
                                                                 x,
-                                                                modelledtides_flat,
-                                                                ModelledTides,
+                                                                tide_cq_flat,
+                                                                tide_cq,
                                                                 timeranges,
                                                                 calculate_quantiles,
                                                                 tide_cq_dict,
@@ -547,35 +574,77 @@ def exposure(
     ## Generator expression to calculate exposure for each nominated filter in temp_filters
     # Don't calculate exposure for spatial filters. This has already been calculated.
     gen = (x for x in timeranges if x not in sptl_filters)
+    '''
+    TEsting new idea
+    '''
+    # #Generate single tidal model
+    # tide_cq = pixel_tides_ensemble(
+    #                     dem,
+    #                     model=tide_model,
+    #                     # calculate_quantiles=calculate_quantiles,
+    #                     times=time_range,
+    #                     directory=tide_model_dir,
+    #                     ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+    #                     resample=False
+    #                     )
+    
+    # # Flatten low res tidal model
+    # ## To reduce compute, average across the y and x dimensions
+    # tide_cq_flat = tide_cq.mean(dim=["x","y"])
+    
     
     for x in gen:
-        # Run the pixel_tides function with the calculate_quantiles option and default high-res outputs.
-        # For each pixel, an array of tideheights is returned, corresponding
-        # to the percentiles from `calculate_quantiles` of the timerange-tide model that
-        # each tideheight appears in the model.
-
-        # Print
         print(f'-----\nCalculating {x} exposure')
-
-        tide_cq, _ = pixel_tides_ensemble(
-            dem,
-            calculate_quantiles=calculate_quantiles,
-            times=timeranges[str(x)],
-            directory=tide_model_dir,
-            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-            model=tide_model,
-        )
-
+        # Extract filtered datetimes from the full tidal model
+        tide_cq_flat = tide_cq_flat.sel(time=timeranges[str(x)])
+        # Calculate quantile values on remaining tide heights
+        tide_cq_flat = tide_cq_flat.quantile(q=calculate_quantiles,dim='time').to_dataset().tide_m
         # Add tide_cq to output dict
-        tide_cq_dict[str(x)]=tide_cq
+        tide_cq_dict[str(x)]=tide_cq_flat
         # Calculate the tide-height difference between the elevation value and
         # each percentile value per pixel
-        diff = abs(tide_cq - dem)
+        diff = abs(tide_cq_flat - dem)
         # Take the percentile of the smallest tide-height difference as the
         # exposure % per pixel
         idxmin = diff.idxmin(dim="quantile")
         # Convert to percentage
         exposure[str(x)] = idxmin * 100
+    '''
+    --- end
+    '''
+    
+#     for x in gen:
+#         # Run the pixel_tides function with the calculate_quantiles option and default high-res outputs.
+#         # For each pixel, an array of tideheights is returned, corresponding
+#         # to the percentiles from `calculate_quantiles` of the timerange-tide model that
+#         # each tideheight appears in the model.
+
+#         # Print
+#         print(f'-----\nCalculating {x} exposure')
+
+        # tide_cq = pixel_tides_ensemble(
+        #     dem,
+        #     calculate_quantiles=calculate_quantiles,
+        #     times=timeranges[str(x)],
+        #     directory=tide_model_dir,
+        #     ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+        #     model=tide_model,
+        #     resample=False
+        # )
+        # # Flatten low res tidal model
+        # ## To reduce compute, average across the y and x dimensions
+        # tide_cq_flat = tide_cq.mean(dim=["x","y"])
+
+        # # Add tide_cq to output dict
+        # tide_cq_dict[str(x)]=tide_cq_flat
+        # # Calculate the tide-height difference between the elevation value and
+        # # each percentile value per pixel
+        # diff = abs(tide_cq_flat - dem)
+        # # Take the percentile of the smallest tide-height difference as the
+        # # exposure % per pixel
+        # idxmin = diff.idxmin(dim="quantile")
+        # # Convert to percentage
+        # exposure[str(x)] = idxmin * 100
 
     return exposure, tide_cq_dict
 
