@@ -412,9 +412,12 @@ def pixel_dem(
     if interp_intervals is not None:
         print(f"Applying tidal interval interpolation to {interp_intervals} intervals")
         interval_ds = interval_ds.interp(
-            interval=np.linspace(0, interval_ds.interval.max(), interp_intervals),
+            coords={
+                "interval": np.linspace(0, interval_ds.interval.max(), interp_intervals)
+            },
             method="linear",
-        )
+            # Required as recent versions of xarray return new coord as a variable
+        ).set_coords("interval")
 
     # Smooth tidal intervals using a rolling mean
     if smooth_radius is not None:
@@ -422,9 +425,9 @@ def pixel_dem(
         smoothed_ds = interval_ds.rolling(
             interval=smooth_radius,
             center=False,
-            min_periods=int(smooth_radius / 2.0)
-            if min_periods == "auto"
-            else min_periods,
+            min_periods=(
+                int(smooth_radius / 2.0) if min_periods == "auto" else min_periods
+            ),
         ).mean()
     else:
         smoothed_ds = interval_ds
@@ -1171,7 +1174,7 @@ def intertidal_cli(
     input_params = locals()
     run_id = f"[{output_version}] [{label_date}] [{study_area}]"
     log = configure_logging(run_id)
-    
+
     # Record params in logs
     log.info(f"{run_id}: Using parameters {input_params}")
 
