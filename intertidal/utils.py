@@ -90,41 +90,17 @@ def export_intertidal_rasters(
     overwrite=True,
 ):
     """
-    Export outputs of the DEA Intertidal workflow to COG GeoTIFF files.
-
-    If a band contains "elevation" in the name it is exported as a
-    float32 data type. Otherwise, the band is exported as an integer16
-    data type, after filling NaN with the nodata value and setting the
-    nodata attribute on the layer.
-
-    Parameters
-    ----------
-    ds : xarray.Dataset
-        The dataset containing the bands to be exported.
-    prefix : str, optional
-        A string that will be used as a prefix for the output file
-        names (default is "testing").
-    int_bands : tuple or list, optional
-        A list of bands to export as integer datatype. If None, will use
-        the following list of bands: ("exposure", "extents",
-        "offset_hightide", "offset_lowtide", "spread")
-    int_nodata : int, optional
-        An integer that represents nodata values for integer bands
-        (default is -999).
-    int_dtype : string or numpy data type, optional
-        The data type to use for integer layers (default is
-        np.int16).
-    float_dtype : string or numpy data type, optional
-        The data type to use for floating point layers (default is
-        np.float32).
-    overwrite : bool, optional
-        A boolean value that determines whether or not to overwrite
-        existing files (default is True).
-
-    Returns
-    -------
-    None
+    DEPRECATED: Please use `intertidal.io.prepare_for_export` instead.
     """
+
+    from warnings import warn
+
+    warn(
+        "This function is deprecated and will be removed. Please use "
+        "`intertidal.io.prepare_for_export` instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Use default list of bands to convert to integers if none provided
     if int_bands is None:
@@ -158,7 +134,7 @@ def export_intertidal_rasters(
 
 def intertidal_hillshade(
     elevation,
-    extents,
+    freq,
     azdeg=315,
     altdeg=45,
     dyx=10,
@@ -167,14 +143,14 @@ def intertidal_hillshade(
 ):
     """
     Create a hillshade array for an intertidal zone given an elevation
-    array and an extents array.
+    array and a frequency array.
 
     Parameters
     ----------
     elevation : str or xr.DataArray
-        An xr.DataArray or a path to the elevation raster file.
-    extents : str or xr.DataArray
-        xr.DataArray or a path to the extents raster file.
+        Elevation data
+    freq : str or xr.DataArray
+        NDWI frequency data
     azdeg : float, optional
         The azimuth angle of the light source, in degrees. Default is 315.
     altdeg : float, optional
@@ -198,23 +174,12 @@ def intertidal_hillshade(
     import matplotlib.pyplot as plt
     import xarray as xr
 
-    # Read data
-    if isinstance(elevation, str):
-        elevation = xr.open_rasterio(elevation).squeeze("band")
-    if isinstance(extents, str):
-        extents = xr.open_rasterio(extents).squeeze("band")
-
     # Fill upper and bottom of intertidal zone with min and max heights
     # so that hillshade can be applied across the entire raster
-    # elevation_filled = xr.where(extents == 0, elevation.min(), elevation)
-    # elevation_filled = xr.where(extents == 2, elevation.max(), elevation_filled)
-    elevation_filled = xr.where(extents == 0, elevation.max(), elevation)
-    elevation_filled = xr.where(extents == 2, elevation.min(), elevation_filled)
-    elevation_filled = xr.where(extents == 3, elevation.max(), elevation_filled)
-    elevation_filled = xr.where(extents == 4, elevation.max(), elevation_filled)
+    elev_min, elev_max = elevation.quantile([0, 1])    
+    elevation_filled = xr.where(elevation.isnull() & (freq < 50), elev_max, elevation).fillna(elev_min)
 
     from scipy.ndimage import gaussian_filter
-
     input_data = gaussian_filter(elevation_filled, sigma=1)
 
     # Create hillshade based on elevation data
@@ -231,17 +196,17 @@ def intertidal_hillshade(
 
     # Mask out non-intertidal pixels
     hillshade = np.where(
-        np.expand_dims(extents.values == 1, axis=-1), hillshade, np.nan
+        np.expand_dims(elevation.notnull().values, axis=-1), hillshade, np.nan
     )
 
     # Create a new xarray data array from the numpy array
     hillshaded_da = xr.DataArray(
-        hillshade,
+        hillshade * 255,
         dims=["y", "x", "variables"],
         coords={
             "y": elevation.y,
             "x": elevation.x,
-            "variables": ["red", "green", "blue", "alpha"],
+            "variables": ["r", "g", "b", "a"],
         },
     )
 

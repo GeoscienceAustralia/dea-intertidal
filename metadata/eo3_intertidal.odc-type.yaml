@@ -1,0 +1,163 @@
+---
+name: eo3_intertidal
+description: EO3 for DEA Intertidal 
+dataset:
+  id: [id]
+  sources: [lineage, source_datasets]
+
+  grid_spatial: [grid_spatial, projection]
+  measurements: [measurements]
+  creation_dt: [properties, 'odc:processing_datetime']
+  label: [label]
+  format: [properties, 'odc:file_format']
+
+  search_fields:
+    platform:
+      description: Platform code
+      offset: [properties, 'eo:platform']
+      indexed: false
+
+    instrument:
+      description: Instrument name
+      offset: [properties, 'eo:instrument']
+      indexed: false
+
+    product_family:
+      description: Product family code
+      offset: [properties, 'odc:product_family']
+      indexed: false
+
+    region_code:
+      description: |
+        The unique GridSpec reference of the 32 km coastal analysis tile.  
+      offset: [properties, 'odc:region_code']
+
+    dataset_maturity:
+      description: One of - final|interim
+      offset: [properties, 'dea:dataset_maturity']
+
+    time:
+      description: Acquisition time range
+      type: datetime-range
+      min_offset:
+        - [properties, 'dtr:start_datetime']
+        - [properties, datetime]
+      max_offset:
+        - [properties, 'dtr:end_datetime']
+        - [properties, datetime]
+
+    lon:
+      description: Longitude range
+      type: double-range
+      min_offset:
+        - [extent, lon, begin]
+      max_offset:
+        - [extent, lon, end]
+
+    lat:
+      description: Latitude range
+      type: double-range
+      min_offset:
+        - [extent, lat, begin]
+      max_offset:
+        - [extent, lat, end]
+
+    eo_gsd:
+      description: Ground sample distance, meters
+      indexed: false
+      offset:
+        - properties
+        - eo:gsd
+      type: double
+
+    # Intertidal-specific metadata below       
+    intertidal_hat:
+      description: |
+        Highest astronomical tide height (metres above Mean Sea Level)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:hat
+
+    intertidal_hot:
+      description: |
+        Highest satellite-observed tide height (metres above Mean Sea Level)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:hot
+
+    intertidal_lat:
+      description: |
+        Lowest astronomical tide height (metres above Mean Sea Level)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:lat
+
+    intertidal_lot:
+      description: |
+        Lowest satellite-observed tide height (metres above Mean Sea Level)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:lot
+
+    intertidal_offset_high:
+      description: |
+        Difference between highest astronomical and highest satellite-observed
+        tides (in percentage of tide range)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:offset_high
+
+    intertidal_offset_low:
+      description: |
+        Difference between lowest astronomical and lowest satellite-observed
+        tides (in percentage of tide range)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:offset_low
+
+    intertidal_spread:
+      description: |
+        Proportion of the tide range observed by satellites (percentage)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:spread
+
+    intertidal_otr:
+      description: |
+        Observed tide range (difference between highest and lowest observed tides)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:otr
+
+    intertidal_tr:
+      description: |
+        Tide range (difference between highest and lowest astronomical tides)
+      indexed: false
+      type: double
+      offset:
+        - properties
+        - intertidal:tr
+
+    intertidal_tr_class:
+      description: |
+        Tide range classification - one of microtidal|mesotidal|macrotidal
+      indexed: false
+      offset:
+        - properties
+        - intertidal:tr_class
