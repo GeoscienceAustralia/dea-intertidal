@@ -481,19 +481,20 @@ def exposure(
         # Add modelledtides to output dict
         modelledtides_dict['unfiltered']=mod_tides
 
-    # For all other filter types, calculate a low spatial res tidal model
-    modelledtides = pixel_tides_ensemble(
-                        dem,
-                        model=tide_model,
-                        times=time_range,
-                        directory=tide_model_dir,
-                        ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-                        resample=False
-                        )
+    # For all other filter types, calculate a low spatial res tidal model 
+    if (len(filters) >=1) & (filters != ['unfiltered']):
+        modelledtides = pixel_tides_ensemble(
+                            dem,
+                            model=tide_model,
+                            times=time_range,
+                            directory=tide_model_dir,
+                            ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+                            resample=False
+                            )
 
-    # Flatten low res tidal model
-    ## To reduce compute, average across the y and x dimensions
-    modelledtides_flat = modelledtides.mean(dim=["x","y"])
+        # Flatten low res tidal model
+        ## To reduce compute, average across the y and x dimensions
+        modelledtides_flat = modelledtides.mean(dim=["x","y"])
 
     # Filter the input timerange to include only dates or tide ranges of interest
     # if filters is not None:
