@@ -32,11 +32,12 @@ on:
       - 'codecov.yaml'
 
   release:
-    types: [created, edited, published]
+    types: [edited, published]
 
 permissions:
-  id-token: write   # This is required for requesting the JWT
-  contents: write    # This is required for actions/checkout
+  id-token: write  # Required for requesting Json web token
+  contents: write  # Required for actions/checkout
+  pull-requests: write  # Required for validation results comment bot
 
 jobs:
   test:
@@ -72,7 +73,7 @@ jobs:
           echo "PGHOST=localhost" >> $GITHUB_ENV
 
       - name: Build DEA Intertidal docker image 
-        timeout-minutes: 20
+        timeout-minutes: 30
         shell: bash
         run: |
           docker build -t dea_intertidal .
@@ -106,15 +107,24 @@ jobs:
           cp ./artifacts/validation.csv ./tests/validation.csv
           cp ./artifacts/README.md ./tests/README.md
 
-      # - name: Setup upterm session
-      #   uses: lhotari/action-upterm@v1
-
       # Commit validation results produced by integration tests back into repo
       - name: Commit validation results into repository
         uses: stefanzweifel/git-auto-commit-action@v4
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
         with:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
+
+      # Post validation tesults as comment on PR
+      - name: Post validation results as comment
+        uses: mshick/add-pr-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          message: |
+            ![](https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true")
+            
+            For full integration test results, refer to the [Tests directory README](https://github.com/GeoscienceAustralia/dea-intertidal/tree/${{ github.head_ref }}/tests).
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
@@ -125,8 +135,8 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
 
-    # Only run on a push to the main branch
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Only run on a push to the main branch OR a release
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'release')
 
     steps:
       - name: Checkout code

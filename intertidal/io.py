@@ -7,6 +7,8 @@ import numpy as np
 import xarray as xr
 from pathlib import Path
 from urllib.parse import urlparse
+from rasterio.enums import Resampling
+from rasterio.errors import NotGeoreferencedWarning
 
 import datacube
 import odc.geo.xr
@@ -31,6 +33,7 @@ from intertidal.utils import configure_logging
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
 
 
 def _id_to_tuple(id_str):
@@ -61,7 +64,7 @@ def extract_geobox(
 ):
     """
     Handles extraction of a GeoBox pixel grid from either a GridSpec
-    tile ID (in the form 'x143y56'), or a provided Geometry object.
+    tile ID (in the form "x123y123"), or a provided Geometry object.
 
     If a tile ID string is passed to `study_area`, a GeoBox will be
     extracted based on relevant GridSpec tile. If a custom Geometry
@@ -208,8 +211,8 @@ def load_data(
         Defaults to 90 (i.e. 90% cloud cover).
     skip_broken_datasets : bool, optional
         Whether to skip broken datasets during load. This can avoid
-        temporary file access issues on S3, however introduces 
-        randomness into the analysis (two identical runs may produce 
+        temporary file access issues on S3, however introduces
+        randomness into the analysis (two identical runs may produce
         different results due to different data failing to load).
     ndwi : bool, optional
         Whether to convert spectral bands to Normalised Difference Water
@@ -458,12 +461,15 @@ def load_data(
     return satellite_ds, dss_s2, dss_ls
 
 
-def load_topobathy(
+def load_topobathy_mask(
     dc,
-    satellite_ds,
+    geobox,
     product="ga_ausbathytopo250m_2023",
+    elevation_band="height_depth",
     resampling="bilinear",
     mask_invalid=True,
+    min_threshold=-15,
+    mask_filters=[("dilation", 25)],
 ):
     """
     Loads a topo-bathymetric DEM for the extents of the loaded satellite
@@ -474,40 +480,60 @@ def load_topobathy(
     ----------
     dc : Datacube
         A Datacube instance for loading data.
-    satellite_ds : ndarray
-        The loaded satellite data, used to obtain the spatial extents
-        of the data.
+    geobox : ndarray
+        The GeoBox of the loaded satellite data, used to ensure the data
+        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
     product : str, optional
         The name of the topo-bathymetric DEM product to load from the
         datacube. Defaults to "ga_ausbathytopo250m_2023".
+    elevation_band : str, optional
+        The name of the band containing elevation data. Defaults to
+        "height_depth".
     resampling : str, optional
         The resampling method to use, by default "bilinear".
     mask_invalid : bool, optional
         Whether to mask invalid/nodata values in the array by setting
         them to NaN, by default True.
+    min_threshold : int or float, optional
+        The elevation value used to create the mask; all pixels with
+        elevations above this value will be given a value of True.
+    mask_filters : list of tuples, optional
+        An optional list of morphological processing steps to pass to
+        the `mask_cleanup` function. The default is `[("dilation", 25)]`,
+        which will dilate True pixels by a radius of 25 pixels (~250 m).
 
     Returns
     -------
-    topobathy_ds : xarray.Dataset
-        The loaded topo-bathymetric DEM.
+    topobathy_ds : xarray.DataArray
+        An output boolean mask, where True represent pixels to use in the
+        following analysis.
     """
-    topobathy_ds = dc.load(
-        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
-    ).squeeze("time")
+    # Load from datacube, reprojecting to GeoBox of input satellite data
+    topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
+        "time"
+    )
 
     # Mask invalid data
     if mask_invalid:
         topobathy_ds = mask_invalid_data(topobathy_ds)
 
-    return topobathy_ds
+    # Threshold to minumum elevation
+    topobathy_mask = topobathy_ds[elevation_band] > min_threshold
+
+    # If requested, apply cleanup
+    if mask_filters is not None:
+        topobathy_mask = mask_cleanup(topobathy_mask, mask_filters=mask_filters)
+
+    return topobathy_mask
 
 
-def load_aclum(
+def load_aclum_mask(
     dc,
-    satellite_ds,
+    geobox,
     product="abares_clum_2020",
+    class_band="alum_class",
     resampling="nearest",
-    mask_invalid=True,
+    mask_invalid=False,
 ):
     """
     Loads an ABARES derived land use classification of Australia
@@ -519,12 +545,15 @@ def load_aclum(
     ----------
     dc : Datacube
         A Datacube instance for loading data.
-    satellite_ds : ndarray
-        The loaded satellite data, used to obtain the spatial extents
-        of the data.
+    geobox : ndarray
+        The GeoBox of the loaded satellite data, used to ensure the data
+        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
     product : str, optional
         The name of the ABARES land use dataset product to load from the
         datacube. Defaults to "abares_clum_2020".
+    class_band : str, optional
+        The name of the band containing land use class data. Defaults to
+        "alum_class".
     resampling : str, optional
         The resampling method to use, by default "nearest".
     mask_invalid : bool, optional
@@ -533,58 +562,121 @@ def load_aclum(
 
     Returns
     -------
-    reclassified_aclum : xarray.Dataset
-        The ABARES land use mask, summarised to include only two land
-        use classes: 'intensive urban' and 'other'.
+    reclassified_aclum : xarray.DataArray
+        An output boolean mask, where True equals intensive urban and
+        False equals all other classes.
     """
-    aclum_ds = dc.load(
-        product=product, like=satellite_ds.odc.geobox.compat, resampling=resampling
-    ).squeeze("time")
+    try:
+        # Load from datacube, reprojecting to GeoBox of input satellite data
+        aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
+            "time"
+        )
 
-    # Mask invalid data
-    if mask_invalid:
-        aclum_ds = mask_invalid_data(aclum_ds)
+        # Mask invalid data
+        if mask_invalid:
+            aclum_ds = mask_invalid_data(aclum_ds)
 
-    # Manually isolate the 'intensive urban' land use summary class, set
-    # all other pixels to false. For class definitions, refer to
-    # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
-    reclassified_aclum = aclum_ds.alum_class.isin(
-        [
-            500,
-            530,
-            531,
-            532,
-            533,
-            534,
-            535,
-            536,
-            537,
-            538,
-            540,
-            541,
-            550,
-            551,
-            552,
-            553,
-            554,
-            555,
-            560,
-            561,
-            562,
-            563,
-            564,
-            565,
-            566,
-            567,
-            570,
-            571,
-            572,
-            573,
-            574,
-            575,
-        ]
-    )
-    return reclassified_aclum
+        # Manually isolate the 'intensive urban' land use summary class, set
+        # all other pixels to False. For class definitions, refer to
+        # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
+        reclassified_aclum = aclum_ds[class_band].isin(
+            [
+                500,
+                530,
+                531,
+                532,
+                533,
+                534,
+                535,
+                536,
+                537,
+                538,
+                540,
+                541,
+                550,
+                551,
+                552,
+                553,
+                554,
+                555,
+                560,
+                561,
+                562,
+                563,
+                564,
+                565,
+                566,
+                567,
+                570,
+                571,
+                572,
+                573,
+                574,
+                575,
+            ]
+        )
+        return reclassified_aclum
+
+    # Return an array of all False (i.e. no urban) if no data is returned
+    except AttributeError:
+        return odc.geo.xr.xr_zeros(geobox).astype(bool)
+
+
+def load_ocean_mask(
+    dc,
+    geobox,
+    product="geodata_coast_100k",
+    band="land",
+    resampling="nearest",
+    mask_invalid=False,
+):
+    """
+    Loads an ocean mask for the extents of the loaded satellite data.
+    This is used to determine connectivity to the ocean for each wet or
+    intertidal pixel.
+
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    geobox : ndarray
+        The GeoBox of the loaded satellite data, used to ensure the data
+        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
+    product : str, optional
+        The name of the ocean mask dataset to load from the datacube.
+        Defaults to "geodata_coast_100k".
+    band : str, optional
+        The name of the band containing the ocean classification.
+        Defaults to "land".
+    resampling : str, optional
+        The resampling method to use, by default "nearest".
+    mask_invalid : bool, optional
+        Whether to mask invalid/nodata values in the array by setting
+        them to NaN, by default True.
+
+    Returns
+    -------
+    ocean_mask : xarray.DataArray
+        An output boolean mask, where True represent pixels to use in the
+        following analysis.
+    """
+    try:
+        # Load from datacube, reprojecting to GeoBox of input satellite data
+        ocean_ds = dc.load(
+            product="geodata_coast_100k", like=geobox, resampling=resampling
+        ).squeeze("time")
+
+        # Mask invalid data
+        if mask_invalid:
+            ocean_ds = mask_invalid_data(ocean_ds)
+
+        # Return ocean pixels as True
+        ocean_mask = ocean_ds[band] == 0
+        return ocean_mask
+
+    # Return an array of all True (i.e. ocean) if no data is returned
+    except AttributeError:
+        return odc.geo.xr.xr_zeros(geobox) == 0
 
 
 def _is_s3(path):
@@ -712,6 +804,59 @@ def _write_stac(
     return stac
 
 
+def tidal_metadata(ds):
+    """
+    Generate tile-based tidal attribute metadata from DEA Intertidal
+    outputs.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset containing tidal attribute variables.
+
+    Returns
+    -------
+    dict
+        A dictionary containing metadata for tidal attributes including
+        mean tidal attribute values, Tide Range (tr), Observed Tide Range
+        (otr), and tide range category classification, classifying tiles
+        into microtidal (less than 2 m), mesotidal (between 2
+        and 4 m), or macrotidal (greater than 4 m) tide ranges.
+    """
+    # Identify tidal attribute variables
+    tide_vars = [var for var in ds.data_vars if var.startswith("ta_")]
+
+    # Calculate mean per variable and extract as dictionary
+    metadata_dict = ds[tide_vars].mean().to_array().to_series().to_dict()
+
+    # Rename to standard name format and round to two decimal places
+    metadata_dict = {
+        key.replace("ta_", "intertidal:"): round(value, 2)
+        for key, value in metadata_dict.items()
+    }
+
+    # Add tide range metadata
+    metadata_dict["intertidal:tr"] = (
+        metadata_dict["intertidal:hat"] - metadata_dict["intertidal:lat"]
+    )
+    metadata_dict["intertidal:otr"] = (
+        metadata_dict["intertidal:hot"] - metadata_dict["intertidal:lot"]
+    )
+
+    # Calculate category
+    metadata_dict["intertidal:tr_class"] = (
+        "microtidal"
+        if metadata_dict["intertidal:tr"] < 2
+        else "mesotidal"
+        if 2 <= metadata_dict["intertidal:tr"] <= 4
+        else "macrotidal"
+        if metadata_dict["intertidal:tr"] > 4
+        else np.nan
+    )
+
+    return metadata_dict
+
+
 def _ls_platform_instrument(year):
     """
     Indentify relevant Landsat platforms and instruments for a given
@@ -735,8 +880,8 @@ def _ls_platform_instrument(year):
 def prepare_for_export(
     ds,
     int_bands=None,
-    int_nodata=-999,
-    int_dtype=np.int16,
+    int_nodata=255,
+    int_dtype=np.uint8,
     float_dtype=np.float32,
     output_location=None,
     overwrite=True,
@@ -757,10 +902,10 @@ def prepare_for_export(
         "offset_hightide", "offset_lowtide", "spread")
     int_nodata : int, optional
         An integer that represents nodata values for integer bands
-        (default is -999).
+        (default is 255).
     int_dtype : string or numpy data type, optional
         The data type to use for integer layers (default is
-        np.int16).
+        np.uint8).
     float_dtype : string or numpy data type, optional
         The data type to use for floating point layers (default is
         np.float32).
@@ -780,7 +925,7 @@ def prepare_for_export(
     def _prepare_band(
         band, int_bands, int_nodata, int_dtype, float_dtype, output_location, overwrite
     ):
-        # Export specific bands as integer16 data types by first filling
+        # Export specific bands as integer data types by first filling
         # NaN with nodata value before converting to int, then setting
         # nodata attribute on layer
         if band.name in int_bands:
@@ -832,7 +977,8 @@ def export_dataset_metadata(
     dataset_version="0.0.1",
     product_maturity="provisional",
     dataset_maturity="final",
-    debug=True,
+    additional_metadata=None,
+    debug=False,
     run_id=None,
     log=None,
 ):
@@ -867,13 +1013,16 @@ def export_dataset_metadata(
         Dataset version to use for the output dataset. Default is "0.0.1".
     product_maturity : str, optional
         Product maturity to use for the output dataset. Default is
-        "provisional".
+        "provisional", can also be "stable".
     dataset_maturity : str, optional
         Dataset maturity to use for the output dataset. Default is
-        "final".
+        "final", can also be "interim".
+    additional_metadata : dict, optional
+        An option dictionary containing additional metadata fields to
+        add to the dataset metadata properties.
     debug : bool, optional
         When true, this will write S3 outputs locally so they can be
-        checked for correctness. Default is True.
+        checked for correctness. Default is False.
     run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
@@ -884,8 +1033,11 @@ def export_dataset_metadata(
     if log is None:
         log = configure_logging()
 
-    # Use run ID name for logs if it exists        
+    # Use run ID name for logs if it exists
     run_id = "Processing" if run_id is None else run_id
+
+    # Use empty metadata dict if no custom metadata is provided
+    additional_metadata = {} if additional_metadata is None else additional_metadata
 
     # Use a temporary directory to write outputs to before we either copy
     # it locally or sync to S3
@@ -928,6 +1080,7 @@ def export_dataset_metadata(
                     "odc:file_format": "GeoTIFF",
                     "odc:collection_number": 3,
                     "eo:gsd": ds.odc.geobox.resolution.x,
+                    **additional_metadata,
                 }
             )
 
@@ -938,14 +1091,14 @@ def export_dataset_metadata(
             label_parts[-2] = time_convention
             dataset_assembler.names.dataset_label = "_".join(label_parts)
 
-            # Write measurements from xarray, extracting nodata values
-            # from each input array and assigning these on the outputs
-            for dataarray in ds:
-                log.info(f"{run_id}: Writing array {dataarray}")
-                nodata = ds[dataarray].attrs.get("nodata", None)
-                dataset_assembler.write_measurements_odc_xarray(
-                    ds[[dataarray]], nodata=nodata
-                )
+            # Write measurements from xarray (this will loop through each
+            # array in the dataset and export them with correct nodata values)
+            log.info(f"{run_id}: Writing output arrays")
+            dataset_assembler.write_measurements_odc_xarray(
+                ds,
+                overviews=(2, 4, 8, 16, 32),
+                overview_resampling=Resampling.nearest,
+            )
 
             # Add lineage
             s2_set = set(d.id for d in s2_lineage) if s2_lineage else []
@@ -980,14 +1133,10 @@ def export_dataset_metadata(
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
             # also ensures all previous data was written out correctly.
-            if "dea-public-data-dev" in output_location:
-                explorer_url = "https://explorer.dev.dea.ga.gov.au"
-            else:
-                explorer_url = "https://explorer.dea.ga.gov.au"
             _write_stac(
                 dataset_assembler,
                 destination_path=destination_path,
-                explorer_base_url=explorer_url,
+                explorer_base_url="https://explorer.dea.ga.gov.au",
             )
 
             # Either sync to S3 or copy files to local destination
