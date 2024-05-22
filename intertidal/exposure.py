@@ -7,15 +7,11 @@ import numpy as np
 import geopandas as gpd
 import pandas as pd
 
-from shapely.geometry import Point
-from shapely.ops import unary_union
 from math import ceil
 from datetime import timedelta
-from pyproj import CRS, Transformer
 from scipy.signal import argrelmax, argrelmin
 from numpy import interp
 
-from dea_tools.coastal import pixel_tides, model_tides
 from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.utils import configure_logging, round_date_strings
 
@@ -86,9 +82,6 @@ def temporal_filters(x, timeranges, time_range, dem):
         tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs(
             "EPSG:4326"
         ).coords[0]
-
-        # Coordinate point to locate the sunriset calculation
-        point_4326 = Point(tidepost_lon_4326, tidepost_lat_4326)
 
         # Calculate the local sunrise and sunset times
         # Place start and end dates in correct format
