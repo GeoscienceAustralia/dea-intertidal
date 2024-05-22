@@ -470,13 +470,14 @@ def exposure(
     Returns
     -------
     exposure : dict
-        A dictionary of xarray.Datasets containing a named exposure dataset for each
-        nominated filter, representing the percentage time exposurs of each pixel from seawater
-        for the duration of the associated filtered time period between `start` and `end`.
+        A dictionary of xarray.Datasets containing a named exposure
+        dataset for each nominated filter, representing the percentage
+        time exposure of each pixel from seawater for the duration of
+        the associated filtered time period between `start` and `end`.
     modelledtides : dict
-        A dictionary of xarray.Datasets containing a named dataset of the quantiled high temporal
-        resolution tide modelling for each filter. Dimesions should be
-        'quantile', 'x' and 'y'.
+        A dictionary of xarray.Datasets containing a named dataset of
+        the quantiled high temporal resolution tide modelling for each
+        filter. Dimesions should be 'quantile', 'x' and 'y'.
 
     Notes
     -----
