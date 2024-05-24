@@ -466,7 +466,7 @@ def exposure(
         - 'summer', 'autumn', 'winter', 'spring': exposure during
           specific seasons
         - 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep',
-          'oct', 'nov', 'dec': expsure during specific months
+          'oct', 'nov', 'dec': exposure during specific months
         - 'daylight': all tide heights occurring between sunrise and
           sunset local time
         - 'night': all tide heights occurring between sunset and sunrise
