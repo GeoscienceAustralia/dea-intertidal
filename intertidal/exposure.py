@@ -551,7 +551,7 @@ def exposure(
         # Convert to percentage
         exposure[str(x)] = idxmin * 100
 
-    return exposure, modelledtides_dict
+    return exposure, modelledtides_dict, timeranges, modelledtides_flat
 
 
 
