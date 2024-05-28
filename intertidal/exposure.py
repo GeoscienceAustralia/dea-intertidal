@@ -705,4 +705,4 @@ def exposure(
         # Convert to percentage and add as variable in exposure dataset
         exposure_ds[str(x)] = idxmin * 100
 
-    return exposure_ds, modelledtides_ds
+    return exposure_ds, modelledtides_ds#, timeranges#, modelledtides_1dmodelledtides_lowre
