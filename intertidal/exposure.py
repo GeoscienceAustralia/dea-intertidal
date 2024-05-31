@@ -289,22 +289,49 @@ def spatial_filters(
         if x in ["neap_high", "neap_low"]:
             # Extract neap high tides
             neappeaks = tide_maxima.isel(time=neap_peaks)
+            
+            # Select modelled tide range to calculate exposure
+            if x == 'neap_high':
+                neappeaks = modelledtides_1d.where(
+                    modelledtides_1d >= neappeaks.tide_m.mean()
+                ).to_dataset()
+            else:
+                neappeaks = modelledtides_1d.where(
+                    modelledtides_1d <= neappeaks.tide_m.mean()
+                ).to_dataset()
+            
             filtered_time_range = pd.to_datetime(neappeaks.time)
 
             # Extract the peak height dates
             modelledtides = neappeaks.quantile(q=calculate_quantiles, dim="time")
+            
+            # Temp
+            return modelledtides.tide_m, filtered_time_range, neappeaks.tide_m
 
         if x in ["spring_high", "spring_low"]:
             # Select for indices associated with peaks
             springpeaks = modelledtides_1d.isel(
                 time=modelledtides_1d_peaks
             ).to_dataset()
+            
+            # Select modelled tide range to calculate exposure
+            if x == 'spring_high':
+                springpeaks = modelledtides_1d.where(
+                    modelledtides_1d >= springpeaks.tide_m.mean()
+                ).to_dataset()
+            else:
+                springpeaks = modelledtides_1d.where(
+                    modelledtides_1d <= springpeaks.tide_m.mean()
+                ).to_dataset()
 
             # Save datetimes for calculation of combined filter exposure
             filtered_time_range = pd.to_datetime(springpeaks.time)
 
             # Extract the peak height dates
             modelledtides = springpeaks.quantile(q=calculate_quantiles, dim="time")
+            
+            # Temp
+            return modelledtides.tide_m, filtered_time_range, springpeaks.tide_m
 
     if x == "high_tide":
         # Calculate all the high tide maxima
@@ -313,39 +340,46 @@ def spatial_filters(
         # Extract all hightide peaks
         high_peaks2 = modelledtides_1d.isel(time=high_peaks)
 
-        # Identify all lower hightide peaks
-        lowhigh_peaks = argrelmin(high_peaks2.values)[0]
+#         # Identify all lower hightide peaks
+#         lowhigh_peaks = argrelmin(high_peaks2.values)[0]
 
-        # Extract all lower hightide peaks
-        lowhigh_peaks2 = high_peaks2.isel(time=lowhigh_peaks)
+#         # Extract all lower hightide peaks
+#         lowhigh_peaks2 = high_peaks2.isel(time=lowhigh_peaks)
 
-        # Test for diurnal tidal regimes on the assumption that
-        # semi-diurnal and mixed tidal settings should have approximately
-        # equal proportions of daytime and nighttime hightide peaks
-        if len(lowhigh_peaks) / len(high_peaks) < 0.2:
-            filtered_time_range = pd.to_datetime(high_peaks2.time)
-            modelledtides = high_peaks2.quantile(
-                q=calculate_quantiles, dim="time"
-            ).to_dataset()
-        else:
-            # Interpolate the lower hightide curve
-            low_high_linear = interp(
-                np.arange(0, len(modelledtides_1d)),
-                high_peaks[lowhigh_peaks],
-                lowhigh_peaks2.values,
-            )
+#         # Test for diurnal tidal regimes on the assumption that
+#         # semi-diurnal and mixed tidal settings should have approximately
+#         # equal proportions of daytime and nighttime hightide peaks
+#         if len(lowhigh_peaks) / len(high_peaks) < 0.2:
+#             filtered_time_range = pd.to_datetime(high_peaks2.time)
+#             modelledtides = high_peaks2.quantile(
+#                 q=calculate_quantiles, dim="time"
+#             ).to_dataset()
+#         else:
+#             # Interpolate the lower hightide curve
+#             low_high_linear = interp(
+#                 np.arange(0, len(modelledtides_1d)),
+#                 high_peaks[lowhigh_peaks],
+#                 lowhigh_peaks2.values,
+#             )
 
-            # Extract all tides higher than/equal to the extrapolated
-            # lowest high tide line
-            hightide = modelledtides_1d.where(
-                modelledtides_1d >= low_high_linear, drop=True
-            )
+#             # Extract all tides higher than/equal to the extrapolated
+#             # lowest high tide line
+#             hightide = modelledtides_1d.where(
+#                 modelledtides_1d >= low_high_linear, drop=True
+#             )
 
-            # Save datetimes for calculation of combined filter exposure
-            filtered_time_range = pd.to_datetime(hightide.time)
-            modelledtides = hightide.quantile(
-                q=calculate_quantiles, dim="time"
-            ).to_dataset()
+        # Extract all tides higher than/equal to the mean height
+        # of all high tide peaks in the time series
+        hightide = modelledtides_1d.where(
+            modelledtides_1d >= high_peaks2.mean())
+        
+        # Save datetimes for calculation of combined filter exposure
+        filtered_time_range = pd.to_datetime(hightide.time)
+        modelledtides = hightide.quantile(
+            q=calculate_quantiles, dim="time"
+        ).to_dataset()
+        # Temp
+        return modelledtides.tide_m, filtered_time_range, high_peaks2
 
     if x == "low_tide":
         # Calculate all the low tide maxima
@@ -354,43 +388,48 @@ def spatial_filters(
         # Extract all lowtide peaks
         low_peaks2 = modelledtides_1d.isel(time=low_peaks)
 
-        # Identify all higher lowtide peaks
-        highlow_peaks = argrelmax(low_peaks2.values)[0]
+#         # Identify all higher lowtide peaks
+#         highlow_peaks = argrelmax(low_peaks2.values)[0]
 
-        # Extract all higher lowtide peaks
-        highlow_peaks2 = low_peaks2.isel(time=highlow_peaks)
+#         # Extract all higher lowtide peaks
+#         highlow_peaks2 = low_peaks2.isel(time=highlow_peaks)
 
-        # Test for diurnal tidal regimes on the assumption that
-        # semi-diurnal and mixed tidal settings should have
-        # approximately equal proportions of daytime and nighttime
-        # lowtide peaks
-        if len(highlow_peaks) / len(low_peaks) < 0.2:
-            filtered_time_range = pd.to_datetime(low_peaks2.time)
-            modelledtides = low_peaks2.quantile(
-                q=calculate_quantiles, dim="time"
-            ).to_dataset()
-        else:
-            # Interpolate the higher lowtide curve
-            high_low_linear = interp(
-                np.arange(0, len(modelledtides_1d)),
-                low_peaks[highlow_peaks],
-                highlow_peaks2.values,
-            )
+#         # Test for diurnal tidal regimes on the assumption that
+#         # semi-diurnal and mixed tidal settings should have
+#         # approximately equal proportions of daytime and nighttime
+#         # lowtide peaks
+#         if len(highlow_peaks) / len(low_peaks) < 0.2:
+#             filtered_time_range = pd.to_datetime(low_peaks2.time)
+#             modelledtides = low_peaks2.quantile(
+#                 q=calculate_quantiles, dim="time"
+#             ).to_dataset()
+#         else:
+#             # Interpolate the higher lowtide curve
+#             high_low_linear = interp(
+#                 np.arange(0, len(modelledtides_1d)),
+#                 low_peaks[highlow_peaks],
+#                 highlow_peaks2.values,
+#             )
 
-            # Extract all tides lower than/equal to the extrapolated
-            # higher lowtide line
-            lowtide = modelledtides_1d.where(
-                modelledtides_1d <= high_low_linear, drop=True
-            )
+#             # Extract all tides lower than/equal to the extrapolated
+#             # higher lowtide line
+#             lowtide = modelledtides_1d.where(
+#                 modelledtides_1d <= high_low_linear, drop=True
+#             )
+        # Extract all tides higher than/equal to the mean height
+        # of all high tide peaks in the time series
+        lowtide = modelledtides_1d.where(
+            modelledtides_1d <= low_peaks2.mean())
+        
+        # Save datetimes for calculation of combined filter exposure
+        filtered_time_range = pd.to_datetime(lowtide.time)
+        modelledtides = lowtide.quantile(
+            q=calculate_quantiles, dim="time"
+        ).to_dataset()
+        #Temp
+        return modelledtides.tide_m, filtered_time_range, low_peaks2
 
-            # Save datetimes for calculation of combined filter exposure
-            filtered_time_range = pd.to_datetime(lowtide.time)
-            modelledtides = lowtide.quantile(
-                q=calculate_quantiles, dim="time"
-            ).to_dataset()
-
-    # Return modelledtides
-    return modelledtides.tide_m, filtered_time_range
+    # return modelledtides.tide_m, filtered_time_range ##Temporary comment out 31/5/2024
 
 
 def exposure(
@@ -635,18 +674,21 @@ def exposure(
     if "unfiltered" in filters:
 
         # Convert to quantiles
-        modelledtides_lowres = modelledtides_lowres.quantile(
+        modelledtides_lowres_quantiles = modelledtides_lowres.quantile(
             q=calculate_quantiles, dim="time"
         ).astype(modelledtides_lowres.dtype)
 
         # Reproject into pixel resolution, after making sure CRS is present
         modelledtides_highres, _ = _pixel_tides_resample(
-            tides_lowres=modelledtides_lowres.odc.assign_crs(dem.odc.geobox.crs),
+            tides_lowres=modelledtides_lowres_quantiles.odc.assign_crs(dem.odc.geobox.crs),
             ds=dem,
         )
 
         # Add pixel resolution tides into to output dataset
         modelledtides_ds["unfiltered"] = modelledtides_highres
+        
+    ##Temp dict for storing spatial filter peaks
+    peaks = {}
 
     # Filter the input timerange to include only dates or tide ranges of
     # interest if filters is not None:
@@ -657,7 +699,7 @@ def exposure(
 
         elif x in sptl_filters:
             print(f"Filtering timesteps for {x}")
-            modelledtides_ds[x], timeranges[x] = spatial_filters(
+            modelledtides_ds[x], timeranges[x], peaks[x] = spatial_filters(
                 x=x,
                 modelled_freq=modelled_freq,
                 modelledtides_1d=modelledtides_1d,
@@ -705,4 +747,4 @@ def exposure(
         # Convert to percentage and add as variable in exposure dataset
         exposure_ds[str(x)] = idxmin * 100
 
-    return exposure_ds, modelledtides_ds#, timeranges#, modelledtides_1dmodelledtides_lowre
+    return exposure_ds, modelledtides_ds, modelledtides_1d,timeranges, peaks
