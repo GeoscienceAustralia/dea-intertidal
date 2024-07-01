@@ -70,57 +70,57 @@ def temporal_filters(x, time_range, dem):
     elif x == "summer":
         return time_range.drop(
             time_range[
-                (time_range.month = 3)
-                | (time_range.month = 4)
-                | (time_range.month = 5)
-                | (time_range.month = 6)
-                | (time_range.month = 7)
-                | (time_range.month = 8)
-                | (time_range.month = 9)
-                | (time_range.month = 10)
-                | (time_range.month = 11)
+                (time_range.month == 3)
+                | (time_range.month == 4)
+                | (time_range.month == 5)
+                | (time_range.month == 6)
+                | (time_range.month == 7)
+                | (time_range.month == 8)
+                | (time_range.month == 9)
+                | (time_range.month == 10)
+                | (time_range.month == 11)
             ]
         )
     elif x == "autumn":
         return time_range.drop(
             time_range[
-                (time_range.month = 1)
-                | (time_range.month = 2)
-                | (time_range.month = 6)
-                | (time_range.month = 7)
-                | (time_range.month = 8)
-                | (time_range.month = 9)
-                | (time_range.month = 10)
-                | (time_range.month = 11)
-                | (time_range.month = 12)
+                (time_range.month == 1)
+                | (time_range.month == 2)
+                | (time_range.month == 6)
+                | (time_range.month == 7)
+                | (time_range.month == 8)
+                | (time_range.month == 9)
+                | (time_range.month == 10)
+                | (time_range.month == 11)
+                | (time_range.month == 12)
             ]
         )
     elif x == "winter":
         return time_range.drop(
             time_range[
-                (time_range.month = 1)
-                | (time_range.month = 2)
-                | (time_range.month = 3)
-                | (time_range.month = 4)
-                | (time_range.month = 5)
-                | (time_range.month = 9)
-                | (time_range.month = 10)
-                | (time_range.month = 11)
-                | (time_range.month = 12)
+                (time_range.month == 1)
+                | (time_range.month == 2)
+                | (time_range.month == 3)
+                | (time_range.month == 4)
+                | (time_range.month == 5)
+                | (time_range.month == 9)
+                | (time_range.month == 10)
+                | (time_range.month == 11)
+                | (time_range.month == 12)
             ]
         )
     elif x == "spring":
         return time_range.drop(
             time_range[
-                (time_range.month = 1)
-                | (time_range.month = 2)
-                | (time_range.month = 3)
-                | (time_range.month = 4)
-                | (time_range.month = 5)
-                | (time_range.month = 6)
-                | (time_range.month = 7)
-                | (time_range.month = 8)
-                | (time_range.month = 12)
+                (time_range.month == 1)
+                | (time_range.month == 2)
+                | (time_range.month == 3)
+                | (time_range.month == 4)
+                | (time_range.month == 5)
+                | (time_range.month == 6)
+                | (time_range.month == 7)
+                | (time_range.month == 8)
+                | (time_range.month == 12)
             ]
         )
     elif x == "jan":
