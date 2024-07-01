@@ -68,13 +68,61 @@ def temporal_filters(x, time_range, dem):
             ]
         )
     elif x == "summer":
-        return time_range.drop(time_range[time_range.quarter != 1])
+        return time_range.drop(
+            time_range[
+                (time_range.month = 3)
+                | (time_range.month = 4)
+                | (time_range.month = 5)
+                | (time_range.month = 6)
+                | (time_range.month = 7)
+                | (time_range.month = 8)
+                | (time_range.month = 9)
+                | (time_range.month = 10)
+                | (time_range.month = 11)
+            ]
+        )
     elif x == "autumn":
-        return time_range.drop(time_range[time_range.quarter != 2])
+        return time_range.drop(
+            time_range[
+                (time_range.month = 1)
+                | (time_range.month = 2)
+                | (time_range.month = 6)
+                | (time_range.month = 7)
+                | (time_range.month = 8)
+                | (time_range.month = 9)
+                | (time_range.month = 10)
+                | (time_range.month = 11)
+                | (time_range.month = 12)
+            ]
+        )
     elif x == "winter":
-        return time_range.drop(time_range[time_range.quarter != 3])
+        return time_range.drop(
+            time_range[
+                (time_range.month = 1)
+                | (time_range.month = 2)
+                | (time_range.month = 3)
+                | (time_range.month = 4)
+                | (time_range.month = 5)
+                | (time_range.month = 9)
+                | (time_range.month = 10)
+                | (time_range.month = 11)
+                | (time_range.month = 12)
+            ]
+        )
     elif x == "spring":
-        return time_range.drop(time_range[time_range.quarter != 4])
+        return time_range.drop(
+            time_range[
+                (time_range.month = 1)
+                | (time_range.month = 2)
+                | (time_range.month = 3)
+                | (time_range.month = 4)
+                | (time_range.month = 5)
+                | (time_range.month = 6)
+                | (time_range.month = 7)
+                | (time_range.month = 8)
+                | (time_range.month = 12)
+            ]
+        )
     elif x == "jan":
         return time_range.drop(time_range[time_range.month != 1])
     elif x == "feb":
@@ -292,18 +340,20 @@ def spatial_filters(
             
             # Select modelled tide range to calculate exposure
             if x == 'neap_high':
-                neappeaks = modelledtides_1d.where(
-                    modelledtides_1d >= neappeaks.tide_m.mean()
+                neappeaks2 = modelledtides_1d.where(
+                    modelledtides_1d >= neappeaks.tide_m.mean(),
+                    drop=True
                 ).to_dataset()
             else:
-                neappeaks = modelledtides_1d.where(
-                    modelledtides_1d <= neappeaks.tide_m.mean()
+                neappeaks2 = modelledtides_1d.where(
+                    modelledtides_1d <= neappeaks.tide_m.mean(),
+                    drop=True
                 ).to_dataset()
             
-            filtered_time_range = pd.to_datetime(neappeaks.time)
+            filtered_time_range = pd.to_datetime(neappeaks2.time)
 
             # Extract the peak height dates
-            modelledtides = neappeaks.quantile(q=calculate_quantiles, dim="time")
+            modelledtides = neappeaks2.quantile(q=calculate_quantiles, dim="time")
             
             # Temp
             return modelledtides.tide_m, filtered_time_range, neappeaks.tide_m
@@ -316,19 +366,21 @@ def spatial_filters(
             
             # Select modelled tide range to calculate exposure
             if x == 'spring_high':
-                springpeaks = modelledtides_1d.where(
-                    modelledtides_1d >= springpeaks.tide_m.mean()
+                springpeaks2 = modelledtides_1d.where(
+                    modelledtides_1d >= springpeaks.tide_m.mean(),
+                    drop=True
                 ).to_dataset()
             else:
-                springpeaks = modelledtides_1d.where(
-                    modelledtides_1d <= springpeaks.tide_m.mean()
+                springpeaks2 = modelledtides_1d.where(
+                    modelledtides_1d <= springpeaks.tide_m.mean(),
+                    drop=True
                 ).to_dataset()
 
             # Save datetimes for calculation of combined filter exposure
-            filtered_time_range = pd.to_datetime(springpeaks.time)
+            filtered_time_range = pd.to_datetime(springpeaks2.time)
 
             # Extract the peak height dates
-            modelledtides = springpeaks.quantile(q=calculate_quantiles, dim="time")
+            modelledtides = springpeaks2.quantile(q=calculate_quantiles, dim="time")
             
             # Temp
             return modelledtides.tide_m, filtered_time_range, springpeaks.tide_m
@@ -371,7 +423,9 @@ def spatial_filters(
         # Extract all tides higher than/equal to the mean height
         # of all high tide peaks in the time series
         hightide = modelledtides_1d.where(
-            modelledtides_1d >= high_peaks2.mean())
+            modelledtides_1d >= high_peaks2.mean(),
+                    drop=True
+                )
         
         # Save datetimes for calculation of combined filter exposure
         filtered_time_range = pd.to_datetime(hightide.time)
@@ -419,7 +473,9 @@ def spatial_filters(
         # Extract all tides higher than/equal to the mean height
         # of all high tide peaks in the time series
         lowtide = modelledtides_1d.where(
-            modelledtides_1d <= low_peaks2.mean())
+            modelledtides_1d <= low_peaks2.mean(),
+                    drop=True
+                )
         
         # Save datetimes for calculation of combined filter exposure
         filtered_time_range = pd.to_datetime(lowtide.time)
