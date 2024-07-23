@@ -800,7 +800,14 @@ def exposure(
         # the exposure % per pixel
         idxmin = diff.idxmin(dim="quantile")
 
+        # Reorder dimensions
+        idxmin = idxmin.transpose('time','y','x')  
+        
         # Convert to percentage and add as variable in exposure dataset
         exposure_ds[str(x)] = idxmin * 100
-
+      
+        
     return exposure_ds, modelledtides_ds, modelledtides_1d,timeranges, peaks
+
+
+        
