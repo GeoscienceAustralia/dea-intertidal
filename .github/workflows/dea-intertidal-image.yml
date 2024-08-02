@@ -161,7 +161,7 @@ jobs:
           image_name: ${{ env.IMAGE_NAME }}
           image_tag: ${{ env.RELEASE }}
 
-      - name: Get git commit hash for push to develop
+      - name: Get git commit hash for unstable image name
         if: github.event_name != 'release'
         run: |
           echo "TAG=dev$(git rev-parse --short HEAD)" \
