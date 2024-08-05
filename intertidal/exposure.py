@@ -243,6 +243,7 @@ def exposure(
     filters_combined=None,
     run_id=None,
     log=None,
+    return_tide_modelling=False
 ):
     """
     Calculate intertidal exposure, indicating the proportion of time
@@ -338,6 +339,13 @@ def exposure(
         prefix log entries.
     log : logging.Logger, optional
         Logger object, by default None.
+    return_tide_modelling  :  Boolean
+        When `True`, returns the full epoch tide modelling, as well
+        as filtered tide model datetimes and heights for all filter
+        options. If true, ensure the function call is set to return
+        exposure_ds, modelledtides_ds, modelledtides_1d,timeranges.
+        If false, set the function call to return exposure_ds and
+        modelledtides_ds only. Default = False.
 
     Returns
     -------
@@ -351,7 +359,14 @@ def exposure(
         tide modelling for each filter. Outputs will have dimensions of
         either ['quantile', 'x', 'y'] for "unfiltered", or ['quantile']
         for all other filters.
-
+    modelledtides_1d  :  xarray.DataArray
+        The 'mean' high temporal resolution tide model for the area of 
+        interest. Returned when return_tide_modelling = True.
+    timeranges  :  dict
+        A dictionary of filtered DatetimeIndex's, corresponding to the
+        filtered dates of interest from modelledtides_1d. Returned
+        when return_tide_modelling = True.
+    
     Notes
     -----
     - The tide-height percentiles range from 0 to 100, divided into 101
@@ -461,13 +476,15 @@ def exposure(
         resample=False,
     )
 
-    # If custom filters are requested, calculate a 1D tide height time
-    # series
-    if (len(filters) >= 1) & (filters != ["unfiltered"]):
+    modelledtides_1d = modelledtides_lowres.mean(dim=["x", "y"])
+    
+#     # If custom filters are requested, calculate a 1D tide height time
+#     # series
+#     if (len(filters) >= 1) & (filters != ["unfiltered"]):
 
-        # Calculate tide height time series. To reduce compute, average
-        # across the y and x dimensions
-        modelledtides_1d = modelledtides_lowres.mean(dim=["x", "y"])
+#         # Calculate tide height time series. To reduce compute, average
+#         # across the y and x dimensions
+#         modelledtides_1d = modelledtides_lowres.mean(dim=["x", "y"])
 
     # Calculate quantiles and reproject low resolution tide data to
     # pixel resolution if any filter is "unfiltered"
@@ -496,15 +513,6 @@ def exposure(
         if x in temp_filters:
             print(f"Filtering timesteps for {x}")
             timeranges[x] = temporal_filters(x, time_range, dem)
-
-        elif x in sptl_filters:
-            print(f"Filtering timesteps for {x}")
-            modelledtides_ds[x], timeranges[x], peaks[x] = spatial_filters(
-                x=x,
-                modelled_freq=modelled_freq,
-                modelledtides_1d=modelledtides_1d,
-                calculate_quantiles=calculate_quantiles,
-            )
 
     # Intersect the filters of interest to extract the common datetimes for
     # calculation of combined filters
@@ -550,8 +558,9 @@ def exposure(
         # Convert to percentage and add as variable in exposure dataset
         exposure_ds[str(x)] = idxmin * 100
       
-        
-    return exposure_ds, modelledtides_ds, modelledtides_1d,timeranges, peaks
-
+    if return_tide_modelling:
+        return exposure_ds, modelledtides_ds, modelledtides_1d,timeranges
+    else:
+        return exposure_ds, modelledtides_ds
 
         
