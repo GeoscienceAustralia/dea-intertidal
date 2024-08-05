@@ -551,9 +551,12 @@ def exposure(
         # Take the percentile of the smallest tide-height difference as
         # the exposure % per pixel
         idxmin = diff.idxmin(dim="quantile")
-
+      
         # Reorder dimensions
-        idxmin = idxmin.transpose('time','y','x')  
+        if 'time' in list(idxmin.dims):
+            idxmin = idxmin.transpose('time','y','x')
+        else:
+            idxmin = idxmin.transpose('y','x') 
         
         # Convert to percentage and add as variable in exposure dataset
         exposure_ds[str(x)] = idxmin * 100
@@ -563,4 +566,3 @@ def exposure(
     else:
         return exposure_ds, modelledtides_ds
 
-        
