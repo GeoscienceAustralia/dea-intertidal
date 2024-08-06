@@ -1273,10 +1273,14 @@ def intertidal_cli(
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
             )
-
+            
+            # Write each exposure output as new variables in the main dataset
+            for x in exposure_filters.data_vars:
+                if x == 'unfiltered':
+                    ds[f"exposure"] = exposure_filters[x]
+                
             # Translate unfiltered exposure outputs to match continental
             # product suite
-            ds["exposure"] = exposure_filters["unfiltered"]
             tide_cq = tide_cq_dict["unfiltered"]
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
