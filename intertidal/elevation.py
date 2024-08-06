@@ -1264,22 +1264,24 @@ def intertidal_cli(
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
 
-            # Select times used for exposure modelling
-            all_times = pd.date_range(
-                start=round_date_strings(start_date, round_type="start"),
-                end=round_date_strings(end_date, round_type="end"),
-                freq=modelled_freq,
-            )
-
             # Calculate exposure
-            ds["exposure"], tide_cq = exposure(
+            exposure_filters, tide_cq_dict = exposure(
                 dem=ds.elevation,
-                times=all_times,
+                start_date=start_date,
+                end_date=end_date,
+                modelled_freq=modelled_freq,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
-                run_id=run_id,
-                log=log,
             )
+            
+            # Write each exposure output as new variables in the main dataset
+            for x in exposure_filters.data_vars:
+                if x == 'unfiltered':
+                    ds[f"exposure"] = exposure_filters[x]
+                
+            # Translate unfiltered exposure outputs to match continental
+            # product suite
+            tide_cq = tide_cq_dict["unfiltered"]
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(f"{run_id}: Calculating spread, offset and HAT/LAT/LOT/HOT layers")
