@@ -329,9 +329,8 @@ def exposure(
     filters_combined : list of two-object tuples, optional
         An optional list of paired customisation options from which to
         calculate exposure. Filters must be sourced from the list under
-        'filters' and include one temporal and one spatial filter -
-        defined in the `Notes` below. Example to calculate exposure
-        during daylight hours (temporal) in the wet season (spatial) is
+        'filters', defined in the `Notes` below. Example to calculate exposure
+        during daylight hours in the wet season is
         [('wet', 'daylight')]. Multiple tuple pairs are supported.
         Defaults to None.
     run_id : string, optional
@@ -379,8 +378,6 @@ def exposure(
     - temporal filters include any of: 'dry', 'wet', 'summer', 'autumn',
     'winter', 'spring', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul',
     'aug', 'sep', 'oct', 'nov', 'dec', 'daylight', 'night'
-    - spatial filters include any of: 'spring_high', 'spring_low',
-    'neap_high', 'neap_low', 'high_tide', 'low_tide'
 
     """
     # Set up logs if no log is passed in
@@ -402,8 +399,7 @@ def exposure(
         freq=modelled_freq,
     )
 
-    # Separate 'filters' into spatial and temporal categories to define
-    # which exposure workflow to use
+    # Define the temporal filters
     temp_filters = [
         "dry",
         "wet",
@@ -425,14 +421,6 @@ def exposure(
         "dec",
         "daylight",
         "night",
-    ]
-    sptl_filters = [
-        "spring_high",
-        "spring_low",
-        "neap_high",
-        "neap_low",
-        "high_tide",
-        "low_tide",
     ]
 
     # Create empty xarray.Datasets to store outputs into
@@ -460,7 +448,7 @@ def exposure(
                 filters.append(str(x[1]))
 
     # Return error for incorrect filter-names
-    all_filters = temp_filters + sptl_filters + ["unfiltered"]
+    all_filters = temp_filters + ["unfiltered"]
     for x in filters:
         assert (
             x in all_filters
@@ -504,9 +492,6 @@ def exposure(
         # Add pixel resolution tides into to output dataset
         modelledtides_ds["unfiltered"] = modelledtides_highres
         
-    ##Temp dict for storing spatial filter peaks
-    peaks = {}
-
     # Filter the input timerange to include only dates or tide ranges of
     # interest if filters is not None:
     for x in filters:
@@ -523,9 +508,7 @@ def exposure(
             timeranges[str(y + "_" + z)] = timeranges[y].intersection(timeranges[z])
 
     # Intersect datetimes of interest with the low-res tidal model
-    # Don't calculate exposure for spatial filters. This has already
-    # been calculated.
-    gen = (x for x in timeranges if x not in sptl_filters)
+    gen = (x for x in timeranges)
     for x in gen:
         # Extract filtered datetimes from the full tidal model
         modelledtides_x = modelledtides_1d.sel(time=timeranges[str(x)])
