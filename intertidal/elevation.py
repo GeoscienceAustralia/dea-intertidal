@@ -1279,7 +1279,7 @@ def intertidal_cli(
 
             # Translate unfiltered exposure outputs to match continental
             # product suite
-            tide_cq = tide_cq_dict["unfiltered"]
+            modelledtides_ds = modelledtides_ds["unfiltered"]
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(f"{run_id}: Calculating spread, offset and HAT/LAT/LOT/HOT layers")
@@ -1293,7 +1293,7 @@ def intertidal_cli(
                 ds["ta_offset_high"],
             ) = bias_offset(
                 tide_m=tide_m,
-                tide_cq=tide_cq,
+                tide_cq=modelledtides_ds,
                 lot_hot=True,
                 lat_hat=True,
             )
