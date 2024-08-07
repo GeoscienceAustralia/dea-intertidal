@@ -13,6 +13,7 @@ from dea_tools.coastal import _pixel_tides_resample
 from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.utils import configure_logging, round_date_strings
 
+
 def temporal_filters(x, time_range, dem):
     """
     Identify and extract temporal-specific dates and times to feed into
@@ -229,6 +230,7 @@ def temporal_filters(x, time_range, dem):
         if x == "night":
             return all_timerange_night
 
+
 def exposure(
     dem,
     start_date,
@@ -240,7 +242,7 @@ def exposure(
     filters_combined=None,
     run_id=None,
     log=None,
-    return_tide_modelling=False
+    return_tide_modelling=False,
 ):
     """
     Calculate intertidal exposure, indicating the proportion of time
@@ -252,7 +254,7 @@ def exposure(
 
     For an 'unfiltered', all of epoch-time, analysis, exposure is
     calculated per pixel. All other filter options calculate exposure
-    from high temporal resolution modelled tides that are averaged 
+    from high temporal resolution modelled tides that are averaged
     into a 1D timeseries across the nominated area of interest.
 
     This function firstly models high temporal resolution tides across
@@ -343,13 +345,13 @@ def exposure(
         either ['quantile', 'x', 'y'] for "unfiltered", or ['quantile']
         for all other filters.
     modelledtides_1d  :  xarray.DataArray
-        The 'mean' 1D high temporal resolution tide model for the area of 
+        The 'mean' 1D high temporal resolution tide model for the area of
         interest. Returned when return_tide_modelling = True.
     timeranges  :  dict
         A dictionary of filtered DatetimeIndex's, corresponding to the
         filtered dates of interest from modelledtides_1d. Returned
         when return_tide_modelling = True.
-    
+
     Notes
     -----
     - The tide-height percentiles range from 0 to 100, divided into 101
@@ -447,10 +449,10 @@ def exposure(
         ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
         resample=False,
     )
-    
+
     # Calculate a 1D tide height time series to use with filtered exposure calc's
     modelledtides_1d = modelledtides_lowres.mean(dim=["x", "y"])
-    
+
     # Calculate quantiles and reproject low resolution tide data to
     # pixel resolution if any filter is "unfiltered"
     if "unfiltered" in filters:
@@ -462,13 +464,15 @@ def exposure(
 
         # Reproject into pixel resolution, after making sure CRS is present
         modelledtides_highres, _ = _pixel_tides_resample(
-            tides_lowres=modelledtides_lowres_quantiles.odc.assign_crs(dem.odc.geobox.crs),
+            tides_lowres=modelledtides_lowres_quantiles.odc.assign_crs(
+                dem.odc.geobox.crs
+            ),
             ds=dem,
         )
 
         # Add pixel resolution tides into to output dataset
         modelledtides_ds["unfiltered"] = modelledtides_highres
-        
+
     # Filter the input timerange to include only dates or tide ranges of
     # interest if filters is not None:
     for x in filters:
@@ -509,18 +513,17 @@ def exposure(
         # Take the percentile of the smallest tide-height difference as
         # the exposure % per pixel
         idxmin = diff.idxmin(dim="quantile")
-      
+
         # Reorder dimensions
-        if 'time' in list(idxmin.dims):
-            idxmin = idxmin.transpose('time','y','x')
+        if "time" in list(idxmin.dims):
+            idxmin = idxmin.transpose("time", "y", "x")
         else:
-            idxmin = idxmin.transpose('y','x') 
-        
+            idxmin = idxmin.transpose("y", "x")
+
         # Convert to percentage and add as variable in exposure dataset
         exposure_ds[str(x)] = idxmin * 100
-      
+
     if return_tide_modelling:
-        return exposure_ds, modelledtides_ds, modelledtides_1d,timeranges
+        return exposure_ds, modelledtides_ds, modelledtides_1d, timeranges
     else:
         return exposure_ds, modelledtides_ds
-
