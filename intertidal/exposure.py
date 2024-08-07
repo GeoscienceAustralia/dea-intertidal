@@ -8,14 +8,9 @@ import geopandas as gpd
 import pandas as pd
 
 from math import ceil
-from datetime import timedelta
-from scipy.signal import argrelmax, argrelmin
-from numpy import interp
-
 from dea_tools.coastal import _pixel_tides_resample
 from intertidal.tide_modelling import pixel_tides_ensemble
 from intertidal.utils import configure_logging, round_date_strings
-
 
 def temporal_filters(x, time_range, dem):
     """
@@ -463,17 +458,10 @@ def exposure(
         ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
         resample=False,
     )
-
+    
+    # Calculate a 1D tide height time series to use with filtered exposure calc's
     modelledtides_1d = modelledtides_lowres.mean(dim=["x", "y"])
     
-#     # If custom filters are requested, calculate a 1D tide height time
-#     # series
-#     if (len(filters) >= 1) & (filters != ["unfiltered"]):
-
-#         # Calculate tide height time series. To reduce compute, average
-#         # across the y and x dimensions
-#         modelledtides_1d = modelledtides_lowres.mean(dim=["x", "y"])
-
     # Calculate quantiles and reproject low resolution tide data to
     # pixel resolution if any filter is "unfiltered"
     if "unfiltered" in filters:
