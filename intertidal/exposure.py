@@ -520,7 +520,7 @@ def exposure(
             .tide_m
         )
 
-        # Add modelledtides_x to output dict
+        # Add modelledtides_x to output dataset
         modelledtides_ds[str(x)] = modelledtides_x
 
     # Calculate exposure per filter
