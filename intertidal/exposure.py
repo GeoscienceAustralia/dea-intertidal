@@ -2,6 +2,7 @@ import sunriset
 import datetime
 import re
 import pytz
+
 import xarray as xr
 import numpy as np
 import geopandas as gpd
@@ -159,10 +160,10 @@ def temporal_filters(x, time_range, dem):
             pd.to_datetime(start).day,
         )
 
-        # Make 'all_timerange' time-zone aware
+        # Make 'timerange' time-zone aware
         localtides = time_range.tz_localize(tz=pytz.UTC)
 
-        # Replace the UTC datetimes from all_timerange with local times
+        # Replace the UTC datetimes from timerange with local times
         ModTides = pd.DataFrame(index=localtides)
 
         # Return the difference in years for the time-period.
@@ -171,6 +172,7 @@ def temporal_filters(x, time_range, dem):
         diff = pd.to_datetime(end) - pd.to_datetime(start)
         diff = int(ceil(diff.days / 365))
 
+        # Set to UTC time
         local_tz = 0
 
         # Model sunrise and sunset
@@ -178,7 +180,7 @@ def temporal_filters(x, time_range, dem):
             startdate, tidepost_lat_4326, tidepost_lon_4326, local_tz, diff
         )
 
-        # Set the index as a datetimeindex to match the modelledtide df
+        # Set the index as a datetimeindex to match the ModTides ds
         sun_df = sun_df.set_index(pd.DatetimeIndex(sun_df.index))
 
         # Append the date to each Sunrise and Sunset time
@@ -200,12 +202,12 @@ def temporal_filters(x, time_range, dem):
         # Create an xarray object from the merged day/night dataframe
         day_night = xr.Dataset.from_dataframe(DayNight)
 
-        # Remove local timezone timestamp column in modelledtides
+        # Remove local timezone timestamp column in ModTides
         # dataframe. Xarray doesn't handle timezone aware datetimeindexes
         # 'from_dataframe' very well.
         ModTides.index = ModTides.index.tz_localize(tz=None)
 
-        # Create an xr Dataset from the modelledtides pd.dataframe
+        # Create an xr Dataset from the ModTides pd.dataframe
         mt = ModTides.to_xarray()
 
         # Filter the modelledtides (mt) by the daytime, nighttime
@@ -280,19 +282,20 @@ def exposure(
         The tide model or a list of models used to model tides, as
         supported by the `pyTMD` Python package. Options include:
         - "FES2014" (default; pre-configured on DEA Sandbox)
+        - "FES2022"
         - "TPXO9-atlas-v5"
         - "TPXO8-atlas"
         - "EOT20"
         - "HAMTIDE11"
         - "GOT4.10"
-        - "ensemble" (experimental: combine all above into single ensemble)
+        - "ensemble" (combine above into single ensemble)
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
         directory structure, refer to `dea_tools.coastal.model_tides`.
     filters : list of strings, optional
         An optional list of customisation options to input into the tidal
-        modelling to calculate exposure. Filters include the following:
+        modelling to calculate exposure. Filters include:
         - 'unfiltered': calculates exposure for the full input time period,
         - 'dry': Southern Hemisphere dry season, defined as April to
           September
@@ -306,25 +309,11 @@ def exposure(
           sunset local time
         - 'night': all tide heights occurring between sunset and sunrise
           local time
-        - 'spring_high': high tide exposure during the fortnightly
-          spring tide cycle
-        - 'spring_low': low tide exposure during the fortnightly spring
-          tide cycle
-        - 'neap_high': high tide exposure during the fortnightly neap
-          tide cycle
-        - 'neap_low': low tide exposure during the fortnightly neap tide
-          cycle
-        - 'high_tide': all tide heights greater than or equal to the
-          local lowest high tide heights in high temporal resolution
-          tidal modelling
-        - 'low_tide': all tide heights lower than or equal to the local
-          highest low tide heights in high temporal resolution tidal
-          modelling
         Defaults to ['unfiltered'] if none supplied.
     filters_combined : list of two-object tuples, optional
         An optional list of paired customisation options from which to
         calculate exposure. Filters must be sourced from the list under
-        'filters', defined in the `Notes` below. Example to calculate exposure
+        'filters'. Example: to calculate exposure
         during daylight hours in the wet season is
         [('wet', 'daylight')]. Multiple tuple pairs are supported.
         Defaults to None.
@@ -354,7 +343,7 @@ def exposure(
         either ['quantile', 'x', 'y'] for "unfiltered", or ['quantile']
         for all other filters.
     modelledtides_1d  :  xarray.DataArray
-        The 'mean' high temporal resolution tide model for the area of 
+        The 'mean' 1D high temporal resolution tide model for the area of 
         interest. Returned when return_tide_modelling = True.
     timeranges  :  dict
         A dictionary of filtered DatetimeIndex's, corresponding to the
@@ -483,9 +472,8 @@ def exposure(
     # Filter the input timerange to include only dates or tide ranges of
     # interest if filters is not None:
     for x in filters:
-        if x in temp_filters:
-            print(f"Filtering timesteps for {x}")
-            timeranges[x] = temporal_filters(x, time_range, dem)
+        print(f"Filtering timesteps for {x}")
+        timeranges[x] = temporal_filters(x, time_range, dem)
 
     # Intersect the filters of interest to extract the common datetimes for
     # calculation of combined filters
@@ -496,8 +484,7 @@ def exposure(
             timeranges[str(y + "_" + z)] = timeranges[y].intersection(timeranges[z])
 
     # Intersect datetimes of interest with the 1D tidal model
-    gen = (x for x in timeranges)
-    for x in gen:
+    for x in timeranges:
         # Extract filtered datetimes from the full tidal model
         modelledtides_x = modelledtides_1d.sel(time=timeranges[str(x)])
 
