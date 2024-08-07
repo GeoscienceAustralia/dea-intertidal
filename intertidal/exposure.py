@@ -507,7 +507,7 @@ def exposure(
             z = x[1]
             timeranges[str(y + "_" + z)] = timeranges[y].intersection(timeranges[z])
 
-    # Intersect datetimes of interest with the low-res tidal model
+    # Intersect datetimes of interest with the 1D tidal model
     gen = (x for x in timeranges)
     for x in gen:
         # Extract filtered datetimes from the full tidal model
