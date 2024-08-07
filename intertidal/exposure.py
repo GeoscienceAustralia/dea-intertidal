@@ -256,7 +256,7 @@ def exposure(
     For an 'unfiltered', all of epoch-time, analysis, exposure is
     calculated per pixel. All other filter options calculate exposure
     from high temporal resolution modelled tides that are averaged 
-    across the nominated area of interest only.
+    into a 1D timeseries across the nominated area of interest.
 
     This function firstly models high temporal resolution tides across
     the area of interest. Filtered datetimes and associated tide heights
