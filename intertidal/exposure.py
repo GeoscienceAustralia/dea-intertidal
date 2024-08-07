@@ -476,8 +476,9 @@ def exposure(
     # Filter the input timerange to include only dates or tide ranges of
     # interest if filters is not None:
     for x in filters:
-        print(f"Filtering timesteps for {x}")
-        timeranges[x] = temporal_filters(x, time_range, dem)
+        if x in temp_filters:
+            print(f"Filtering timesteps for {x}")
+            timeranges[x] = temporal_filters(x, time_range, dem)
 
     # Intersect the filters of interest to extract the common datetimes for
     # calculation of combined filters
@@ -488,6 +489,7 @@ def exposure(
             timeranges[str(y + "_" + z)] = timeranges[y].intersection(timeranges[z])
 
     # Intersect datetimes of interest with the 1D tidal model
+
     for x in timeranges:
         # Extract filtered datetimes from the full tidal model
         modelledtides_x = modelledtides_1d.sel(time=timeranges[str(x)])
