@@ -1270,7 +1270,7 @@ def intertidal_cli(
         ds, tide_m = elevation(
             satellite_ds,
             valid_mask=topobathy_mask,
-            ocean_mask=ocean_mask,
+            # ocean_mask=ocean_mask,
             ndwi_thresh=ndwi_thresh,
             min_freq=min_freq,
             max_freq=max_freq,
