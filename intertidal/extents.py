@@ -1,25 +1,26 @@
-import numpy as np
-import geopandas as gpd
-import xarray as xr
-from skimage import graph
-
 import datacube
 import odc.geo.xr
+
+import xarray as xr
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+
+from skimage import graph
 from odc.geo.geobox import GeoBox
 from odc.geo.gridspec import GridSpec
 from odc.geo.types import xy_
 from odc.algo import mask_cleanup
-
-from dea_tools.spatial import xr_rasterize
-
-
 from odc.geo.xr import xr_zeros
-
-import pandas as pd
+from dea_tools.spatial import xr_rasterize
 from rasterio.features import sieve
+from intertidal.io import (
+    load_ocean_mask,
+    load_aclum_mask,
+    load_topobathy_mask,
+    extract_geobox,
+)
 
-from intertidal.io import load_ocean_mask, load_aclum_mask, load_topobathy_mask, extract_geobox
-# from intertidal.elevation import ocean_connection
 
 def _cost_distance(
     cost_surface, start_array, sampling=None, geometric=True, **mcp_kwargs
@@ -207,13 +208,12 @@ def load_connectivity_mask(
     if add_mangroves:
         print("Adding GMW mangroves to starting points")
         try:
-            gmw_da = load_gmw_mask(dem_da)        
-            starts_da = (dem_da == dem_da.nodata) | gmw_da     
+            gmw_da = load_gmw_mask(dem_da)
+            starts_da = (dem_da == dem_da.nodata) | gmw_da
         except:
             starts_da = dem_da == dem_da.nodata
     else:
         starts_da = dem_da == dem_da.nodata
-        
 
     # Calculate cost surface (negative values are not allowed, so
     # negative nodata values are resolved by clipping values to between
@@ -250,13 +250,8 @@ def load_gmw_mask(ds, gmw_path="/gdata1/data/mangroves/gmw_v3_2007_vec_aus.geojs
     gmw_da = xr_rasterize(gmw_gdf, ds)
     return gmw_da
 
-def extents(
-    dc,
-    ds,
-    buffer=20000,
-    min_correlation=0.15,
-    sieve_size=5):
-    
+
+def extents(dc, ds, buffer=20000, min_correlation=0.15, sieve_size=5):
     """
     Classify coastal ecosystems into broad classes based
     on their respective patterns of wetting frequency,
@@ -270,7 +265,7 @@ def extents(
     ds  :  xarray.Dataset
         An xarray.Dataset that must include xarray.DataArrays for
         at least 'elevation', 'qa_ndwi_freq' and 'qa_ndwi_corr'.
-        These arrays are generated as an output from the 
+        These arrays are generated as an output from the
         intertidal.elevation algorithm.
     buffer : int, optional
         The distance by which to buffer the ds GeoBox to reduce edge
@@ -291,9 +286,9 @@ def extents(
     --------
     extents: xarray.DataArray
         A categorical xarray.DataArray depicting the following pixel classes:
-        - Nodata (0), 
+        - Nodata (0),
         - Ocean and coastal water (1),
-        - Exposed intertidal (low confidence) (2), 
+        - Exposed intertidal (low confidence) (2),
         - Exposed intertidal (high confidence) (3),
         - Inland waters (4),
         - Land (5)
@@ -308,7 +303,7 @@ def extents(
     2  :  Exposed intertidal (low confidence)
         Pixels with water index and tidal correlations higher than 0.15.
         Pixels must be located within the costdist_mask connectivity mask
-        and not be included in the intertidal elevation (high confidence) 
+        and not be included in the intertidal elevation (high confidence)
         dataset
     3  :  Exposed intertidal (high confidence)
         Pixels that are included in the intertidal elevation dataset
@@ -318,7 +313,7 @@ def extents(
     5  :  Land
         Pixels that are wet in less than 50 % of observations
     """
-    
+
     # Identify dataset geobox
     geobox = ds.odc.geobox
 
@@ -328,10 +323,10 @@ def extents(
     bathy_mask = load_topobathy_mask(dc, geobox)
     costdist_mask, _ = load_connectivity_mask(dc, geobox, buffer=buffer)
 
-    # Identify any pixels that are nodata in both frequency and bathy mask 
+    # Identify any pixels that are nodata in both frequency and bathy mask
     # (this is a temporary hack due to us not having any other way of telling
     # ocean nodata pixels apart from inland nodata pixels
-    is_nan = (ds.qa_ndwi_freq.isnull()) & bathy_mask 
+    is_nan = (ds.qa_ndwi_freq.isnull()) & bathy_mask
 
     # Spilt pixels into those that were mostly wet vs mostly dry.
     # Identify subset of mostly wet pixels that were inland
@@ -349,13 +344,15 @@ def extents(
     # Identify likely misclassified urban pixels as those that overlap with
     # the urban mask
     urban_misclass = mostly_wet_inland & urban_mask
-    
+
     # Combine all classifications - this is done one-by-one, pasting each
     # new layer over the top of the existing data
     extents = xr_zeros(geobox=geobox, dtype="int16")  # start with 0
     extents.values[mostly_wet] = 1  # Add in mostly wet pixels
     extents.values[mostly_wet_inland] = 4  # Add in mostly wet inland pixels on top
-    extents.values[urban_misclass] = 5  # Set any pixels in the misclassified urban class to land
+    extents.values[urban_misclass] = (
+        5  # Set any pixels in the misclassified urban class to land
+    )
     extents.values[mostly_dry] = 5  # Add mostly dry on top
     extents.values[intertidal_lc] = 2  # Add low confidence intertidal on top
 
@@ -368,5 +365,5 @@ def extents(
 
     # Export to file
     extents.attrs["nodata"] = 0
-    
+
     return extents
