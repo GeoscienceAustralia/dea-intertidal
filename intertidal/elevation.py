@@ -32,10 +32,45 @@ from intertidal.utils import (
     round_date_strings,
 )
 from intertidal.tide_modelling import pixel_tides_ensemble
-from intertidal.extents import extents, ocean_connection
+from intertidal.extents import extents#, ocean_connection
 from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
 
+def ocean_connection(water, ocean_da, connectivity=2):
+    """
+    Identifies areas of water pixels that are adjacent to or directly
+    connected to intertidal pixels.
+
+    Parameters:
+    -----------
+    water : xarray.DataArray
+        An array containing True for water pixels.
+    ocean_da : xarray.DataArray
+        An array containing True for ocean pixels.
+    connectivity : integer, optional
+        An integer passed to the 'connectivity' parameter of the
+        `skimage.measure.label` function.
+
+    Returns:
+    --------
+    ocean_connection : xarray.DataArray
+        An array containing the a mask consisting of identified
+        ocean-connected pixels as True.
+    """
+
+    # First, break `water` array into unique, discrete
+    # regions/blobs.
+    blobs = xr.apply_ufunc(label, water, 0, False, connectivity)
+
+    # For each unique region/blob, use region properties to determine
+    # whether it overlaps with a feature from `intertidal`. If
+    # it does, then it is considered to be adjacent or directly connected
+    # to intertidal pixels
+    ocean_connection = blobs.isin(
+        [i.label for i in regionprops(blobs.values, ocean_da.values) if i.max_intensity]
+    )
+
+    return ocean_connection
 
 def ds_to_flat(
     satellite_ds,
@@ -1235,7 +1270,7 @@ def intertidal_cli(
         ds, tide_m = elevation(
             satellite_ds,
             valid_mask=topobathy_mask,
-            ocean_mask=ocean_mask,
+            # ocean_mask=ocean_mask,
             ndwi_thresh=ndwi_thresh,
             min_freq=min_freq,
             max_freq=max_freq,
@@ -1249,17 +1284,12 @@ def intertidal_cli(
             log=log,
         )
 
-        # # Calculate extents (to be included in next version)
-        # log.info(f"{run_id}: Calculating Intertidal Extents")
-        # ds["extents"] = extents(
-        #     dem=ds.elevation,
-        #     freq=ds.qa_ndwi_freq,
-        #     corr=ds.qa_ndwi_corr,
-        #     reclassified_aclum=reclassified_aclum,
-        #     min_freq=min_freq,
-        #     max_freq=max_freq,
-        #     min_correlation=min_correlation,
-        # )
+        # Calculate extents (to be included in next version)
+        log.info(f"{run_id}: Calculating Intertidal Extents")
+        ds["extents"] = extents(
+            dc=dc,
+            ds=ds
+        )
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")

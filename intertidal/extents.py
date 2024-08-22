@@ -1,348 +1,369 @@
-import xarray as xr
-
-from skimage.measure import label, regionprops
-from skimage.morphology import binary_erosion, disk
-
-from odc.algo import mask_cleanup
+import datacube
 import odc.geo.xr
 
+import xarray as xr
+import numpy as np
+import pandas as pd
+import geopandas as gpd
 
-def intertidal_connection(water_intertidal, intertidal, connectivity=1):
+from skimage import graph
+from odc.geo.geobox import GeoBox
+from odc.geo.gridspec import GridSpec
+from odc.geo.types import xy_
+from odc.algo import mask_cleanup
+from odc.geo.xr import xr_zeros
+from dea_tools.spatial import xr_rasterize
+from rasterio.features import sieve
+from intertidal.io import (
+    load_ocean_mask,
+    load_aclum_mask,
+    load_topobathy_mask,
+    extract_geobox,
+)
+
+
+def _cost_distance(
+    cost_surface, start_array, sampling=None, geometric=True, **mcp_kwargs
+):
+    """
+    Calculate accumulated least-cost distance through a cost surface
+    array from a set of starting cells to every other cell in an array,
+    using methods from `skimage.graph.MCP` or `skimage.graph.MCP_Geometric`.
+
+    Parameters
+    ----------
+    cost_surface : ndarray
+        A 2D array representing the cost surface.
+    start_array : ndarray
+        A 2D array with the same shape as `cost_surface` where non-zero
+        values indicate start points.
+    sampling : tuple, optional
+        For each dimension, specifies the distance between two cells.
+        If not given or None, unit distance is assumed.
+    geometric : bool, optional
+        If True, `skimage.graph.MCP_Geometric` will be used to calculate
+        costs, accounting for the fact that diagonal vs. axial moves
+        are of different lengths and weighting path costs accordingly.
+        If False, costs will be calculated simply as the sum of the
+        values of the costs array along the minimum cost path.
+    **mcp_kwargs :
+        Any additional keyword arguments to pass to `skimage.graph.MCP`
+        or `skimage.graph.MCP_Geometric`.
+
+    Returns
+    -------
+    lcd : ndarray
+        A 2D array of the least-cost distances from the start cell to all other cells.
     """
 
-    Identifies areas of water pixels that are adjacent to or directly
-    connected to intertidal pixels.
+    # Initialise relevant least cost graph
+    if geometric:
+        lc_graph = graph.MCP_Geometric(
+            costs=cost_surface,
+            sampling=sampling,
+            **mcp_kwargs,
+        )
+    else:
+        lc_graph = graph.MCP(
+            costs=cost_surface,
+            sampling=sampling,
+            **mcp_kwargs,
+        )
 
-    Parameters:
-    -----------
-    water_intertidal : xarray.DataArray
-        An array containing True for pixels that are either water or
-        intertidal pixels.
-    intertidal : xarray.DataArray
-        An array containing True for intertidal pixels.
-    connectivity : integer, optional
-        An integer passed to the 'connectivity' parameter of the
-        `skimage.measure.label` function.
+    # Extract starting points from the array (pixels with non-zero values)
+    starts = list(zip(*np.nonzero(start_array)))
 
-    Returns:
-    --------
-    intertidal_connection : xarray.DataArray
-        An array containing the a mask consisting of identified
-        intertidally-connected pixels as True.
+    # Calculate the least-cost distance from the start cell to all other cells
+    lcd = lc_graph.find_costs(starts=starts)[0]
+
+    return lcd
+
+
+def xr_cost_distance(cost_da, starts_da, use_cellsize=False, geometric=True):
+    """
+    Calculate accumulated least-cost distance through a cost surface
+    array from a set of starting cells to every other cell in an
+    xarray.DataArray, returning results as an xarray.DataArray.
+
+    Parameters
+    ----------
+    cost_da : xarray.DataArray
+        An xarray.DataArray representing the cost surface, where pixel
+        values represent the cost of moving through each pixel.
+    starts_da : xarray.DataArray
+        An xarray.DataArray with the same shape as `cost_da` where non-
+        zero values indicate start points for the distance calculation.
+    use_cellsize : bool, optional
+        Whether to incorporate cell size when calculating the distance
+        between two cells, based on the spatial resolution of the array.
+        Default is False, which will assume distances between cells will
+        be based on cost values only.
+    geometric : bool, optional
+        If True, `skimage.graph.MCP_Geometric` will be used to calculate
+        costs, accounting for the fact that diagonal vs. axial moves
+        are of different lengths and weighting path costs accordingly.
+        If False, costs will be calculated simply as the sum of the
+        values of the costs array along the minimum cost path.
+
+    Returns
+    -------
+    costdist_da : xarray.DataArray
+        An xarray.DataArray providing least-cost distances between every
+        cell and the nearest start cell.
     """
 
-    # First, break `water_intertidal` array into unique, discrete
-    # regions/blobs.
-    blobs = xr.apply_ufunc(label, water_intertidal, 0, False, connectivity)
+    # Use resolution from input arrays if requested
+    if use_cellsize:
+        x, y = cost_da.odc.geobox.resolution.xy
+        cellsize = (abs(y), abs(x))
+    else:
+        cellsize = None
 
-    # For each unique region/blob, use region properties to determine
-    # whether it overlaps with a feature from `intertidal`. If
-    # it does, then it is considered to be adjacent or directly connected
-    # to intertidal pixels
-    intertidal_connection = blobs.isin(
-        [
-            i.label
-            for i in regionprops(blobs.values, intertidal.values)
-            if i.max_intensity
-        ]
+    # Compute least cost array
+    costdist_array = _cost_distance(
+        cost_da, starts_da.values, sampling=cellsize, geometric=geometric
     )
 
-    return intertidal_connection
+    # Wrap as xarray
+    costdist_da = xr.DataArray(costdist_array, coords=cost_da.coords)
+
+    return costdist_da
 
 
-def extents(
-    dem,
-    freq,
-    corr,
-    reclassified_aclum,
-    min_freq=0.01,
-    max_freq=0.99,
-    min_correlation=0.15,
+def load_connectivity_mask(
+    dc,
+    geobox,
+    product="ga_srtm_dem1sv1_0",
+    elevation_band="dem_h",
+    resampling="bilinear",
+    buffer=20000,
+    max_threshold=100,
+    add_mangroves=False,
+    mask_filters=[("dilation", 3)],
+    **cost_distance_kwargs,
 ):
+    """
+    Generates a mask based on connectivity to ocean pixels, using least-
+    cost distance weighted by elevation. By incorporating elevation,
+    this mask will extend inland further in areas of low lying elevation
+    and less far inland in areas of steep terrain.
+
+    Parameters
+    ----------
+    dc : Datacube
+        A Datacube instance for loading data.
+    geobox : ndarray
+        The GeoBox defining the pixel grid to load data into (e.g.
+        resolution, extents, CRS).
+    product : str, optional
+        The name of the DEM product to load from the datacube.
+        Defaults to "ga_srtm_dem1sv1_0".
+    elevation_band : str, optional
+        The name of the band containing elevation data. Defaults to
+        "height_depth".
+    resampling : str, optional
+        The resampling method to use, by default "bilinear".
+    buffer : int, optional
+        The distance by which to buffer the input GeoBox to reduce edge
+        effects. This buffer will eventually be removed and clipped back
+        to the original GeoBox extent. Defaults to 20,000 metres.
+    max_threshold: int, optional
+        Value used to threshold the resulting cost distance to produce
+        a mask.
+    mask_filters : list of tuples, optional
+        An optional list of morphological processing steps to pass to
+        the `mask_cleanup` function. The default is `[("dilation", 3)]`,
+        which will dilate True pixels by a radius of 3 pixels.
+    **cost_distance_kwargs :
+        Optional keyword arguments to pass to the ``xr_cost_distance``
+        cost-distance function.
+
+    Returns
+    -------
+    costdist_mask : xarray.DataArray
+        An output boolean mask, where True represent pixels located in
+        close cost-distance proximity to the ocean.
+    costdist_da : xarray.DataArray
+        The output cost-distance array, reflecting distance from the
+        ocean weighted by elevation.
+    """
+
+    # Buffer input geobox and reduce resolution to ensure that the
+    # connectivity analysis is less affected by edge effects
+    geobox_buffered = GeoBox.from_bbox(
+        geobox.buffered(xbuff=buffer, ybuff=buffer).boundingbox,
+        resolution=30,
+        tight=True,
+    )
+
+    # Load DEM data
+    dem_da = dc.load(
+        product="ga_srtm_dem1sv1_0",
+        measurements=[elevation_band],
+        resampling="bilinear",
+        like=geobox_buffered,
+    ).squeeze()[elevation_band]
+
+    # Identify starting points (ocean nodata points)
+    if add_mangroves:
+        print("Adding GMW mangroves to starting points")
+        try:
+            gmw_da = load_gmw_mask(dem_da)
+            starts_da = (dem_da == dem_da.nodata) | gmw_da
+        except:
+            starts_da = dem_da == dem_da.nodata
+    else:
+        starts_da = dem_da == dem_da.nodata
+
+    # Calculate cost surface (negative values are not allowed, so
+    # negative nodata values are resolved by clipping values to between
+    # 0 and infinity)
+    costs_da = dem_da.clip(0, np.inf)
+
+    # Run cost distance surface
+    costdist_da = xr_cost_distance(
+        cost_da=costs_da,
+        starts_da=starts_da,
+        **cost_distance_kwargs,
+    )
+
+    # Reproject back to original geobox extents and resolution
+    costdist_da = costdist_da.odc.reproject(how=geobox)
+
+    # Apply threshold
+    costdist_mask = costdist_da < max_threshold
+
+    # If requested, apply cleanup
+    if mask_filters is not None:
+        costdist_mask = mask_cleanup(costdist_mask, mask_filters=mask_filters)
+
+    return costdist_mask, costdist_da
+
+
+def load_gmw_mask(ds, gmw_path="/gdata1/data/mangroves/gmw_v3_2007_vec_aus.geojson"):
+    """
+    Experiment with loading GMW data.
+    """
+    gmw_gdf = gpd.read_file(
+        gmw_path, bbox=ds.odc.geobox.boundingbox.to_crs("EPSG:4326")
+    )
+    gmw_da = xr_rasterize(gmw_gdf, ds)
+    return gmw_da
+
+
+def extents(dc, ds, buffer=20000, min_correlation=0.15, sieve_size=5):
     """
     Classify coastal ecosystems into broad classes based
     on their respective patterns of wetting frequency,
-    proximity to intertidal pixels and relationship to tidal
-    inundation and urban land use (to mask misclassifications).
+    proximity to the ocean, and relationships to tidal
+    inundation, elevation and urban land use (to mask misclassifications).
 
     Parameters:
     -----------
-    dem : xarray.DataArray
-        An xarray.DataArray of the final intertidal DEM, generated
-        during the intertidal.elevation workflow
-    freq : xarray.DataArray
-        An xarray.DataArray of the NDWI frequency layer summarising the
-        frequency of wetness per pixel for any given time-series,
-        generated during the intertidal.elevation workflow
-    corr : xarray.DataArray
-        An xarray.DataArray of the correlation between pixel NDWI values
-        and tide height, generated during the intertidal.elevation workflow
-    reclassified_aclum : str
-        An xarray.DataArray containing reclassified land use data, used
-        to mask out urban areas misclassified as water.
+    dc : Datacube
+        A Datacube instance for loading data.
+    ds  :  xarray.Dataset
+        An xarray.Dataset that must include xarray.DataArrays for
+        at least 'elevation', 'qa_ndwi_freq' and 'qa_ndwi_corr'.
+        These arrays are generated as an output from the
+        intertidal.elevation algorithm.
+    buffer : int, optional
+        The distance by which to buffer the ds GeoBox to reduce edge
+        effects. This buffer will eventually be removed and clipped back
+        to the original GeoBox extent. Defaults to 20,000 metres.
+    min_correlation  :  int, optional
+        Minimum correlation between water index and tide height
+        required for a pixel to be included in the intertidal pixel
+        analysis, 0.15 by default, aligning with the default value
+        used in the intertidal.elevation algorithm.
+    sieve_size  :  int, optional
+        Maximum number of grouped pixels belonging to any single
+        class that are sieved out to remove small noisy dataset
+        features. Class values are replaced with the dominant
+        neighbouring class.
 
     Returns:
     --------
     extents: xarray.DataArray
-        A binary xarray.DataArray depicting dry (0), inland intermittent wet (1),
-        inland persistent wet (2), tidal influenced persistent wet (3),
-        intertidal (low confidence, 4) and intertidal (high confidence, 5) coastal extents.
+        A categorical xarray.DataArray depicting the following pixel classes:
+        - Nodata (0),
+        - Ocean and coastal water (1),
+        - Exposed intertidal (low confidence) (2),
+        - Exposed intertidal (high confidence) (3),
+        - Inland waters (4),
+        - Land (5)
 
     Notes:
     ------
     Classes are defined as follows:
 
-    0: Dry
-        - Pixels with wetness `freq` < 0.01
-        Includes pixels that meet the following criteria:
-        - Intermittently wet pixels with wetness frequency > 0.01 and < 0.99 and
-        - Un-correclated to tide (p>0.15) and either of the following:
-        - Connected to the intertidal class and has wetness frequency less than 0.1 or
-        - Unconnected to the intertidal class and intersects with urban use land class
-    1: Inland intermittent wet
-        - Pixels with wetness frequency > 0.01 and < 0.99 and
-        - Un-correclated to tide (p>0.15) and
-        - Unconnected to the intertidal class and
-        - Does not intersect with urban use land class
-    2: Inland persistent wet
-        - Pixels with wettness 'freq' > 0.99 and
-        - Unconnected to the intertidal class
-    3: Tidal influenced persistent wet
-        - Pixels with wettness 'freq' > 0.99 and
-        - Connected to the intertidal class
-        Includes pixels that meet the following criteria:
-        - Intermittently wet pixels with wetness frequency > 0.01 and < 0.99 and
-        - Un-correclated to tide (p>0.15) and
-        - Connected to the intertidal class and
-        - Wetness frequency >= 0.1
-    4: Intertidal low confidence
-        - Frequency of pixel wetness (`freq`) is > 0.01 and < 0.99 and
-        - The correlation (`corr`) between `freq` and tide-heights is > 0.15 and
-        - Pixels do not have a valid elevation value (meaning their rolling NDWI median
-          does not cross zero. However, these are still likely to be intertidal pixels
-          as their rolling median curves likely fall completely above or below NDWI=0)
-    5: Intertidal high confidence
-        - Frequency of pixel wetness (`freq`) is > 0.01 and < 0.99 and
-        - The correlation (`corr`) between `freq` and tide-heights is > 0.15 and
-        - pixels have a valid elevation value (meaning their rolling NDWI median
-          crosses zero)
-
+    0  :  Nodata
+    1  :  Ocean and coastal water
+        Pixels that are wet in 50 % or more observations
+    2  :  Exposed intertidal (low confidence)
+        Pixels with water index and tidal correlations higher than 0.15.
+        Pixels must be located within the costdist_mask connectivity mask
+        and not be included in the intertidal elevation (high confidence)
+        dataset
+    3  :  Exposed intertidal (high confidence)
+        Pixels that are included in the intertidal elevation dataset
+    4  :  Inland waters
+        Pixels that are wet in more than 50 % of observations and fall
+        outside of the costdist_mask connectivity mask.
+    5  :  Land
+        Pixels that are wet in less than 50 % of observations
     """
 
-    """--------------------------------------------------------------------"""
-    ## Set the upper and lower freq thresholds
-    upper, lower = max_freq, min_freq
+    # Identify dataset geobox
+    geobox = ds.odc.geobox
 
-    # Set NaN values (i.e. pixels masked out over deep water) in frequency to 1
-    freq = freq.fillna(1)
+    # Load other inputs
+    ocean_mask = load_ocean_mask(dc, geobox)
+    urban_mask = load_aclum_mask(dc, geobox)
+    bathy_mask = load_topobathy_mask(dc, geobox)
+    costdist_mask, _ = load_connectivity_mask(dc, geobox, buffer=buffer)
 
-    ## Identify broad classes based on wetness frequency and tidal correlation
-    dry = freq < lower
-    intermittent = (freq >= lower) & (freq <= upper)
-    wet = freq > upper
+    # Identify any pixels that are nodata in both frequency and bathy mask
+    # (this is a temporary hack due to us not having any other way of telling
+    # ocean nodata pixels apart from inland nodata pixels
+    is_nan = (ds.qa_ndwi_freq.isnull()) & bathy_mask
 
-    ##### Separate intermittent_tidal (intertidal)
-    intertidal = intermittent & (corr >= min_correlation)
+    # Spilt pixels into those that were mostly wet vs mostly dry.
+    # Identify subset of mostly wet pixels that were inland
+    mostly_dry = (ds.qa_ndwi_freq < 50) & ~is_nan
+    mostly_wet = (ds.qa_ndwi_freq >= 50) & ~is_nan
+    mostly_wet_inland = mostly_wet & ~costdist_mask
 
-    ##### Separate intermittent_nontidal
-    intermittent_nontidal = intermittent & (corr < min_correlation)
+    # Identify low-confidence pixels as those with greater than 0.15
+    # correlation. Use connectivity mask to mask out any that are "inland"
+    intertidal_lc = (ds.qa_ndwi_corr >= min_correlation) & costdist_mask
 
-    ##### Separate high and low confidence intertidal pixels
-    intertidal_hc = intertidal & dem.notnull()
-    intertidal_lc = intertidal & dem.isnull()
+    # Identify high confidence intertidal as those in our elevation data
+    intertidal_hc = ds.elevation.notnull()
 
-    """--------------------------------------------------------------------"""
-    # Clean up the urban land masking class by removing high confidence intertidal areas
-    reclassified_aclum = reclassified_aclum & ~intertidal_hc
+    # Identify likely misclassified urban pixels as those that overlap with
+    # the urban mask
+    urban_misclass = mostly_wet_inland & urban_mask
 
-    # Erode the intensive urban land use class to remove extents-class overlaps from
-    # the native 50m CLUM pixel resolution dataset
-    reclassified_aclum = mask_cleanup(
-        mask=reclassified_aclum, mask_filters=[("erosion", 5)]
+    # Combine all classifications - this is done one-by-one, pasting each
+    # new layer over the top of the existing data
+    extents = xr_zeros(geobox=geobox, dtype="int16")  # start with 0
+    extents.values[mostly_wet] = 1  # Add in mostly wet pixels
+    extents.values[mostly_wet_inland] = 4  # Add in mostly wet inland pixels on top
+    extents.values[urban_misclass] = (
+        5  # Set any pixels in the misclassified urban class to land
     )
+    extents.values[mostly_dry] = 5  # Add mostly dry on top
+    extents.values[intertidal_lc] = 2  # Add low confidence intertidal on top
 
-    ##### Classify 'wet' pixels based on connectivity to intertidal pixels (into 'wet_ocean' and 'wet_inland')
+    # Sieve out small noisy features. This is applied to everything but the
+    # high confidence intertidal class, to keep a 1:1 match with elevation
+    extents.values[:] = sieve(extents.values, size=sieve_size)
 
-    # Create a true/false layer of intertidal pixels (1) vs everything else (0)
-    # Extract intertidal pixels (value 1) then erode these by 1 pixels to ensure we only
-    # use high certainty intertidal regions for identifying connectivity to wet
-    # pixels in our satellite imagery.
-    inter = intertidal_hc | intertidal_lc
+    # Add high confidence intertidal on top
+    extents.values[intertidal_hc] = 3
 
-    # Erode outer edge pixels by 1 pixel to drop extrema intertidal pixels and ensure connection
-    # to high certainty intertidal pixels
-    inter = xr.apply_ufunc(binary_erosion, inter, disk(1))
-
-    # Applying intertidal_connection masking function for the first of two times
-    # This first mask identifies where wet+intertidal (e.g. not dry) pixels
-    # connect to intertidal pixels
-    intertidal_mask1 = intertidal_connection(~dry, inter, connectivity=1)
-
-    # Applying intertidal_connection masking function for the second time,
-    # testing for wet pixel connection to the connected 'wet and intertidal' mask.
-    intertidal_mask2 = intertidal_connection(wet, intertidal_mask1, connectivity=1)
-
-    # Mask out areas identified as 'intensive urban use' in ABARES CLUM dataset
-    intertidal_mask2 = intertidal_mask2 & ~reclassified_aclum
-
-    # Distinguish wet inland class from wet ocean class
-    wet_inland = wet & ~intertidal_mask2
-    wet_ocean = wet & intertidal_mask2
-
-    """--------------------------------------------------------------------"""
-    ## Classify 'intermittently wet' pixels into 'intermittently_wet_inland' and 'other-intertidal_fringe'
-
-    ## Applying intertidal_connection masking function to separate inland from intertidal connected pixels
-    intertidal_mask = intertidal_connection(
-        intermittent_nontidal, intertidal_mask1, connectivity=1
-    )
-
-    # Mask out areas identified as 'intensive urban use' in ABARES CLUM dataset
-    intertidal_mask = intertidal_mask & ~reclassified_aclum
-
-    # Distinguish intermittent inland from intermittent-other (intertidal_fringe) pixels
-    intermittent_inland = intermittent_nontidal & ~intertidal_mask
-    intertidal_fringe = intermittent_nontidal & intertidal_mask
-
-    # Isolate mostly dry pixels from intertidal_fringe class
-    mostly_dry = intertidal_fringe & (freq < 0.1)
-    # Isolate mostly wet pixels from intertidal fringe class
-    mostly_wet = intertidal_fringe & (freq >= 0.1)
-
-    # Separate misclassified urban pixels into 'dry' class
-    urban_dry = reclassified_aclum & intermittent_inland
-    urban_dry1 = reclassified_aclum & intertidal_hc
-    urban_dry2 = reclassified_aclum & intertidal_lc
-
-    # Identify true classified classes
-    intermittent_inland = intermittent_inland & ~urban_dry
-    intertidal_hc = intertidal_hc & ~urban_dry1
-    intertidal_lc = intertidal_lc & ~urban_dry2
-
-    """--------------------------------------------------------------------"""
-    # Combine wet_ocean and intertidal_fringe pixels
-    wet_ocean = wet_ocean | mostly_wet
-
-    # Combine urban_dry classes
-    urban_dry = urban_dry1 | urban_dry2
-
-    # Relabel pixels
-    dry = (dry * 0).where(dry)
-    wet_ocean = (wet_ocean * 3).where(wet_ocean)
-    wet_inland = (wet_inland * 2).where(wet_inland)
-    intermittent_inland = (intermittent_inland * 1).where(intermittent_inland)
-    intertidal_hc = (intertidal_hc * 5).where(intertidal_hc)
-    intertidal_lc = (intertidal_lc * 4).where(intertidal_lc)
-    mostly_dry = (mostly_dry * 0).where(mostly_dry)
-    urban_dry = (urban_dry * 0).where(urban_dry)
-
-    # Combine
-    extents = dry.combine_first(wet_ocean)
-    extents = extents.combine_first(wet_inland)
-    extents = extents.combine_first(intertidal_hc)
-    extents = extents.combine_first(intermittent_inland)
-    extents = extents.combine_first(intertidal_lc)
-    extents = extents.combine_first(mostly_dry)
-    extents = extents.combine_first(0)
+    # Export to file
+    extents.attrs["nodata"] = 0
 
     return extents
-
-
-def ocean_connection(water, ocean_da, connectivity=2):
-    """
-    Identifies areas of water pixels that are adjacent to or directly
-    connected to intertidal pixels.
-
-    Parameters:
-    -----------
-    water : xarray.DataArray
-        An array containing True for water pixels.
-    ocean_da : xarray.DataArray
-        An array containing True for ocean pixels.
-    connectivity : integer, optional
-        An integer passed to the 'connectivity' parameter of the
-        `skimage.measure.label` function.
-
-    Returns:
-    --------
-    ocean_connection : xarray.DataArray
-        An array containing the a mask consisting of identified
-        ocean-connected pixels as True.
-    """
-
-    # First, break `water` array into unique, discrete
-    # regions/blobs.
-    blobs = xr.apply_ufunc(label, water, 0, False, connectivity)
-
-    # For each unique region/blob, use region properties to determine
-    # whether it overlaps with a feature from `intertidal`. If
-    # it does, then it is considered to be adjacent or directly connected
-    # to intertidal pixels
-    ocean_connection = blobs.isin(
-        [i.label for i in regionprops(blobs.values, ocean_da.values) if i.max_intensity]
-    )
-
-    return ocean_connection
-
-
-
-# from rasterio.features import sieve
-
-
-# def extents_ocean_masking(
-#     dem,
-#     freq,
-#     corr,
-#     ocean_mask,
-#     urban_mask,
-#     min_freq=0.01,
-#     max_freq=0.99,
-#     mostly_dry_freq=0.5,
-#     min_correlation=0.15,
-# ):
-#     """
-#     Experimental ocean masking extents code
-#     """
-#     # Set NaN values (i.e. pixels masked out over deep water) in frequency to 1
-#     freq = freq.fillna(1)
-
-#     # Identify broad classes based on wetness frequency
-#     intermittent = (freq >= min_freq) & (freq <= max_freq)  # wet and dynamic
-#     wet_all = freq >= min_freq  # all occasionally wet pixels incl. intertidal
-#     mostly_dry = freq < mostly_dry_freq  # dry for majority of the timeseries
-
-#     # Classify 'wet_all' pixels into 'wet_ocean' and 'wet_inland' based
-#     # on connectivity to ocean pixels, and mask out `wet_inland` pixels
-#     # identified as intensive urban use
-#     wet_ocean = ocean_connection(wet_all, (ocean_mask | (corr >= 0.5)))
-#     wet_inland = wet_all & ~wet_ocean & ~urban_mask
-
-#     # Distinguish mostly dry intermittent inland from other wet inland
-#     wet_inland_intermittent = wet_inland & mostly_dry
-
-#     # Separate all intertidal from high confidence intertidal pixels
-#     intertidal = intermittent & (corr >= min_correlation)
-#     intertidal_hc = dem.notnull() & wet_ocean
-
-#     # Identify intertidal fringe pixels (e.g. non-tidally correlated
-#     # ocean pixels that appear in close proximity to the intertidal zone
-#     # that are dry for at least half the timeseries.
-#     intertidal_dilated = mask_cleanup(mask=intertidal, mask_filters=[("dilation", 3)])
-#     intertidal_fringe = intertidal_dilated & wet_ocean & mostly_dry
-
-#     # Combine all layers
-#     extents = odc.geo.xr.xr_zeros(dem.odc.geobox).astype(np.uint8)
-#     extents.values[wet_ocean.values] = 3
-#     extents.values[wet_inland.values] = 2
-#     extents.values[wet_inland_intermittent.values] = 1
-#     extents.values[intertidal_fringe.values] = 0
-#     extents.values[intertidal.values] = 4
-
-#     # Reduce noise by sieving all classes except high confidence intertidal.
-#     # This merges small areas of isolated pixels with their most common neighbour
-#     extents.values[:] = sieve(extents, 3, connectivity=4)
-
-#     # Finally add intertidal high confidence extents over the top
-#     extents.values[intertidal_hc.values] = 5
-
-#     return extents
