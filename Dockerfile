@@ -33,7 +33,7 @@ RUN mkdir -p /conf
 # RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt /conf/requirements.in
 COPY requirements.txt /conf/
 RUN pip install -r /conf/requirements.txt \
-    && pip install --no-cache-dir awscli
+    && pip install --no-cache-dir awscli==1.33.37
 
 # Copy source code and install it
 RUN mkdir -p /code
