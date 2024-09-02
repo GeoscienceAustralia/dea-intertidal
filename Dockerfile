@@ -32,6 +32,3 @@ RUN pip install uv && \
 RUN uv pip install . --system && \
     uv pip check && \
     dea-intertidal --help
-
-# Set the entrypoint to dea-intertidal
-ENTRYPOINT ["dea-intertidal"]
