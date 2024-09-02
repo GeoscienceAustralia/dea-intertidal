@@ -12,38 +12,26 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && \
     apt-get install -y \
       build-essential \
-      fish \
       git \
-      vim \
-      htop \
-      wget \
-      unzip \
       python3-pip \
       libpq-dev \
     && apt-get autoclean && \
     apt-get autoremove && \
     rm -rf /var/lib/{apt,dpkg,cache,log}
 
-# Install pip-tools
-RUN pip install pip-tools
+# Set up working directory and copy in code
+WORKDIR /app
+COPY . .
 
-# Pip installation
-RUN mkdir -p /conf
-# COPY requirements.in /conf/
-# RUN pip-compile --extra-index-url=https://packages.dea.ga.gov.au/ --output-file=/conf/requirements.txt /conf/requirements.in
-COPY requirements.txt /conf/
-RUN pip install -r /conf/requirements.txt \
-    && pip install --no-cache-dir awscli==1.33.37
+# Install requirements
+RUN pip install uv && \
+    uv pip compile requirements.in -o requirements.txt && \
+    uv pip install -r requirements.txt --system
 
-# Copy source code and install it
-RUN mkdir -p /code
-WORKDIR /code
-ADD . /code
+# Install DEA Intertidal and verify installation
+RUN uv pip install . --system && \
+    uv pip check && \
+    dea-intertidal --help
 
-RUN echo "Installing dea-intertidal through the Dockerfile."
-RUN pip install --extra-index-url="https://packages.dea.ga.gov.au" .
-
-RUN pip freeze && pip check
-
-# Make sure it's working
-RUN dea-intertidal --help
+# Set the entrypoint to dea-intertidal
+ENTRYPOINT ["dea-intertidal"]
