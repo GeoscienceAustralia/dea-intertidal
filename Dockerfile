@@ -22,18 +22,21 @@ RUN apt-get update && \
 # Set up working directory
 WORKDIR /app
 
+COPY . .
+
 # Install uv
 RUN pip install uv
 
 # Copy only requirements file first to leverage caching
-COPY requirements.in .
+
+# COPY requirements.in .
 
 # Generate and install requirements
 RUN uv pip compile requirements.in -o requirements.txt && \
     uv pip install -r requirements.txt --system
 
-# Copy the rest of the application code
-COPY . .
+# # Copy the rest of the application code
+# COPY . .
 
 # Install DEA Intertidal and verify installation
 RUN uv pip install . --system && \
