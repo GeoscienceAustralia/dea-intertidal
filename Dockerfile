@@ -19,16 +19,19 @@ RUN apt-get update && \
     apt-get autoremove && \
     rm -rf /var/lib/{apt,dpkg,cache,log}
 
-# Set up working directory and copy in code
+# Set up working directory
 WORKDIR /app
+
+# Install uv
+RUN pip install uv 
+
+# Copy input requirement and compile/install full requirements.txt
+COPY requirements.in .
+RUN uv pip compile requirements.in -o requirements.txt 
+RUN uv pip install -r requirements.txt --system
+
+# Copy remainder of files, install DEA Intertidal, and verify installation
 COPY . .
-
-# Install requirements
-RUN pip install uv && \
-    uv pip compile requirements.in -o requirements.txt && \
-    uv pip install -r requirements.txt --system
-
-# Install DEA Intertidal and verify installation
 RUN uv pip install . --system && \
     uv pip check && \
     dea-intertidal --help
