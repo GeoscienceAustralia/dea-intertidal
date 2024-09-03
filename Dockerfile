@@ -23,16 +23,19 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Install uv
-# RUN pip install uv==0.4.3
-COPY --from=ghcr.io/astral-sh/uv:0.4.3 /uv /bin/uv
+RUN pip install uv
 
-# Copy input requirement and compile/install full requirements.txt
+# Copy only requirements file first to leverage caching
 COPY requirements.in .
-RUN uv pip compile requirements.in -o requirements.txt
-RUN uv pip install -r requirements.txt --system
 
-# Copy remainder of files, install DEA Intertidal, and verify installation
+# Generate and install requirements
+RUN uv pip compile requirements.in -o requirements.txt && \
+    uv pip install -r requirements.txt --system
+
+# Copy the rest of the application code
 COPY . .
+
+# Install DEA Intertidal and verify installation
 RUN uv pip install . --system && \
     uv pip check && \
     dea-intertidal --help
