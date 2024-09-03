@@ -23,11 +23,11 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Install uv
-RUN pip install uv 
+RUN pip install uv
 
 # Copy input requirement and compile/install full requirements.txt
 COPY requirements.in .
-RUN uv pip compile requirements.in -o requirements.txt 
+RUN uv pip compile requirements.in -o requirements.txt
 RUN uv pip install -r requirements.txt --system
 
 # Copy remainder of files, install DEA Intertidal, and verify installation
