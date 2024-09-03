@@ -23,7 +23,8 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Install uv
-RUN pip install uv
+# RUN pip install uv==0.4.3
+COPY --from=ghcr.io/astral-sh/uv:0.4.3 /uv /bin/uv
 
 # Copy input requirement and compile/install full requirements.txt
 COPY requirements.in .
