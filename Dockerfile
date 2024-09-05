@@ -23,7 +23,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy requirements file first
-COPY requirements.in .
+COPY requirements.in /app
 
 # Install uv and requirements
 RUN pip install uv && \
@@ -31,7 +31,7 @@ RUN pip install uv && \
     uv pip install -r requirements.txt --system
 
 # Now copy the rest of the files
-COPY . .
+COPY . /app
 
 # Install DEA Intertidal and verify installation
 RUN uv pip install . --system && \
