@@ -59,9 +59,9 @@ def test_dem_accuracy(
     val_path="tests/data/lidar_10m_tests.tif",
     mod_path="data/processed/ga_s2ls_intertidal_cyear_3/0-0-1/tes/ting/2021--P1Y/ga_s2ls_intertidal_cyear_3_testing_2021--P1Y_final_elevation.tif",
     input_csv="tests/validation.csv",
-    output_csv="artifacts/validation.csv",
-    output_plot="artifacts/validation.jpg",
-    output_md="artifacts/README.md",
+    output_csv="tests/validation.csv",
+    output_plot="tests/validation.jpg",
+    output_md="tests/README.md",
 ):
     """
     Compares elevation outputs of the previous CLI step against
@@ -189,7 +189,7 @@ def test_dem_accuracy(
     ax2.set_ylabel("Metres (m)")
     ax2.set_xlabel(None)
 
-    # Write into mounted artifacts directory
+    # Write output CSV
     accuracy_df.to_csv(output_csv)
     plt.savefig(output_plot, dpi=100, bbox_inches="tight")
 
