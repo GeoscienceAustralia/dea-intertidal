@@ -23,12 +23,12 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy requirements file first
-COPY requirements.in /app
+COPY requirements.in /app/requirements.in
 
 # Install uv and requirements
 RUN pip install uv && \
-    uv pip compile requirements.in -o requirements.txt && \
-    uv pip install -r requirements.txt --system
+    uv pip compile /app/requirements.in -o /app/requirements.txt && \
+    uv pip install -r /app/requirements.txt --system
 
 # Now copy the rest of the files
 COPY . /app
