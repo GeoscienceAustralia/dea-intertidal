@@ -15,9 +15,7 @@ from odc.geo.xr import xr_zeros
 from dea_tools.spatial import xr_rasterize
 from rasterio.features import sieve
 from intertidal.io import (
-    load_ocean_mask,
     load_aclum_mask,
-    load_topobathy_mask,
     extract_geobox,
 )
 
@@ -251,43 +249,56 @@ def load_gmw_mask(ds, gmw_path="/gdata1/data/mangroves/gmw_v3_2007_vec_aus.geojs
     return gmw_da
 
 
-def extents(dc, ds, buffer=20000, min_correlation=0.15, sieve_size=5):
+
+
+
+
+
+# TODO: pass in ACLUM and connectivity mask directly
+
+
+def extents(
+    dc, ds, buffer=20000, min_correlation=0.15, sieve_size=5, **connectivity_kwargs
+):
     """
     Classify coastal ecosystems into broad classes based
     on their respective patterns of wetting frequency,
     proximity to the ocean, and relationships to tidal
-    inundation, elevation and urban land use (to mask misclassifications).
+    inundation, elevation and urban land use (to mask
+    misclassifications).
 
     Parameters:
     -----------
     dc : Datacube
         A Datacube instance for loading data.
-    ds  :  xarray.Dataset
+    ds : xarray.Dataset
         An xarray.Dataset that must include xarray.DataArrays for
         at least 'elevation', 'qa_ndwi_freq' and 'qa_ndwi_corr'.
         These arrays are generated as an output from the
-        intertidal.elevation algorithm.
+        `intertidal.elevation` algorithm.
     buffer : int, optional
-        The distance by which to buffer the ds GeoBox to reduce edge
+        The distance by which to buffer the `ds` GeoBox to reduce edge
         effects. This buffer will eventually be removed and clipped back
         to the original GeoBox extent. Defaults to 20,000 metres.
-    min_correlation  :  int, optional
+    min_correlation : int, optional
         Minimum correlation between water index and tide height
         required for a pixel to be included in the intertidal pixel
         analysis, 0.15 by default, aligning with the default value
-        used in the intertidal.elevation algorithm.
-    sieve_size  :  int, optional
+        used in the `intertidal.elevation` algorithm.
+    sieve_size : int, optional
         Maximum number of grouped pixels belonging to any single
         class that are sieved out to remove small noisy dataset
         features. Class values are replaced with the dominant
         neighbouring class.
+    **connectivity_kwargs :
+        Optional keyword arguments to pass to `load_connectivity_mask`.
 
     Returns:
     --------
     extents: xarray.DataArray
         A categorical xarray.DataArray depicting the following pixel classes:
         - Nodata (0),
-        - Ocean and coastal water (1),
+        - Ocean and coastal waters (1),
         - Exposed intertidal (low confidence) (2),
         - Exposed intertidal (high confidence) (3),
         - Inland waters (4),
@@ -297,36 +308,34 @@ def extents(dc, ds, buffer=20000, min_correlation=0.15, sieve_size=5):
     ------
     Classes are defined as follows:
 
-    0  :  Nodata
-    1  :  Ocean and coastal water
-        Pixels that are wet in 50 % or more observations
-    2  :  Exposed intertidal (low confidence)
-        Pixels with water index and tidal correlations higher than 0.15.
-        Pixels must be located within the costdist_mask connectivity mask
-        and not be included in the intertidal elevation (high confidence)
-        dataset
-    3  :  Exposed intertidal (high confidence)
-        Pixels that are included in the intertidal elevation dataset
-    4  :  Inland waters
-        Pixels that are wet in more than 50 % of observations and fall
-        outside of the costdist_mask connectivity mask.
-    5  :  Land
-        Pixels that are wet in less than 50 % of observations
+    0: Nodata
+    1: Ocean and coastal waters
+       Pixels that are wet in 50% or more observations and located within
+       the coastal connectivity mask
+    2: Exposed intertidal (low confidence)
+       Pixels with water index/tide correlations higher than 0.15.
+       Pixels must be located within the coastal connectivity mask
+       and not be intertidal elevation (high confidence) pixels
+    3: Exposed intertidal (high confidence)
+       Pixels that are included in the intertidal elevation dataset
+    4: Inland waters
+       Pixels that are wet in more than 50% of observations and fall
+       outside of the coastal connectivity mask.
+    5: Land
+       Pixels that are wet in less than 50% of observations
     """
 
     # Identify dataset geobox
     geobox = ds.odc.geobox
 
     # Load other inputs
-    ocean_mask = load_ocean_mask(dc, geobox)
     urban_mask = load_aclum_mask(dc, geobox)
-    bathy_mask = load_topobathy_mask(dc, geobox)
-    costdist_mask, _ = load_connectivity_mask(dc, geobox, buffer=buffer)
+    costdist_mask, _ = load_connectivity_mask(
+        dc, geobox, buffer=buffer, **connectivity_kwargs
+    )
 
-    # Identify any pixels that are nodata in both frequency and bathy mask
-    # (this is a temporary hack due to us not having any other way of telling
-    # ocean nodata pixels apart from inland nodata pixels
-    is_nan = (ds.qa_ndwi_freq.isnull()) & bathy_mask
+    # Identify any pixels that are nodata in frequency 
+    is_nan = (ds.qa_ndwi_freq.isnull())
 
     # Spilt pixels into those that were mostly wet vs mostly dry.
     # Identify subset of mostly wet pixels that were inland
