@@ -34,6 +34,8 @@ from intertidal.extents import extents, load_connectivity_mask
 from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
 
+from intertidal.tide_modelling import pixel_tides_ensemble
+
 
 def ds_to_flat(
     satellite_ds,
@@ -877,12 +879,20 @@ def elevation(
     # dataset (x by y by time). If `model` is "ensemble" this will model
     # tides by combining the best local tide models.
     log.info(f"{run_id}: Modelling tide heights for each pixel")
-    tide_m, _ = pixel_tides(
+    # tide_m, _ = pixel_tides(
+    #     ds=satellite_ds,
+    #     model=tide_model,
+    #     directory=tide_model_dir,
+    #     ranking_points="data/raw/tide_correlations_2017-2019.geojson",
+    #     ensemble_top_n=3,
+    # )
+    
+    # Run tide model at low resolution
+    tide_m, _ = pixel_tides_ensemble(
         ds=satellite_ds,
         model=tide_model,
         directory=tide_model_dir,
-        ranking_points="data/raw/tide_correlations_2017-2019.geojson",
-        ensemble_top_n=3,
+        ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
     )
 
     # Set tide array pixels to nodata if the satellite data array pixels
@@ -1207,7 +1217,7 @@ def intertidal_cli(
         # urban land use class mask from ABARES CLUM, and coastal mask
         # from least-cost connectivity analysis
         topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox)
-        reclassified_aclum = load_aclum_mask(dc, satellite_ds.odc.geobox)
+        urban_mask = load_aclum_mask(dc, satellite_ds.odc.geobox)
         coastal_mask, _ = load_connectivity_mask(dc, satellite_ds.odc.geobox)
 
         # Also load ancillary dataset IDs to use in metadata
@@ -1237,7 +1247,13 @@ def intertidal_cli(
 
         # Calculate extents (to be included in next version)
         log.info(f"{run_id}: Calculating Intertidal Extents")
-        ds["extents"] = extents(dc=dc, ds=ds)
+        ds["extents"] = extents(
+            dem=ds.elevation,
+            freq=ds.qa_ndwi_freq,
+            corr=ds.qa_ndwi_corr,
+            urban_mask=urban_mask,
+            coastal_mask=coastal_mask,
+        )
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")

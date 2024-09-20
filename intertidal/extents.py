@@ -258,7 +258,7 @@ def load_gmw_mask(ds, gmw_path="/gdata1/data/mangroves/gmw_v3_2007_vec_aus.geojs
 
 
 def extents(
-    dc, ds, buffer=20000, min_correlation=0.15, sieve_size=5, **connectivity_kwargs
+    dem, freq, corr, urban_mask, coastal_mask, buffer=20000, min_correlation=0.15, sieve_size=5, **connectivity_kwargs
 ):
     """
     Classify coastal ecosystems into broad classes based
@@ -326,29 +326,23 @@ def extents(
     """
 
     # Identify dataset geobox
-    geobox = ds.odc.geobox
-
-    # Load other inputs
-    urban_mask = load_aclum_mask(dc, geobox)
-    costdist_mask, _ = load_connectivity_mask(
-        dc, geobox, buffer=buffer, **connectivity_kwargs
-    )
+    geobox = dem.odc.geobox
 
     # Identify any pixels that are nodata in frequency 
-    is_nan = (ds.qa_ndwi_freq.isnull())
+    is_nan = freq.isnull()
 
     # Spilt pixels into those that were mostly wet vs mostly dry.
     # Identify subset of mostly wet pixels that were inland
-    mostly_dry = (ds.qa_ndwi_freq < 50) & ~is_nan
-    mostly_wet = (ds.qa_ndwi_freq >= 50) & ~is_nan
-    mostly_wet_inland = mostly_wet & ~costdist_mask
+    mostly_dry = (freq < 0.50) & ~is_nan
+    mostly_wet = (freq >= 0.50) & ~is_nan
+    mostly_wet_inland = mostly_wet & ~coastal_mask
 
     # Identify low-confidence pixels as those with greater than 0.15
     # correlation. Use connectivity mask to mask out any that are "inland"
-    intertidal_lc = (ds.qa_ndwi_corr >= min_correlation) & costdist_mask
+    intertidal_lc = (corr >= min_correlation) & coastal_mask
 
     # Identify high confidence intertidal as those in our elevation data
-    intertidal_hc = ds.elevation.notnull()
+    intertidal_hc = dem.notnull()
 
     # Identify likely misclassified urban pixels as those that overlap with
     # the urban mask
