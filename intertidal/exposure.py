@@ -9,11 +9,13 @@ import geopandas as gpd
 import pandas as pd
 
 from math import ceil
-from dea_tools.coastal import _pixel_tides_resample, pixel_tides
+# from dea_tools.coastal import _pixel_tides_resample, pixel_tides
 from intertidal.utils import configure_logging, round_date_strings
 
 from intertidal.tide_modelling import pixel_tides_ensemble
 
+
+from intertidal.coastal import _pixel_tides_resample, pixel_tides
 
 def temporal_filters(x, time_range, dem):
     """
@@ -441,26 +443,28 @@ def exposure(
             x in all_filters
         ), f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'
 
-    # # Run tide model at low resolution
-    # modelledtides_lowres = pixel_tides(
-    #     ds=dem,
-    #     model=tide_model,
-    #     times=time_range,
-    #     directory=tide_model_dir,
-    #     ranking_points="data/raw/tide_correlations_2017-2019.geojson",
-    #     ensemble_top_n=3,
-    #     resample=False,
-    # )
-    
     # Run tide model at low resolution
-    modelledtides_lowres = pixel_tides_ensemble(
-        dem,
+    modelledtides_lowres = pixel_tides(
+        ds=dem,
         model=tide_model,
         times=time_range,
         directory=tide_model_dir,
-        ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+        ranking_points="data/raw/tide_correlations_2017-2019.geojson",
+        ensemble_top_n=3,
         resample=False,
+        # parallel=False,
+        # parallel_splits=2,
     )
+    
+    # # Run tide model at low resolution
+    # modelledtides_lowres = pixel_tides_ensemble(
+    #     dem,
+    #     model=tide_model,
+    #     times=time_range,
+    #     directory=tide_model_dir,
+    #     ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
+    #     resample=False,
+    # )
 
     # Calculate a 1D tide height time series to use with filtered exposure calc's
     modelledtides_1d = modelledtides_lowres.mean(dim=["x", "y"])
