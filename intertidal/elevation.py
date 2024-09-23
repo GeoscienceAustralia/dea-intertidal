@@ -15,7 +15,7 @@ import odc.geo.xr
 from odc.geo.geom import BoundingBox
 from odc.algo import xr_quantile
 from datacube.utils.aws import configure_s3_access
-# from dea_tools.coastal import pixel_tides
+from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.io import (
@@ -33,10 +33,6 @@ from intertidal.utils import (
 from intertidal.extents import extents, load_connectivity_mask
 from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
-
-from intertidal.tide_modelling import pixel_tides_ensemble
-
-from intertidal.coastal import _pixel_tides_resample, pixel_tides
 
 
 def ds_to_flat(
@@ -889,14 +885,6 @@ def elevation(
         ensemble_top_n=3,
     )
     
-    # # Run tide model at low resolution
-    # tide_m, _ = pixel_tides_ensemble(
-    #     ds=satellite_ds,
-    #     model=tide_model,
-    #     directory=tide_model_dir,
-    #     ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
-    # )
-
     # Set tide array pixels to nodata if the satellite data array pixels
     # contain nodata. This ensures that we ignore any tide observations
     # where we don't have matching satellite imagery
