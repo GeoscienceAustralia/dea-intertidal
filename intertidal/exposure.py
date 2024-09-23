@@ -9,13 +9,10 @@ import geopandas as gpd
 import pandas as pd
 
 from math import ceil
-# from dea_tools.coastal import _pixel_tides_resample, pixel_tides
+from dea_tools.coastal import _pixel_tides_resample, pixel_tides
 from intertidal.utils import configure_logging, round_date_strings
-
 from intertidal.tide_modelling import pixel_tides_ensemble
 
-
-from intertidal.coastal import _pixel_tides_resample, pixel_tides
 
 def temporal_filters(x, time_range, dem):
     """
