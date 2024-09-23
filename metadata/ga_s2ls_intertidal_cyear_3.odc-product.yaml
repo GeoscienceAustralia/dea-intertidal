@@ -34,7 +34,7 @@ measurements:
   - name: extents
     dtype: uint8
     units: "class"
-    nodata: 0
+    nodata: 255
 
   - name: ta_hat
     dtype: float32

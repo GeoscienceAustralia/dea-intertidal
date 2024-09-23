@@ -297,7 +297,7 @@ def extents(
     --------
     extents: xarray.DataArray
         A categorical xarray.DataArray depicting the following pixel classes:
-        - Nodata (0),
+        - Nodata (255),
         - Ocean and coastal waters (1),
         - Exposed intertidal (low confidence) (2),
         - Exposed intertidal (high confidence) (3),
@@ -308,7 +308,7 @@ def extents(
     ------
     Classes are defined as follows:
 
-    0: Nodata
+    255: Nodata
     1: Ocean and coastal waters
        Pixels that are wet in 50% or more observations and located within
        the coastal connectivity mask
@@ -350,7 +350,7 @@ def extents(
 
     # Combine all classifications - this is done one-by-one, pasting each
     # new layer over the top of the existing data
-    extents = xr_zeros(geobox=geobox, dtype="int16")  # start with 0
+    extents = xr_zeros(geobox=geobox, dtype="int16") + 255  # start with 255
     extents.values[mostly_wet] = 1  # Add in mostly wet pixels
     extents.values[mostly_wet_inland] = 4  # Add in mostly wet inland pixels on top
     extents.values[urban_misclass] = (
@@ -367,6 +367,6 @@ def extents(
     extents.values[intertidal_hc] = 3
 
     # Export to file
-    extents.attrs["nodata"] = 0
+    extents.attrs["nodata"] = 255
 
     return extents
