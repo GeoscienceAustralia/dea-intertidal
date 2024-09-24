@@ -1241,8 +1241,8 @@ def intertidal_cli(
             dem=ds.elevation,
             freq=ds.qa_ndwi_freq,
             corr=ds.qa_ndwi_corr,
-            urban_mask=urban_mask,
             coastal_mask=coastal_mask,
+            urban_mask=urban_mask,
         )
 
         if exposure_offsets:
