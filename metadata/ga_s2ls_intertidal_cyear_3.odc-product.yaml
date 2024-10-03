@@ -98,6 +98,13 @@ measurements:
     aliases:
       - ndwi_freq
 
+  - name: qa_count_clear
+    dtype: int16
+    units: "count"
+    nodata: -999
+    aliases:
+      - count_clear
+
 load:
   crs: "EPSG:3577"
   resolution:

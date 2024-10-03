@@ -101,6 +101,9 @@ def ds_to_flat(
     corr : xr.DataArray
         Correlation of NDWI pixel wetness with tide height.
     """
+    # Calculate clear count
+    clear = satellite_ds[index].notnull().sum(dim="time").rename("qa_count_clear")
+
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
     freq = (
@@ -126,6 +129,7 @@ def ds_to_flat(
         .dropna(dim="z", how="all")
     )
     freq = freq.stack(z=("y", "x"))
+    clear = clear.stack(z=("y", "x"))
 
     # Calculate correlations between NDWI water observations and tide
     # height. Because we are only interested in pixels with inundation
@@ -168,7 +172,7 @@ def ds_to_flat(
         f"{len(intertidal_candidates.z)} ({len(intertidal_candidates.z) * 100 / freq.count().item():.2f}%)"
     )
 
-    return flat_ds, freq, corr
+    return flat_ds, freq, corr, clear
 
 
 def rolling_tide_window(
@@ -881,10 +885,8 @@ def elevation(
         ds=satellite_ds,
         model=tide_model,
         directory=tide_model_dir,
-        ranking_points="data/raw/tide_correlations_2017-2019.geojson",
-        ensemble_top_n=3,
     )
-    
+
     # Set tide array pixels to nodata if the satellite data array pixels
     # contain nodata. This ensures that we ignore any tide observations
     # where we don't have matching satellite imagery
@@ -905,7 +907,7 @@ def elevation(
     )
     if valid_mask is not None:
         log.info(f"{run_id}: Applying valid data mask to constrain study area")
-    flat_ds, freq, corr = ds_to_flat(
+    flat_ds, freq, corr, clear = ds_to_flat(
         satellite_ds,
         min_freq=min_freq,
         max_freq=max_freq,
@@ -948,6 +950,7 @@ def elevation(
             flat_dem,  # DEM data
             freq,  # Frequency
             corr,  # Correlation
+            clear, # Clear count
         ],
     )
 
@@ -1015,9 +1018,9 @@ def elevation(
 @click.option(
     "--product_maturity",
     type=str,
-    default="provisional",
+    default="stable",
     help="Product maturity metadata to use for the output dataset. "
-    "Defaults to 'provisional', can also be 'stable'.",
+    "Defaults to 'stable', can also be 'provisional'.",
 )
 @click.option(
     "--dataset_maturity",

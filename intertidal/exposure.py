@@ -445,8 +445,6 @@ def exposure(
         model=tide_model,
         times=time_range,
         directory=tide_model_dir,
-        ranking_points="data/raw/tide_correlations_2017-2019.geojson",
-        ensemble_top_n=3,
         resample=False,
     )
 
