@@ -622,63 +622,6 @@ def load_aclum_mask(
         return odc.geo.xr.xr_zeros(geobox).astype(bool)
 
 
-def load_ocean_mask(
-    dc,
-    geobox,
-    product="geodata_coast_100k",
-    band="land",
-    resampling="nearest",
-    mask_invalid=False,
-):
-    """
-    Loads an ocean mask for the extents of the loaded satellite data.
-    This is used to determine connectivity to the ocean for each wet or
-    intertidal pixel.
-
-    Parameters
-    ----------
-    dc : Datacube
-        A Datacube instance for loading data.
-    geobox : ndarray
-        The GeoBox of the loaded satellite data, used to ensure the data
-        is loaded into the same pixel grid (e.g. resolution, extents, CRS).
-    product : str, optional
-        The name of the ocean mask dataset to load from the datacube.
-        Defaults to "geodata_coast_100k".
-    band : str, optional
-        The name of the band containing the ocean classification.
-        Defaults to "land".
-    resampling : str, optional
-        The resampling method to use, by default "nearest".
-    mask_invalid : bool, optional
-        Whether to mask invalid/nodata values in the array by setting
-        them to NaN, by default True.
-
-    Returns
-    -------
-    ocean_mask : xarray.DataArray
-        An output boolean mask, where True represent pixels to use in the
-        following analysis.
-    """
-    try:
-        # Load from datacube, reprojecting to GeoBox of input satellite data
-        ocean_ds = dc.load(
-            product="geodata_coast_100k", like=geobox, resampling=resampling
-        ).squeeze("time")
-
-        # Mask invalid data
-        if mask_invalid:
-            ocean_ds = mask_invalid_data(ocean_ds)
-
-        # Return ocean pixels as True
-        ocean_mask = ocean_ds[band] == 0
-        return ocean_mask
-
-    # Return an array of all True (i.e. ocean) if no data is returned
-    except AttributeError:
-        return odc.geo.xr.xr_zeros(geobox) == 0
-
-
 def _is_s3(path):
     """
     Determine whether output location is on S3.
@@ -847,11 +790,11 @@ def tidal_metadata(ds):
     metadata_dict["intertidal:tr_class"] = (
         "microtidal"
         if metadata_dict["intertidal:tr"] < 2
-        else "mesotidal"
-        if 2 <= metadata_dict["intertidal:tr"] <= 4
-        else "macrotidal"
-        if metadata_dict["intertidal:tr"] > 4
-        else np.nan
+        else (
+            "mesotidal"
+            if 2 <= metadata_dict["intertidal:tr"] <= 4
+            else "macrotidal" if metadata_dict["intertidal:tr"] > 4 else np.nan
+        )
     )
 
     return metadata_dict
@@ -879,9 +822,7 @@ def _ls_platform_instrument(year):
 
 def prepare_for_export(
     ds,
-    int_bands=None,
-    int_nodata=255,
-    int_dtype=np.uint8,
+    custom_dtypes=None,
     float_dtype=np.float32,
     output_location=None,
     overwrite=True,
@@ -896,16 +837,10 @@ def prepare_for_export(
     ----------
     ds : xarray.Dataset
         The dataset containing the bands to be exported.
-    int_bands : tuple or list, optional
-        A list of bands to export as integer datatype. If None, will use
-        the following list of bands: ("exposure", "extents",
-        "offset_hightide", "offset_lowtide", "spread")
-    int_nodata : int, optional
-        An integer that represents nodata values for integer bands
-        (default is 255).
-    int_dtype : string or numpy data type, optional
-        The data type to use for integer layers (default is
-        np.uint8).
+    custom_dtypes : dictionary, optional
+        An optional dictionary containing names of bands as keys,
+        and tuples in the form `(np.uint8, 255)` providing the 
+        dtype and nodata value to use for that band.
     float_dtype : string or numpy data type, optional
         The data type to use for floating point layers (default is
         np.float32).
@@ -923,12 +858,13 @@ def prepare_for_export(
     """
 
     def _prepare_band(
-        band, int_bands, int_nodata, int_dtype, float_dtype, output_location, overwrite
+        band, custom_dtypes, float_dtype, output_location, overwrite
     ):
         # Export specific bands as integer data types by first filling
         # NaN with nodata value before converting to int, then setting
         # nodata attribute on layer
-        if band.name in int_bands:
+        if band.name in custom_dtypes.keys():
+            int_dtype, int_nodata = custom_dtypes[band.name]
             band = band.fillna(int_nodata).astype(int_dtype)
             band.attrs["nodata"] = int_nodata
 
@@ -944,24 +880,25 @@ def prepare_for_export(
 
         return band
 
-    # Use default list of bands to convert to integers if none provided
-    if int_bands is None:
-        int_bands = (
+    # Use default dictionary to convert to integers if none provided
+    if custom_dtypes is None:
+        custom_dtypes = {
             # Primary layers
-            "exposure",
-            "extents",
+            "exposure": (np.uint8, 255),
+            "extents": (np.uint8, 255),
             # Tide attribute layers
-            "ta_spread",
-            "ta_offset_high",
-            "ta_offset_low",
+            "ta_spread": (np.uint8, 255),
+            "ta_offset_high": (np.uint8, 255),
+            "ta_offset_low": (np.uint8, 255),
             # QA layers
-            "qa_ndwi_freq",
-        )
+            "qa_ndwi_freq": (np.uint8, 255),
+            "qa_count_clear": (np.int16, -999),
+        }
 
     # Apply to each array in the input `ds`
     return ds.apply(
         lambda x: _prepare_band(
-            x, int_bands, int_nodata, int_dtype, float_dtype, output_location, overwrite
+            x, custom_dtypes, float_dtype, output_location, overwrite
         )
     )
 

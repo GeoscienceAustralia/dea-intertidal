@@ -22,7 +22,6 @@ from intertidal.io import (
     load_data,
     load_topobathy_mask,
     load_aclum_mask,
-    load_ocean_mask,
     prepare_for_export,
     tidal_metadata,
     export_dataset_metadata,
@@ -31,8 +30,7 @@ from intertidal.utils import (
     configure_logging,
     round_date_strings,
 )
-from intertidal.tide_modelling import pixel_tides_ensemble
-from intertidal.extents import extents, ocean_connection
+from intertidal.extents import extents, load_connectivity_mask
 from intertidal.exposure import exposure
 from intertidal.tidal_bias_offset import bias_offset
 
@@ -103,27 +101,35 @@ def ds_to_flat(
     corr : xr.DataArray
         Correlation of NDWI pixel wetness with tide height.
     """
-
-    # If an overall valid data mask is provided, apply to the data first
-    if valid_mask is not None:
-        satellite_ds = satellite_ds.where(valid_mask)
-
-    # Flatten satellite dataset by stacking "y" and "x" dimensions, then
-    # drop any pixels that are empty across all-of-time
-    flat_ds = satellite_ds.stack(z=("y", "x")).dropna(dim="time", how="all")
+    # Calculate clear count
+    clear = satellite_ds[index].notnull().sum(dim="time").rename("qa_count_clear")
 
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
     freq = (
-        (flat_ds[index] > ndwi_thresh)
-        .where(~flat_ds[index].isnull())
+        (satellite_ds[index] > ndwi_thresh)
+        .where(~satellite_ds[index].isnull())
         .mean(dim="time")
         .rename("qa_ndwi_freq")
     )
-    freq_mask = (freq >= min_freq) & (freq <= max_freq)
 
-    # Flatten to 1D, dropping any pixels that are not in frequency mask
-    flat_ds = flat_ds.where(freq_mask, drop=True)
+    # Mask out pixels outside of frequency bounds
+    freq_mask = (freq >= min_freq) & (freq <= max_freq)
+    satellite_ds = satellite_ds.where(freq_mask)
+
+    # If an overall valid data mask is provided, apply to the data
+    if valid_mask is not None:
+        satellite_ds = satellite_ds.where(valid_mask)
+
+    # Flatten satellite and freq data by stacking "y" and "x" dims.
+    # Drop any pixels that are always empty, or empty timesteps
+    flat_ds = (
+        satellite_ds.stack(z=("y", "x"))
+        .dropna(dim="time", how="all")
+        .dropna(dim="z", how="all")
+    )
+    freq = freq.stack(z=("y", "x"))
+    clear = clear.stack(z=("y", "x"))
 
     # Calculate correlations between NDWI water observations and tide
     # height. Because we are only interested in pixels with inundation
@@ -141,6 +147,7 @@ def ds_to_flat(
     else:
         tide_array = flat_ds.tide_m
 
+    # Calculate correlation
     if corr_method == "pearson":
         corr = xr.corr(wet_dry, tide_array, dim="time").rename("qa_ndwi_corr")
     elif corr_method == "spearman":
@@ -165,7 +172,7 @@ def ds_to_flat(
         f"{len(intertidal_candidates.z)} ({len(intertidal_candidates.z) * 100 / freq.count().item():.2f}%)"
     )
 
-    return flat_ds, freq, corr
+    return flat_ds, freq, corr, clear
 
 
 def rolling_tide_window(
@@ -770,7 +777,6 @@ def clean_edge_pixels(ds):
 def elevation(
     satellite_ds,
     valid_mask=None,
-    ocean_mask=None,
     ndwi_thresh=0.1,
     min_freq=0.01,
     max_freq=0.99,
@@ -798,12 +804,6 @@ def elevation(
         with the same spatial dimensions as `satellite_ds`. For example,
         this could be a mask generated from a topo-bathy DEM, used to
         limit the analysis to likely intertidal pixels. Default is None,
-        which will not apply a mask.
-    ocean_mask : xr.DataArray, optional
-        An optional mask identifying ocean pixels within the analysis
-        area, with the same spatial dimensions as `satellite_ds`.
-        If provided, this will be used to restrict the analysis to pixels
-        that are directly connected to ocean waters. Defaults is None,
         which will not apply a mask.
     ndwi_thresh : float, optional
         A threshold value for the normalized difference water index
@@ -881,9 +881,8 @@ def elevation(
     # dataset (x by y by time). If `model` is "ensemble" this will model
     # tides by combining the best local tide models.
     log.info(f"{run_id}: Modelling tide heights for each pixel")
-    tide_m, _ = pixel_tides_ensemble(
+    tide_m, _ = pixel_tides(
         ds=satellite_ds,
-        ancillary_points="data/raw/tide_correlations_2017-2019.geojson",
         model=tide_model,
         directory=tide_model_dir,
     )
@@ -908,7 +907,7 @@ def elevation(
     )
     if valid_mask is not None:
         log.info(f"{run_id}: Applying valid data mask to constrain study area")
-    flat_ds, freq, corr = ds_to_flat(
+    flat_ds, freq, corr, clear = ds_to_flat(
         satellite_ds,
         min_freq=min_freq,
         max_freq=max_freq,
@@ -951,6 +950,7 @@ def elevation(
             flat_dem,  # DEM data
             freq,  # Frequency
             corr,  # Correlation
+            clear, # Clear count
         ],
     )
 
@@ -963,16 +963,6 @@ def elevation(
     log.info(f"{run_id}: Cleaning inaccurate upper intertidal pixels")
     elevation_bands = [d for d in ds.data_vars if "elevation" in d]
     ds[elevation_bands] = clean_edge_pixels(ds[elevation_bands])
-
-    # Mask out any non-ocean connected elevation pixels.
-    # `~(ds.qa_ndwi_freq < min_freq)` ensures that nodata pixels are
-    # treated as wet
-    if ocean_mask is not None:
-        log.info(f"{run_id}: Restricting outputs to ocean-connected waters")
-        ocean_connected_mask = ocean_connection(
-            ~(ds.qa_ndwi_freq < min_freq), ocean_mask
-        )
-        ds[elevation_bands] = ds[elevation_bands].where(ocean_connected_mask)
 
     # Return output data and tide height array
     log.info(f"{run_id}: Successfully completed intertidal elevation modelling")
@@ -1028,9 +1018,9 @@ def elevation(
 @click.option(
     "--product_maturity",
     type=str,
-    default="provisional",
+    default="stable",
     help="Product maturity metadata to use for the output dataset. "
-    "Defaults to 'provisional', can also be 'stable'.",
+    "Defaults to 'stable', can also be 'provisional'.",
 )
 @click.option(
     "--dataset_maturity",
@@ -1217,11 +1207,11 @@ def intertidal_cli(
         satellite_ds.load()
 
         # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid,
-        # urban land use class mask from ABARES CLUM, and ocean mask
-        # from geodata_coast_100k
-        topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox.compat)
-        reclassified_aclum = load_aclum_mask(dc, satellite_ds.odc.geobox.compat)
-        ocean_mask = load_ocean_mask(dc, satellite_ds.odc.geobox.compat)
+        # urban land use class mask from ABARES CLUM, and coastal mask
+        # from least-cost connectivity analysis
+        topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox)
+        urban_mask = load_aclum_mask(dc, satellite_ds.odc.geobox)
+        coastal_mask, _ = load_connectivity_mask(dc, satellite_ds.odc.geobox)
 
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
@@ -1234,8 +1224,7 @@ def intertidal_cli(
         log.info(f"{run_id}: Calculating Intertidal Elevation")
         ds, tide_m = elevation(
             satellite_ds,
-            valid_mask=topobathy_mask,
-            ocean_mask=ocean_mask,
+            valid_mask=topobathy_mask & coastal_mask,
             ndwi_thresh=ndwi_thresh,
             min_freq=min_freq,
             max_freq=max_freq,
@@ -1249,37 +1238,35 @@ def intertidal_cli(
             log=log,
         )
 
-        # # Calculate extents (to be included in next version)
-        # log.info(f"{run_id}: Calculating Intertidal Extents")
-        # ds["extents"] = extents(
-        #     dem=ds.elevation,
-        #     freq=ds.qa_ndwi_freq,
-        #     corr=ds.qa_ndwi_corr,
-        #     reclassified_aclum=reclassified_aclum,
-        #     min_freq=min_freq,
-        #     max_freq=max_freq,
-        #     min_correlation=min_correlation,
-        # )
+        # Calculate extents (to be included in next version)
+        log.info(f"{run_id}: Calculating Intertidal Extents")
+        ds["extents"] = extents(
+            dem=ds.elevation,
+            freq=ds.qa_ndwi_freq,
+            corr=ds.qa_ndwi_corr,
+            coastal_mask=coastal_mask,
+            urban_mask=urban_mask,
+        )
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
 
-            # Select times used for exposure modelling
-            all_times = pd.date_range(
-                start=round_date_strings(start_date, round_type="start"),
-                end=round_date_strings(end_date, round_type="end"),
-                freq=modelled_freq,
-            )
-
             # Calculate exposure
-            ds["exposure"], tide_cq = exposure(
+            exposure_ds, modelledtides_ds = exposure(
                 dem=ds.elevation,
-                times=all_times,
+                start_date=start_date,
+                end_date=end_date,
+                modelled_freq=modelled_freq,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
-                run_id=run_id,
-                log=log,
             )
+
+            # Write the unfiltered exposure output as new variable in the main dataset
+            ds[f"exposure"] = exposure_ds["unfiltered"]
+
+            # Translate unfiltered exposure outputs to match continental
+            # product suite
+            modelledtides_ds = modelledtides_ds["unfiltered"]
 
             # Calculate spread, offsets and HAT/LAT/LOT/HOT
             log.info(f"{run_id}: Calculating spread, offset and HAT/LAT/LOT/HOT layers")
@@ -1293,7 +1280,7 @@ def intertidal_cli(
                 ds["ta_offset_high"],
             ) = bias_offset(
                 tide_m=tide_m,
-                tide_cq=tide_cq,
+                tide_cq=modelledtides_ds,
                 lot_hot=True,
                 lat_hat=True,
             )
