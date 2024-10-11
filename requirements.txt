@@ -540,7 +540,8 @@ python-rapidjson==1.16
     # via eodatasets3
 python-slugify==8.0.4
     # via datacube-ows
-pytmd==2.1.4
+#pytmd==2.1.4
+pytmd==2.1.0
     # via
     #   -r requirements.in
     #   dea-tools

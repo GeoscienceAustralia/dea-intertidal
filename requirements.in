@@ -17,7 +17,8 @@ pyproj==3.6.1
 pytest
 pytest-dependency
 pytest-cov
-pyTMD==2.1.4
+pyTMD==2.1.0
+#pyTMD==2.1.4
 pytz==2024.1
 rasterio==1.3.10
 rioxarray==0.17.0

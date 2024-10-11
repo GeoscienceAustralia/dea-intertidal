@@ -193,14 +193,19 @@ def load_connectivity_mask(
         resolution=30,
         tight=True,
     )
-
-    # Load DEM data
-    dem_da = dc.load(
-        product="ga_srtm_dem1sv1_0",
-        measurements=[elevation_band],
-        resampling="bilinear",
-        like=geobox_buffered,
-    ).squeeze()[elevation_band]
+    
+    # Exclude tiles that fall outside of the DEM
+    try:
+        # Load DEM data
+        dem_da = dc.load(
+            product="ga_srtm_dem1sv1_0",
+            measurements=[elevation_band],
+            resampling="bilinear",
+            like=geobox_buffered,
+        ).squeeze()[elevation_band]
+    except Exception as e:
+        print(f'An error occurred in {study_area}: {e}')
+        return
 
     # Identify starting points (ocean nodata points)
     if add_mangroves:
