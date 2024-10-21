@@ -6,7 +6,7 @@ datacube[s3,performance]==1.8.19
 dea-tools==0.3.4
 eodatasets3==0.30.6
 geopandas==0.14.4
-matplotlib==3.9.1
+matplotlib==3.9.2
 mdutils
 numpy==1.26.4
 odc-algo==0.2.3
