@@ -1108,7 +1108,7 @@ def export_dataset_metadata(
                 / dataset_assembler.names.thumbnail_filename()
             )
             if "composite" in odc_product: 
-                _write_thumbnail(da=ds[thumbnail_band], path=thumbnail_path, max_resolution=320)
+                _write_thumbnail_composites(da=ds[thumbnail_band], path=thumbnail_path, max_resolution=320)
             else:
                 _write_thumbnail(da=ds[thumbnail_band], path=thumbnail_path, max_resolution=320)
 

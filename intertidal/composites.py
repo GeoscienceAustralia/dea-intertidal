@@ -16,7 +16,7 @@ from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.utils import configure_logging
-from intertidal.elevation import (
+from intertidal.io import (
     load_data,
     prepare_for_export,
     tidal_metadata,
