@@ -166,6 +166,7 @@ def load_data(
     skip_broken_datasets=True,
     ndwi=True,
     mask_sunglint=None,
+    include_coastal_aerosol=False,
     dask_chunks=None,
     dtype="float32",
     **query,
@@ -224,6 +225,9 @@ def load_data(
         (e.g. < 20) often correspond with sunglint. Defaults to None;
         set to e.g. "20" to mask out all pixels with a glint angle of
         less than 20.
+    include_coastal_aerosol : bool, optional
+        Whether to include the coastal aerosol band
+        Defaults to False
     dask_chunks : dict, optional
         Optional custom Dask chunks to load data with. Defaults to None,
         which will use '{"x": 1600, "y": 1600}'.
@@ -271,7 +275,11 @@ def load_data(
     # Set masking bands to load
     s2_masking_bands = ["oa_s2cloudless_mask", "oa_nbart_contiguity"]
     ls_masking_bands = ["oa_fmask", "oa_nbart_contiguity"]
-
+    
+    # Whether it include the nbart_coastal_aerosol band
+    if include_coastal_aerosol:
+        s2_spectral_bands= s2_spectral_bands + ["nbart_coastal_aerosol"]
+    
     # Set sunglint bands to load
     if mask_sunglint is not None:
         sunglint_bands = [
@@ -660,6 +668,37 @@ def _write_thumbnail(da, path, max_resolution=320):
 
     with open(path, "wb") as f:
         f.write(jpeg_data)
+        
+def _write_thumbnail_composites(da, path, max_resolution=320):
+    """
+    Generate and save a thumbnail image from a DEA Intertidal Elevation
+    `xarray.DataArray`.
+
+    The thumbnail is reprojected to the specified maximum resolution,
+    colorized using the 'viridis' colormap, and compressed as a JPEG
+    with the specified quality.
+
+    Parameters
+    ----------
+    da : xarray.DataArray
+        The input DataArray containg DEA Intertidal Elevation data.
+    path : str
+        The path where the thumbnail image will be saved.
+    max_resolution : int, optional
+        The maximum resolution of the thumbnail image, by default 320.
+    """
+    jpeg_data = (
+        da.odc.reproject(
+            how=da.odc.geobox.zoom_to(max_resolution),
+            resampling="min",
+        )
+        .pipe(lambda x: x.where(np.isfinite(x)))
+        .odc.colorize(cmap="viridis")
+        .odc.compress("jpeg", 85, transparent=[255, 255, 255])
+    )
+
+    with open(path, "wb") as f:
+        f.write(jpeg_data)
 
 
 def _write_stac(
@@ -914,6 +953,9 @@ def export_dataset_metadata(
     dataset_version="0.0.1",
     product_maturity="provisional",
     dataset_maturity="final",
+    product_family="intertidal",
+    odc_product="ga_s2ls_intertidal_cyear_3",
+    thumbnail_band ="elevation",
     additional_metadata=None,
     debug=False,
     run_id=None,
@@ -954,6 +996,12 @@ def export_dataset_metadata(
     dataset_maturity : str, optional
         Dataset maturity to use for the output dataset. Default is
         "final", can also be "interim".
+    product_family : str, optional
+        Default is "intertidal"
+    odc_product : str, optional
+        Default is "ga_s2ls_intertidal_cyear_3"
+    thumbnail_band : str, optional
+        Default is "elevation"
     additional_metadata : dict, optional
         An option dictionary containing additional metadata fields to
         add to the dataset metadata properties.
@@ -988,7 +1036,7 @@ def export_dataset_metadata(
             naming_conventions="dea_c3",
         ) as dataset_assembler:
             # General product details
-            dataset_assembler.product_family = "intertidal"
+            dataset_assembler.product_family = product_family
             dataset_assembler.producer = "ga.gov.au"
 
             # Platforms and intruments
@@ -1013,7 +1061,7 @@ def export_dataset_metadata(
             # Set additional properties
             dataset_assembler.properties.update(
                 {
-                    "odc:product": "ga_s2ls_intertidal_cyear_3",
+                    "odc:product": odc_product,
                     "odc:file_format": "GeoTIFF",
                     "odc:collection_number": 3,
                     "eo:gsd": ds.odc.geobox.resolution.x,
@@ -1048,7 +1096,7 @@ def export_dataset_metadata(
             dataset_assembler.note_source_datasets("ancillary", *ancillary_set)
 
             # Add a starting thumbnail; this will be overwritten later
-            dataset_assembler.write_thumbnail("elevation", "elevation", "elevation")
+            dataset_assembler.write_thumbnail(thumbnail_band, thumbnail_band, thumbnail_band)
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
@@ -1059,7 +1107,10 @@ def export_dataset_metadata(
                 dataset_assembler.names.dataset_path
                 / dataset_assembler.names.thumbnail_filename()
             )
-            _write_thumbnail(da=ds.elevation, path=thumbnail_path, max_resolution=320)
+            if "composite" in odc_product: 
+                _write_thumbnail(da=ds[thumbnail_band], path=thumbnail_path, max_resolution=320)
+            else:
+                _write_thumbnail(da=ds[thumbnail_band], path=thumbnail_path, max_resolution=320)
 
             # Generate final destination path
             destination_path = (

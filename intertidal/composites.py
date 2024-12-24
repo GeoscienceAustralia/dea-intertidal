@@ -2,9 +2,10 @@ import os
 import sys
 import numpy as np
 import click
-
+import xarray
 import datacube
 import odc.geo.xr
+from odc.geo.geom import BoundingBox
 from odc.algo import (
     int_geomedian,
     keep_good_only,
@@ -15,8 +16,17 @@ from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.utils import configure_logging
-from intertidal.elevation import load_data
-
+from intertidal.elevation import (
+    load_data,
+    prepare_for_export,
+    tidal_metadata,
+    export_dataset_metadata,
+)
+# Function to rename the bands
+def rename_bands(ds, old_string, new_string):
+    # Create a new dataset with renamed bands
+    ds_renamed = ds.rename({band: band.replace(old_string, new_string) for band in ds.data_vars})
+    return ds_renamed
 
 def intertidal_composites(
     satellite_ds,
@@ -93,15 +103,13 @@ def intertidal_composites(
         log_prefix = f"Study area {study_area}: "
     else:
         log_prefix = ""
-
+    
     # Model tides into for spatial extent and timesteps in satellite data
     log.info(f"Study area {study_area}: Modelling tide heights")
     tides_highres, tides_lowres = pixel_tides(
-        satellite_ds,
+        ds=satellite_ds,
         model=tide_model,
         directory=tide_model_dir,
-        cutoff=np.inf,
-        dask_compute=False,
     )
 
     # Start processing tide data, using .persist so we can re-use our results
@@ -116,7 +124,7 @@ def intertidal_composites(
         .odc.reproject(satellite_ds.odc.geobox, resampling="bilinear")
         .drop("quantile")
     )
-
+    
     # Apply threshold to keep only pixels with tides less or greater than
     # than tide height threshold
     log.info(f"Study area {study_area}: Masking to low and high tide observations")
@@ -131,15 +139,18 @@ def intertidal_composites(
     ds_high = keep_good_only(x=satellite_ds, where=high_mask).sel(
         time=high_mask.any(dim=["x", "y"])
     )
-
+        
     # Calculate low and high tide geomedians
     log.info(f"Study area {study_area}: Calculating geomedians")
     num_threads = os.cpu_count() - 2
+    
     ds_lowtide = int_geomedian(ds=ds_low, maxiters=max_iters, num_threads=num_threads)
     ds_hightide = int_geomedian(ds=ds_high, maxiters=max_iters, num_threads=num_threads)
-
+        
+    ds_lowtide['low_clear_count'] = ds_low.nbart_red.count(dim=["time"])               
+    ds_hightide['high_clear_count'] = ds_high.nbart_red.count(dim=["time"])
+    
     return ds_lowtide, ds_hightide
-
 
 @click.command()
 @click.option(
@@ -147,21 +158,59 @@ def intertidal_composites(
     type=str,
     required=True,
     help="A string providing a GridSpec tile ID (e.g. in the form "
-    "'x143y56') to run the analysis on.",
+    "'x123y123') to run the analysis on.",
 )
 @click.option(
     "--start_date",
     type=str,
-    default="2020",
+    required=True,
     help="The start date of satellite data to load from the "
-    "datacube. This can be any date format accepted by datacube. ",
+    "datacube. This can be any date format accepted by datacube. "
+    "For DEA Intertidal, this is set to provide a three year window "
+    "centred over `label_date` below.",
 )
 @click.option(
     "--end_date",
     type=str,
-    default="2022",
+    required=True,
     help="The end date of satellite data to load from the "
-    "datacube. This can be any date format accepted by datacube. ",
+    "datacube. This can be any date format accepted by datacube. "
+    "For DEA Intertidal, this is set to provide a three year window "
+    "centred over `label_date` below.",
+)
+@click.option(
+    "--label_date",
+    type=str,
+    required=True,
+    help="The date used to label output arrays, and to use as the date "
+    "assigned to the dataset when indexed into Datacube.",
+)
+@click.option(
+    "--output_version",
+    type=str,
+    required=True,
+    help="The version number to use for output files and metadata (e.g. " "'0.0.1').",
+)
+@click.option(
+    "--output_dir",
+    type=str,
+    default="data/processed/",
+    help="The directory/location to output data and metadata; supports "
+    "both local disk and S3 locations. Defaults to 'data/processed/'.",
+)
+@click.option(
+    "--product_maturity",
+    type=str,
+    default="provisional",
+    help="Product maturity metadata to use for the output dataset. "
+    "Defaults to 'provisional', can also be 'stable'.",
+)
+@click.option(
+    "--dataset_maturity",
+    type=str,
+    default="final",
+    help="Dataset maturity metadata to use for the output dataset. "
+    "Defaults to 'final', can also be 'interim'.",
 )
 @click.option(
     "--resolution",
@@ -184,15 +233,35 @@ def intertidal_composites(
     help="The quantile used to identify high tide observations. " "Defaults to 0.8.",
 )
 @click.option(
+    "--correct_seasonality/--no-correct_seasonality",
+    is_flag=True,
+    default=False,
+    help="If True, remove any seasonal signal from the tide height data "
+    "by subtracting monthly mean tide height from each value prior to "
+    "correlation calculations. This can reduce false tide correlations "
+    "in regions where tide heights correlate with seasonal changes in "
+    "surface water. Note that seasonally corrected tides are only used "
+    "to identify potentially tide influenced pixels - not for elevation "
+    "modelling itself.",
+)
+@click.option(
+    "--mask_sunglint",
+    type=int,
+    default=0,
+    help="EXPERIMENTAL: Whether to mask out pixels that are likely to be "
+    "affected by sunglint using glint angles. Low glint angles "
+    "(e.g. < 20) often correspond with sunglint. Defaults to None; "
+    "set to e.g. '20' to mask out all pixels with a glint angle of "
+    "less than 20.",
+)
+@click.option(
     "--tide_model",
     type=str,
     multiple=True,
     default=["FES2014"],
     help="The model used for tide modelling, as supported by the "
     "`pyTMD` Python package. Options include 'FES2014' (default), "
-    "'TPXO9-atlas-v5', 'TPXO8-atlas', 'EOT20', 'HAMTIDE11', 'GOT4.10'. "
-    "This parameter can be repeated to request multiple models, e.g.: "
-    "`--tide_model FES2014 --tide_model FES2012`.",
+    "'TPXO9-atlas-v5', 'TPXO8-atlas-v1', 'EOT20', 'HAMTIDE11', 'GOT4.10'. ",
 )
 @click.option(
     "--tide_model_dir",
@@ -208,105 +277,233 @@ def intertidal_composites(
     default=True,
     help="Whether to use sign AWS requests for S3 access",
 )
+@click.option(
+    "--include_coastal_aerosol/--no-include_coastal_aerosol",
+    type=bool,
+    default=True,
+    help="Whether to include the coastal aerosol band",
+)
+@click.option(
+    "--overwrite/--no-overwrite",
+    type=bool,
+    default=True,
+    help="Whether to include the coastal aerosol band",
+)
 def intertidal_composites_cli(
     study_area,
     start_date,
     end_date,
+    label_date,
+    output_version,
+    output_dir,
+    product_maturity,
+    dataset_maturity,
     resolution,
     threshold_lowtide,
     threshold_hightide,
+    correct_seasonality,
+    mask_sunglint,
     tide_model,
     tide_model_dir,
     aws_unsigned,
+    include_coastal_aerosol,
+    overwrite,
 ):
-    log = configure_logging(
-        f"Study area {study_area}: Generating Intertidal composites"
-    )
+    
+
+    filename=f"{output_dir}/ga_s2_intertidal_composites_cyear_3/{output_version.replace('.','-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_intertidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
+
+    if mask_sunglint < 1:
+        mask_sunglint = None
+        
+    process_tile=True
+    if ~overwrite:
+        if os.path.exists(filename):
+            process_tile=False
+     
+    # Create a unique run ID for analysis based on input params and use
+    # for logs
+       
+    input_params = locals()
+    run_id = f"[{output_version}] [{label_date}] [{study_area}]"
+    log = configure_logging(run_id)
+
+    # Record params in logs
+    log.info(f"{run_id}: Using parameters {input_params}")
 
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
-    # Create output folder. If it doesn't exist, create it
-    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
-    os.makedirs(output_dir, exist_ok=True)
+    if process_tile: 
+         # Create output folder. If it doesn't exist, create it
+        # output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
+        os.makedirs(output_dir, exist_ok=True)  
 
-    try:
-        log.info(f"Study area {study_area}: Loading satellite data")
+        try:
+            log.info(f"{run_id}: Loading satellite data")
 
-        # Connect to datacube to access data
-        dc = datacube.Datacube(app="Intertidal_composites_CLI")
+            # Create local dask cluster to improve data load time
+            client = create_local_dask_cluster(return_client=True)
 
-        # Lazily load Sentinel-2 satellite data
-        satellite_ds = load_data(
-            dc=dc,
-            study_area=study_area,
-            time_range=(start_date, end_date),
-            resolution=resolution,
-            crs="EPSG:3577",
-            include_s2=True,
-            include_ls=False,
-            filter_gqa=False,
-            ndwi=False,
-            dtype="int16",
-        )
+            # Connect to datacube to load data
+            dc = datacube.Datacube(app="Composites_CLI")
 
-        # Create local dask cluster to improve data load time
-        client = create_local_dask_cluster(return_client=True)
+            # Use a custom polygon if in testing mode
+            if study_area == "testing":
+                log.info(f"{run_id}: Running in testing mode using custom study area")
+                geom = BoundingBox(
+                    467510, -1665790, 468260, -1664840, crs="EPSG:3577"
+                ).polygon
+            else:
+                geom = None
 
-        # Calculate high and low tide geomedian composites
-        log.info(f"Study area {study_area}: Running geomedians")
-        ds_lowtide, ds_hightide = intertidal_composites(
-            satellite_ds=satellite_ds,
-            threshold_lowtide=threshold_lowtide,
-            threshold_hightide=threshold_hightide,
-            max_iters=10,
-            study_area=study_area,
-            log=log,
-        )
+            # Load satellite data and dataset IDs for metadata
+            satellite_ds, dss_s2, dss_ls = load_data(
+                dc=dc,
+                study_area=study_area,
+                geom=geom,
+                time_range=(start_date, end_date),
+                resolution=resolution,
+                crs="EPSG:3577",
+                include_s2=True,
+                include_ls=False,
+                filter_gqa=True,
+                ndwi=False,
+                mask_sunglint=mask_sunglint,
+                include_coastal_aerosol=include_coastal_aerosol,
+                max_cloudcover=90,
+                skip_broken_datasets=True,
+                dataset_maturity="final", 
+            )
+            satellite_ds.load()
 
-        # Process and load low and high tide composites using Dask
-        log.info(f"Study area {study_area}: Processing low tide composite")
-        ds_lowtide.load()
-        log.info(f"Study area {study_area}: Processing high tide composite")
-        ds_hightide.load()
+            
+            # Calculate high and low tide geomedian composites
+            log.info(f"{run_id}: Study area {study_area}: Running Intertidal composites")
+            ds_lowtide, ds_hightide = intertidal_composites(
+                satellite_ds=satellite_ds,
+                threshold_lowtide=threshold_lowtide,
+                threshold_hightide=threshold_hightide,
+                max_iters=10,
+                tide_model=tide_model,
+                tide_model_dir=tide_model_dir,
+                study_area=study_area,
+                log=log,
+            )
 
-        # Close dask client
-        client.close()
+           
+            # Process and load low and high tide composites using Dask
+            log.info(f"Study area {study_area}: Processing low tide composite")
+            ds_lowtide.load()
+            log.info(f"Study area {study_area}: Processing high tide composite")
+            ds_hightide.load()
 
-        # Export layers as GeoTIFFs
-        log.info(f"Study area {study_area}: Exporting outputs GeoTIFFs to {output_dir}")
+            ds_hightide=rename_bands(ds_hightide, "nbart", "high")
+            ds_hightide=odc.geo.xr.assign_crs(ds_hightide, satellite_ds.odc.crs)  
 
-        prefix = f"{output_dir}/{study_area}_{start_date}_{end_date}"
-        ds_lowtide.to_array().odc.write_cog(
-            f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}.tif",
-            overwrite=True,
-        )
-        ds_hightide.to_array().odc.write_cog(
-            f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}.tif",
-            overwrite=True,
-        )
+            ds_lowtide=rename_bands(ds_lowtide, "nbart", "low")
+            ds_lowtide=odc.geo.xr.assign_crs(ds_lowtide, satellite_ds.odc.crs)
 
-        # Export as images
-        prefix = f"data/figures/{study_area}_{start_date}_{end_date}"
-        ds_lowtide.odc.to_rgba(
-            bands=["nbart_red", "nbart_green", "nbart_blue"], vmin=100, vmax=2500
-        ).plot.imshow().figure.savefig(
-            f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}_rgb.png"
-        )
-        ds_hightide.odc.to_rgba(
-            bands=["nbart_red", "nbart_green", "nbart_blue"], vmin=100, vmax=2500
-        ).plot.imshow().figure.savefig(
-            f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}_rgb.png"
-        )
 
-        # Workflow completed
-        log.info(
-            f"Study area {study_area}: Completed DEA Intertidal composites workflow"
-        )
+            # Concatenate 
+            ds_hltc = xarray.merge([ds_lowtide, ds_hightide])
 
-    except Exception as e:
-        log.exception(f"Study area {study_area}: Failed to run process with error {e}")
-        sys.exit(1)
+            ds_hltc['clear_count'] = satellite_ds.nbart_red.count(dim=["time"])
+
+            custom_dtypes = {
+            "clear_count": (np.int16, -999),
+            "low_coastal_aerosol": (np.int16, -999),
+            "low_blue": (np.int16, -999),
+            "low_green": (np.int16, -999),
+            "low_red": (np.int16, -999),
+            "low_red_edge_1": (np.int16, -999),
+            "low_red_edge_2": (np.int16, -999),
+            "low_red_edge_3": (np.int16, -999),
+            "low_nir_1": (np.int16, -999),
+            "low_nir_2": (np.int16, -999),
+            "low_swir_2": (np.int16, -999),
+            "low_swir_3": (np.int16, -999),
+            "low_clear_count": (np.int16, -999),
+            "high_coastal_aerosol": (np.int16, -999),
+            "high_blue": (np.int16, -999),
+            "high_green": (np.int16, -999),
+            "high_red": (np.int16, -999),
+            "high_red_edge_1": (np.int16, -999),
+            "high_red_edge_2": (np.int16, -999),
+            "high_red_edge_3": (np.int16, -999),
+            "high_nir_1": (np.int16, -999),
+            "high_nir_2": (np.int16, -999),
+            "high_swir_2": (np.int16, -999),
+            "high_swir_3": (np.int16, -999),
+            "high_clear_count": (np.int16, -999),
+        }
+
+            ds_prepared = prepare_for_export(ds_hltc, 
+                                             custom_dtypes=custom_dtypes,
+                                             log=log,
+                                              )  # sets correct dtypes and nodata
+
+
+             # Export data and metadata
+            export_dataset_metadata(
+                ds_prepared,
+                year=label_date,
+                study_area=study_area,
+                output_location=output_dir,
+                ls_lineage=dss_ls,
+                s2_lineage=dss_s2,
+                dataset_version=output_version,
+                product_family="composites",
+                odc_product="ga_s2_intertidal_composites_cyear_3",
+                thumbnail_band = "low_blue",
+                product_maturity=product_maturity,
+                dataset_maturity=dataset_maturity,
+                run_id=run_id,
+                log=log,
+            )
+
+            #Thumbnail image needs work
+
+            # Close dask client
+            client.close()
+
+            # Just in case you want to write the outputs as multiband cogs
+            # Export multiband GeoTIFFs and pngs
+            # log.info(f"Study area {study_area}: Exporting outputs pngs to {output_dir}")
+
+            # prefix = f"{output_dir}/{study_area}_{start_date}_{end_date}_glintmask{mask_sunglint}"
+          
+            # ds_hltc.to_array().odc.write_cog(
+            #     f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}.tif",
+            #     overwrite=True,
+            # )
+            # ds_hightide.to_array().odc.write_cog(
+            #     f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}.tif",
+            #     overwrite=True,
+            # )
+
+            # If you want to export images of the composites
+            # ds_lowtide.odc.to_rgba(
+            #     bands=["low_red", "low_green", "low_blue"], vmin=100, vmax=2500
+            # ).plot.imshow().figure.savefig(
+            #     f"{prefix}_composite_lowtide_rgb.png"
+            # )
+            # ds_hightide.odc.to_rgba(
+            #     bands=["high_red", "high_green", "high_blue"], vmin=100, vmax=2500
+            # ).plot.imshow().figure.savefig(
+            #     f"{prefix}_composite_hightide_rgb.png"
+            # )
+
+            # Workflow completed
+            log.info(
+                f"Study area {study_area}: Completed DEA Intertidal Composites workflow"
+            )
+
+        except Exception as e:
+            log.exception(f"{run_id}: Failed to run process with error {e}")
+            sys.exit(1)
+    else:
+        log.info(f"Study area {study_area}: Skipping as overwrite ==False")
 
 
 if __name__ == "__main__":
