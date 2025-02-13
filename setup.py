@@ -29,6 +29,7 @@ REQUIRED = [
     "pytest",
     "pytest-dependency",
     "pytest-cov",
+    "pyTMD>=2.2.1",
     "pytz",
     "rasterio",
     "setuptools-scm",
