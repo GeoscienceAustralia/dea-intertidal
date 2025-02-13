@@ -31,6 +31,11 @@ measurements:
     units: "percent"
     nodata: 255
 
+  - name: extents
+    dtype: uint8
+    units: "class"
+    nodata: 255
+
   - name: ta_hat
     dtype: float32
     units: "metres above MSL"
@@ -92,6 +97,13 @@ measurements:
     nodata: 255
     aliases:
       - ndwi_freq
+
+  - name: qa_count_clear
+    dtype: int16
+    units: "count"
+    nodata: -999
+    aliases:
+      - count_clear
 
 load:
   crs: "EPSG:3577"

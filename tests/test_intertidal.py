@@ -26,7 +26,13 @@ def satellite_ds():
     """
     Loads a pre-generated timeseries of satellite data from NetCDF.
     """
-    return xr.open_dataset("tests/data/satellite_ds.nc")
+    satellite_ds = xr.open_dataset("tests/data/satellite_ds.nc")
+
+    # Hack to fix malformed CRS
+    del satellite_ds["spatial_ref"]
+    satellite_ds = satellite_ds.odc.assign_crs("EPSG:3577")
+    
+    return satellite_ds
 
 
 @pytest.mark.dependency()
