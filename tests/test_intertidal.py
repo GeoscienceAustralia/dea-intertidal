@@ -53,8 +53,8 @@ def test_intertidal_cli():
             "3h",
             "--output_version",
             "0.0.1",
-            # "--windows_n",
-            # 50,
+            "--tide_model",
+            "FES2014",
         ],
     )
     assert result.exit_code == 0
