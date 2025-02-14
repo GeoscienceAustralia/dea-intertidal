@@ -842,7 +842,7 @@ def elevation(
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
         supported by the `eo-tides` Python package. Options include:
-        - "EOT20" (default; pre-configured on DEA Sandbox)
+        - "EOT20" (default)
         - "TPXO10-atlas-v2-nc"
         - "FES2022"
         - "FES2022_extrapolated"
@@ -1106,9 +1106,8 @@ def elevation(
     multiple=True,
     default=["EOT20"],
     help="The model used for tide modelling, as supported by the "
-    "`eo-tides` Python package. Options include 'EOT20'; (default; " 
-    "pre-configured on DEA Sandbox), 'TPXO10-atlas-v2-nc', 'FES2022', "
-    "'FES2014', 'GOT5.6', 'ensemble'."
+    "`eo-tides` Python package. Options include 'EOT20' (default), "
+    "'TPXO10-atlas-v2-nc', 'FES2022', 'FES2014', 'GOT5.6', 'ensemble'."
 )
 @click.option(
     "--tide_model_dir",
