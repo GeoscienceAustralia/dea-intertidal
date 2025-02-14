@@ -85,9 +85,9 @@ jobs:
           wget --no-verbose https://www.dropbox.com/s/uemd8ib2vfw5nad/tide_models.zip?dl=1 -O tide_models.zip
           unzip -q tide_models.zip
 
-          # Run integration tests using Docker, setting up datacube access, AWS configuration and
-          # adding volumes that provide access to tide model data and allow us to export artifacts
-          # from the run
+          # Run integration tests using Docker. The command sets up datacube access, AWS configuration,
+          # and adds volumes to allow access to model outputs outside the container (used to commit outputs
+          # using git). It also provides access to tide model data for the tests.
           docker run \
             --net=host \
             --env DATACUBE_DB_URL \
@@ -96,18 +96,12 @@ jobs:
             --env AWS_ACCESS_KEY_ID \
             --env AWS_SECRET_ACCESS_KEY \
             --env AWS_SESSION_TOKEN \
-            --volume ${GITHUB_WORKSPACE}:/code \
+            --volume ${GITHUB_WORKSPACE}:/app \
             --volume ${GITHUB_WORKSPACE}/tide_models:/var/share/tide_models \
-            --volume ${GITHUB_WORKSPACE}/artifacts:/mnt/artifacts \
             dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
 
-          # Copy out validation outputs produced by the integration tests and place them
-          # in correct output locations so they can be committed back into the repository
-          cp ./artifacts/validation.jpg ./tests/validation.jpg
-          cp ./artifacts/validation.csv ./tests/validation.csv
-          cp ./artifacts/README.md ./tests/README.md
-
       # Commit validation results produced by integration tests back into repo
+      # (relies on having previously added a volume to access outputs outside of the container)
       - name: Commit validation results into repository
         uses: stefanzweifel/git-auto-commit-action@v4
         if: github.event_name == 'pull_request'
@@ -116,7 +110,7 @@ jobs:
           commit_message: Automatically update integration test validation results
           file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
 
-      # Post validation tesults as comment on PR
+      # Post validation tesults as a comment on the pull request
       - name: Post validation results as comment
         uses: mshick/add-pr-comment@v2
         if: github.event_name == 'pull_request'
