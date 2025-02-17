@@ -1,4 +1,5 @@
 aiohttp
+awscli
 botocore
 Bottleneck==1.4.2
 click==8.1.7
