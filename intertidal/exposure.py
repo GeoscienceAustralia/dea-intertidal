@@ -9,7 +9,7 @@ import geopandas as gpd
 import pandas as pd
 
 from math import ceil
-from dea_tools.coastal import _pixel_tides_resample, pixel_tides
+from eo_tides.eo import _pixel_tides_resample, pixel_tides
 from intertidal.utils import configure_logging, round_date_strings
 
 
@@ -235,7 +235,7 @@ def exposure(
     start_date,
     end_date,
     modelled_freq="30min",
-    tide_model="FES2014",
+    tide_model="EOT20",
     tide_model_dir="/var/share/tide_models",
     filters=None,
     filters_combined=None,
@@ -281,19 +281,19 @@ def exposure(
         cadence. Defaults to '30min'.
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
-        supported by the `pyTMD` Python package. Options include:
-        - "FES2014" (default; pre-configured on DEA Sandbox)
+        supported by the `eo-tides` Python package. Options include:
+        - "EOT20" (default)
+        - "TPXO10-atlas-v2-nc"
         - "FES2022"
-        - "TPXO9-atlas-v5"
-        - "TPXO8-atlas"
-        - "EOT20"
-        - "HAMTIDE11"
-        - "GOT4.10"
-        - "ensemble" (combine above into single ensemble)
+        - "FES2022_extrapolated"
+        - "FES2014"
+        - "FES2014_extrapolated"
+        - "GOT5.6"
+        - "ensemble" (experimental: combine all above into single ensemble)
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
-        directory structure, refer to `dea_tools.coastal.model_tides`.
+        directory structure, refer to `eo-tides.utils.list_models`.
     filters : list of strings, optional
         An optional list of customisation options to input into the tidal
         modelling to calculate exposure. Filters include:
@@ -441,9 +441,9 @@ def exposure(
 
     # Run tide model at low resolution
     modelledtides_lowres = pixel_tides(
-        ds=dem,
+        data=dem,
+        time=time_range,
         model=tide_model,
-        times=time_range,
         directory=tide_model_dir,
         resample=False,
     )
@@ -455,17 +455,18 @@ def exposure(
     # pixel resolution if any filter is "unfiltered"
     if "unfiltered" in filters:
 
-        # Convert to quantiles
-        modelledtides_lowres_quantiles = modelledtides_lowres.quantile(
-            q=calculate_quantiles, dim="time"
-        ).astype(modelledtides_lowres.dtype)
+        # Convert to quantiles, and make sure CRS is present
+        modelledtides_lowres_quantiles = (
+            modelledtides_lowres.quantile(q=calculate_quantiles, dim="time")
+            .astype(modelledtides_lowres.dtype)
+            .odc.assign_crs(dem.odc.geobox.crs)
+        )
 
-        # Reproject into pixel resolution, after making sure CRS is present
-        modelledtides_highres, _ = _pixel_tides_resample(
-            tides_lowres=modelledtides_lowres_quantiles.odc.assign_crs(
-                dem.odc.geobox.crs
-            ),
-            ds=dem,
+        # Reproject into pixel resolution
+        modelledtides_highres = _pixel_tides_resample(
+            tides_lowres=modelledtides_lowres_quantiles,
+            dask_chunks=dem.shape,
+            gbox=dem.odc.geobox,
         )
 
         # Add pixel resolution tides into to output dataset
