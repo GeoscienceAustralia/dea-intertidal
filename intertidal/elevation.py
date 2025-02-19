@@ -15,7 +15,7 @@ import odc.geo.xr
 from odc.geo.geom import BoundingBox
 from odc.algo import xr_quantile
 from datacube.utils.aws import configure_s3_access
-from dea_tools.coastal import pixel_tides
+from eo_tides.eo import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.io import (
@@ -29,6 +29,7 @@ from intertidal.io import (
 from intertidal.utils import (
     configure_logging,
     round_date_strings,
+    spearman_correlation,
 )
 from intertidal.extents import extents, load_connectivity_mask
 from intertidal.exposure import exposure
@@ -43,6 +44,7 @@ def ds_to_flat(
     max_freq=0.99,
     min_correlation=0.15,
     corr_method="pearson",
+    apply_threshold=True,
     correct_seasonality=False,
     valid_mask=None,
 ):
@@ -77,6 +79,11 @@ def ds_to_flat(
     corr_method : str, optional
         Correlation method to use. Defaults to "pearson", also supports
         "spearman".
+    apply_threshold : bool, optional
+        Whether to threshold the water index timeseries before calculating
+        correlations, to ensure small changes in index values beneath the
+        water surface are not included when calcualting correlations.
+        Defaults to True.
     correct_seasonality : bool, optional
         If True, remove any seasonal signal from the tide height data
         by subtracting monthly mean tide height from each value. This
@@ -128,12 +135,17 @@ def ds_to_flat(
     freq = freq.stack(z=("y", "x"))
 
     # Calculate correlations between NDWI water observations and tide
-    # height. Because we are only interested in pixels with inundation
-    # patterns (e.g.transitions from dry to wet) are driven by tide, we
-    # first convert NDWI into a boolean dry/wet layer before running the
-    # correlation. This prevents small changes in NDWI beneath the water
-    # surface from producing correlations with tide height.
-    wet_dry = flat_ds[index] > ndwi_thresh
+    # height. By default, because we are only interested in pixels with
+    # inundation patterns (e.g.transitions from dry to wet) that are driven
+    # by the tide, we first convert NDWI into a boolean dry/wet layer before
+    # running the correlation. This prevents small changes in NDWI beneath
+    # the water surface from producing correlations with tide height.
+    # This can be turned off by passing `apply_threshold=False`.
+    if apply_threshold:
+        wet_dry = flat_ds[index] > ndwi_thresh
+    else:
+        print("Using raw water index values for correlation")
+        wet_dry = flat_ds[index]
 
     # Use either tides directly or correct to remove seasonal signal
     if correct_seasonality:
@@ -145,19 +157,13 @@ def ds_to_flat(
 
     # Calculate correlation
     if corr_method == "pearson":
-        corr = xr.corr(wet_dry, tide_array, dim="time").rename("qa_ndwi_corr")
+        corr = xr.corr(wet_dry, tide_array, dim="time")
     elif corr_method == "spearman":
-        import xskillscore
-
-        corr = xskillscore.spearman_r(
-            flat_ds[index], tide_array, dim="time", skipna=True, keep_attrs=True
-        ).rename("qa_ndwi_corr")
-
-    # TODO: investigate alternative function from DEA Tools
-    # (doesn't currently handle multiple tide models)
-    # corr = lag_linregress_3D(x=flat_ds.tide_m, y=wet_dry).cor.rename("qa_ndwi_corr")
+        print("Applying Spearman correlation")
+        corr = spearman_correlation(x=wet_dry, y=tide_array, dim="time")
 
     # Keep only pixels with correlations that meet min threshold
+    corr = corr.rename("qa_ndwi_corr")
     corr_mask = corr >= min_correlation
     flat_ds = flat_ds.where(corr_mask, drop=True)
 
@@ -781,14 +787,14 @@ def elevation(
     window_prop_tide=0.15,
     correct_seasonality=False,
     max_workers=None,
-    tide_model="FES2014",
+    tide_model="EOT20",
     tide_model_dir="/var/share/tide_models",
     run_id=None,
     log=None,
 ):
     """
-    Calculates DEA Intertidal Elevation using satellite imagery and
-    tidal modeling.
+    Generates DEA Intertidal Elevation outputs using satellite imagery
+    and tidal modeling.
 
     Parameters
     ----------
@@ -831,18 +837,19 @@ def elevation(
         determine workers.
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
-        supported by the `pyTMD` Python package. Options include:
-        - "FES2014" (default; pre-configured on DEA Sandbox)
-        - "TPXO9-atlas-v5"
-        - "TPXO8-atlas"
-        - "EOT20"
-        - "HAMTIDE11"
-        - "GOT4.10"
+        supported by the `eo-tides` Python package. Options include:
+        - "EOT20" (default)
+        - "TPXO10-atlas-v2-nc"
+        - "FES2022"
+        - "FES2022_extrapolated"
+        - "FES2014"
+        - "FES2014_extrapolated"
+        - "GOT5.6"
         - "ensemble" (experimental: combine all above into single ensemble)
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
-        directory structure, refer to `dea_tools.coastal.model_tides`.
+        directory structure, refer to `eo-tides.utils.list_models`.
     run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
@@ -877,8 +884,8 @@ def elevation(
     # dataset (x by y by time). If `model` is "ensemble" this will model
     # tides by combining the best local tide models.
     log.info(f"{run_id}: Modelling tide heights for each pixel")
-    tide_m, _ = pixel_tides(
-        ds=satellite_ds,
+    tide_m = pixel_tides(
+        data=satellite_ds,
         model=tide_model,
         directory=tide_model_dir,
         ranking_points="data/raw/tide_correlations_2017-2019.geojson",
@@ -1094,10 +1101,10 @@ def elevation(
     "--tide_model",
     type=str,
     multiple=True,
-    default=["FES2014"],
+    default=["EOT20"],
     help="The model used for tide modelling, as supported by the "
-    "`pyTMD` Python package. Options include 'FES2014' (default), "
-    "'TPXO9-atlas-v5', 'TPXO8-atlas-v1', 'EOT20', 'HAMTIDE11', 'GOT4.10'. ",
+    "`eo-tides` Python package. Options include 'EOT20' (default), "
+    "'TPXO10-atlas-v2-nc', 'FES2022', 'FES2014', 'GOT5.6', 'ensemble'."
 )
 @click.option(
     "--tide_model_dir",
@@ -1105,7 +1112,7 @@ def elevation(
     default="/var/share/tide_models",
     help="The directory containing tide model data files. Defaults to "
     "'/var/share/tide_models'; for more information about the required "
-    "directory structure, refer to `dea_tools.coastal.model_tides`.",
+    "directory structure, refer to `eo-tides.utils.list_models`.",
 )
 @click.option(
     "--modelled_freq",
