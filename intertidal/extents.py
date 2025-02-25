@@ -135,8 +135,10 @@ def load_connectivity_mask(
     elevation_band="dem_h",
     resampling="bilinear",
     buffer=20000,
+    preprocess=None,
     max_threshold=100,
     add_mangroves=False,
+    correct_hat=False,
     mask_filters=[("dilation", 3)],
     **cost_distance_kwargs,
 ):
@@ -165,9 +167,23 @@ def load_connectivity_mask(
         The distance by which to buffer the input GeoBox to reduce edge
         effects. This buffer will eventually be removed and clipped back
         to the original GeoBox extent. Defaults to 20,000 metres.
+    preprocess : function, optional
+        An optional lambda function that can be applied to the elevation
+        data prior to connecitivity analysis. Regardless of the outputs
+        of this function, the resulting data will always be clipped
+        between 0 and inf so that it is suitable for analysis. Defaults
+        to None.
     max_threshold: int, optional
         Value used to threshold the resulting cost distance to produce
         a mask.
+    add_mangroves : bool, optional
+        Whether to use the extent of mangroves from Global Mangrove Watch
+        as additional starting points for the connectivity analysis.
+        Defaults to False.
+    correct_hat : bool, optional
+        Whether to apply a Highest Astronomical Tide correction, to make
+        costs based on height above HAT vs height above MSL. Defaults to
+        False.
     mask_filters : list of tuples, optional
         An optional list of morphological processing steps to pass to
         the `mask_cleanup` function. The default is `[("dilation", 3)]`,
@@ -188,24 +204,20 @@ def load_connectivity_mask(
 
     # Buffer input geobox and reduce resolution to ensure that the
     # connectivity analysis is less affected by edge effects
+    print("Loading SRTM data at native 30 m resolution")
     geobox_buffered = GeoBox.from_bbox(
         geobox.buffered(xbuff=buffer, ybuff=buffer).boundingbox,
         resolution=30,
         tight=True,
     )
-    
-    # Exclude tiles that fall outside of the DEM
-    try:
-        # Load DEM data
-        dem_da = dc.load(
-            product="ga_srtm_dem1sv1_0",
-            measurements=[elevation_band],
-            resampling="bilinear",
-            like=geobox_buffered,
-        ).squeeze()[elevation_band]
-    except Exception as e:
-        print(f'An error occurred in {study_area}: {e}')
-        return
+
+    # Load DEM data
+    dem_da = dc.load(
+        product="ga_srtm_dem1sv1_0",
+        measurements=[elevation_band],
+        resampling="bilinear",
+        like=geobox_buffered,
+    ).squeeze()[elevation_band]
 
     # Identify starting points (ocean nodata points)
     if add_mangroves:
@@ -213,25 +225,44 @@ def load_connectivity_mask(
         try:
             gmw_da = load_gmw_mask(dem_da)
             starts_da = (dem_da == dem_da.nodata) | gmw_da
-        except:
+        except Exception as e:
+            print(f"No valid GMW mangroves found: {e}")
             starts_da = dem_da == dem_da.nodata
     else:
         starts_da = dem_da == dem_da.nodata
 
-    # Calculate cost surface (negative values are not allowed, so
-    # negative nodata values are resolved by clipping values to between
+    # Raise error if no valid starting points
+    if not starts_da.any():
+        raise Exception("No valid starting points found for tile, likely due to being located too far inland")
+
+    # Apply a Highest Astronomical Tide correction, to make
+    # costs based on height above HAT vs height above MSL
+    if correct_hat:
+        print("Applying HAT correction")
+        hat_correction = load_hat(dem_da)
+        dem_da = dem_da - hat_correction.data
+
+    # Calculate cost surface, optionally using custom preprocess
+    # function (negative values are not allowed, so negative
+    # nodata values are resolved by clipping values to between
     # 0 and infinity)
-    costs_da = dem_da.clip(0, np.inf)
+    if preprocess is not None:
+        print("Using custom pre-process function")
+        costs_da = preprocess(dem_da).clip(0, np.inf)
+    else:
+        costs_da = dem_da.clip(0, np.inf)
 
     # Run cost distance surface
+    print("Running cost distance calculation")
     costdist_da = xr_cost_distance(
         cost_da=costs_da,
         starts_da=starts_da,
         **cost_distance_kwargs,
-    )
+    )        
 
     # Reproject back to original geobox extents and resolution
-    costdist_da = costdist_da.odc.reproject(how=geobox)
+    print("Reprojecting back to original GeoBox resolution")
+    costdist_da = costdist_da.odc.reproject(how=geobox, resampling="bilinear")
 
     # Apply threshold
     costdist_mask = costdist_da < max_threshold
@@ -243,16 +274,55 @@ def load_connectivity_mask(
     return costdist_mask, costdist_da
 
 
-def load_gmw_mask(ds, gmw_path="/gdata1/data/mangroves/gmw_v3_2007_vec_aus.geojson"):
+def load_gmw_mask(ds, gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/mangroves_aux/maximum_extent_of_mangroves_Apr2019.fgb"):
     """
-    Experiment with loading GMW data.
+    Experiment with loading GMW data to use as additional
+    starting points in connectivity analysis.
+    By default, this code uses the unioned GMW extents
+    that form the analysis area of the DEA Mangrove product
     """
     gmw_gdf = gpd.read_file(
-        gmw_path, bbox=ds.odc.geobox.boundingbox.to_crs("EPSG:4326")
+        gmw_path, bbox=ds.odc.geobox.boundingbox
     )
     gmw_da = xr_rasterize(gmw_gdf, ds)
     return gmw_da
 
+def load_hat(
+    ds,
+    hat_path="/gdata1/data/tide_datums/HAT_MLP_Regression.gpkg",
+    layer="HAT_MLP_Regression",
+    hat_col="HAT",
+    interp_method="idw",
+    interp_p=1,
+    interp_k=10,
+    interp_factor=100,
+):
+    """
+    Experiment with interpolating CSIRO HAT data to use
+    as a correction to elevation values.
+
+    Branson, Paul (2023): Coastal carbon - Australia's blue forest
+    future - Water Levels. v1. CSIRO. Data Collection.
+    https://doi.org/10.25919/6672-jx11
+    """
+    # Load CSIRO HAT data
+    hat = gpd.read_file(
+        hat_path,
+        layer=layer,
+        engine="pyogrio",
+    ).drop(["x", "y"], axis=1)
+
+    # Interpolate into extent of data
+    hat_correction = xr_interpolate(
+        ds=ds,
+        gdf=hat[[hat_col, "geometry"]],
+        method=interp_method,
+        p=interp_p,
+        k=interp_k,
+        factor=interp_factor,
+    ).HAT
+
+    return hat_correction
 
 def extents(
     dem, freq, corr, coastal_mask, urban_mask, min_correlation=0.15, sieve_size=5
