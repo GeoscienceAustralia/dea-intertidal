@@ -289,7 +289,7 @@ def load_gmw_mask(ds, gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.am
 
 def load_hat(
     ds,
-    hat_path="/gdata1/data/tide_datums/HAT_MLP_Regression.gpkg",
+    hat_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/HAT_MLP_Regression/HAT_MLP_Regression.gpkg",
     layer="HAT_MLP_Regression",
     hat_col="HAT",
     interp_method="idw",
