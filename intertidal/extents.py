@@ -12,7 +12,7 @@ from odc.geo.gridspec import GridSpec
 from odc.geo.types import xy_
 from odc.algo import mask_cleanup
 from odc.geo.xr import xr_zeros
-from dea_tools.spatial import xr_rasterize
+from dea_tools.spatial import xr_rasterize, xr_interpolate
 from rasterio.features import sieve
 from intertidal.io import (
     load_aclum_mask,
