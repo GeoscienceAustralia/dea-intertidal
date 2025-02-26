@@ -888,8 +888,8 @@ def elevation(
         data=satellite_ds,
         model=tide_model,
         directory=tide_model_dir,
-        ranking_points="data/raw/tide_correlations_2017-2019.geojson",
-        ensemble_top_n=3,
+        # ranking_points="data/raw/tide_correlations_2017-2019.geojson",
+        # ensemble_top_n=3,
     )
     
     # Set tide array pixels to nodata if the satellite data array pixels
