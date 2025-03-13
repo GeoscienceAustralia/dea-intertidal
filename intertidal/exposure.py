@@ -312,6 +312,14 @@ def exposure(
           sunset local time
         - 'night': all tide heights occurring between sunset and sunrise
           local time
+        - 'spring_high', high tide exposure during the fortnightly spring tide cycle,
+        - 'spring_low', low tide exposure during the fortnightly spring tide cycle,
+        - 'neap_high', high tide exposure during the fortnightly neap tide cycle,
+        - 'neap_low', low tide exposure during the fortnightly neap tide cycle,
+        - 'hightide', all tide heights greater than or equal to the local lowest high
+        tide heights in high temporal resolution tidal modelling,
+        - 'lowtide' all tide heights lower than or equal to the local highest low tide
+        heights in high temporal resolution tidal modelling,
         Defaults to ['unfiltered'] if none supplied.
     filters_combined : list of two-object tuples, optional
         An optional list of paired customisation options from which to
@@ -365,6 +373,8 @@ def exposure(
     - temporal filters include any of: 'dry', 'wet', 'summer', 'autumn',
     'winter', 'spring', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul',
     'aug', 'sep', 'oct', 'nov', 'dec', 'daylight', 'night'
+    - spatial filters include any of: 'spring_high', 'spring_low',
+    'neap_high', 'neap_low', 'hightide', 'lowtide'
 
     """
     # Set up logs if no log is passed in
@@ -408,6 +418,15 @@ def exposure(
         "dec",
         "daylight",
         "night",
+    ]
+    # Define the spatial filters
+    sptl_filters = [
+        "spring_high",
+        "spring_low",
+        "neap_high",
+        "neap_low",
+        "hightide",
+        "lowtide",
     ]
 
     # Create empty xarray.Datasets to store outputs into
@@ -584,7 +603,7 @@ def spatial_filters(
     # Split the number and text characters in modelled_freq
     freq_time = int(re.findall(r"(\d+)(\w+)", modelled_freq)[0][0])
     freq_unit = str(re.findall(r"(\d+)(\w+)", modelled_freq)[0][-1])
-    # Extract the number of modelled timesteps per 14 days (half lunar cycle) for neap/spring calcs
+    # Extract the number of modelled timesteps per half lunar cycle (29.5 days) for neap/spring calcs
     mod_timesteps = pd.Timedelta((29.5 / 2), "d") / pd.Timedelta(freq_time, freq_unit)
     ## Identify kwargs for peak detection algorithm
     order = int(mod_timesteps / 2)
