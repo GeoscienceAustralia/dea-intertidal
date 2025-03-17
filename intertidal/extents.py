@@ -224,15 +224,12 @@ def load_connectivity_mask(
         print("Adding GMW mangroves to starting points")
         try:
             gmw_da = load_gmw_mask(dem_da)
-            # starts_da = (dem_da == dem_da.nodata) | gmw_da ##TEMP change 17/03/25 CP 1/3
             starts_da = (dem_da == 0) | gmw_da
         except Exception as e:
             print(f"No valid GMW mangroves found: {e}")
-            # starts_da = dem_da == dem_da.nodata ##TEMP change 17/03/25 CP 2/3
-            starts_da = dem_da == (dem_da==0)
+            starts_da = dem_da == 0
     else:
-        # starts_da = dem_da == dem_da.nodata ##TEMP change 17/03/25 CP 3/3
-        starts_da = dem_da == (dem_da==0)
+        starts_da = dem_da == 0
 
     # Raise error if no valid starting points
     if not starts_da.any():
