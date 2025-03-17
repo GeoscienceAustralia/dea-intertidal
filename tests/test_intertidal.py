@@ -54,7 +54,7 @@ def test_intertidal_cli():
             "--output_version",
             "0.0.1",
             "--tide_model",
-            "FES2014",
+            "EOT20",
         ],
     )
     assert result.exit_code == 0
