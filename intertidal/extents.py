@@ -132,7 +132,7 @@ def load_connectivity_mask(
     dc,
     geobox,
     product="ga_srtm_dem1sv1_0",
-    elevation_band="dem_h",
+    elevation_band="dem_s",
     resampling="bilinear",
     buffer=20000,
     preprocess=None,
@@ -160,7 +160,7 @@ def load_connectivity_mask(
         Defaults to "ga_srtm_dem1sv1_0".
     elevation_band : str, optional
         The name of the band containing elevation data. Defaults to
-        "height_depth".
+        "height_smoothed".
     resampling : str, optional
         The resampling method to use, by default "bilinear".
     buffer : int, optional
