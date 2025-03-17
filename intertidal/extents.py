@@ -132,7 +132,7 @@ def load_connectivity_mask(
     dc,
     geobox,
     product="ga_srtm_dem1sv1_0",
-    elevation_band="dem_h",
+    elevation_band="dem_s",
     resampling="bilinear",
     buffer=20000,
     preprocess=None,
@@ -160,7 +160,7 @@ def load_connectivity_mask(
         Defaults to "ga_srtm_dem1sv1_0".
     elevation_band : str, optional
         The name of the band containing elevation data. Defaults to
-        "height_depth".
+        "height_smoothed".
     resampling : str, optional
         The resampling method to use, by default "bilinear".
     buffer : int, optional
@@ -224,12 +224,12 @@ def load_connectivity_mask(
         print("Adding GMW mangroves to starting points")
         try:
             gmw_da = load_gmw_mask(dem_da)
-            starts_da = (dem_da == dem_da.nodata) | gmw_da
+            starts_da = (dem_da == 0) | gmw_da
         except Exception as e:
             print(f"No valid GMW mangroves found: {e}")
-            starts_da = dem_da == dem_da.nodata
+            starts_da = dem_da == 0
     else:
-        starts_da = dem_da == dem_da.nodata
+        starts_da = dem_da == 0
 
     # Raise error if no valid starting points
     if not starts_da.any():
