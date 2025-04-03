@@ -48,14 +48,14 @@ def class_connection(split_classes, reference, connectivity=1):
         cost-distance connectivity mask.
     """
 
-    # First, break `water_intertidal` array into unique, discrete
+    # First, break `split_classes` array into unique, discrete
     # regions/blobs.
     blobs = xr.apply_ufunc(label, split_classes, 0, False, connectivity)
 
     # For each unique region/blob, use region properties to determine
-    # whether it overlaps with a feature from `intertidal`. If
+    # whether it overlaps with a feature from `reference`. If
     # it does, then it is considered to be adjacent or directly connected
-    # to intertidal pixels
+    # to reference pixels
     connection_mask = blobs.isin(
         [
             i.label
