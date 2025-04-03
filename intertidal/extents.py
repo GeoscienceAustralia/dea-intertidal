@@ -261,16 +261,15 @@ def load_connectivity_mask(
     # Load all SRTM DEM layers
     dem = dc.load(
         product="ga_srtm_dem1sv1_0",
-        # measurements=[elevation_band],
         resampling="bilinear",
         like=geobox_buffered,
-    )#.squeeze()[elevation_band]
+    )
 
     # Use SRTM 'dem_h' nodata values for starting values in costdist
-    dem_starts = dem['dem_h'].squeeze()#['dem_h']
+    dem_starts = dem['dem_h'].squeeze()
 
     # Use SRTM 'dem_s' by default for cost values in costdist
-    dem_costs = dem[elevation_band].squeeze()#[elevation_band]
+    dem_costs = dem[elevation_band].squeeze()
 
     # Identify starting points (ocean nodata points)
     if add_mangroves:
