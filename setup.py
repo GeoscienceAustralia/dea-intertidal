@@ -14,7 +14,7 @@ REQUIRED = [
     "click",
     "datacube",
     "dea_tools",
-    "eo-tides==0.6.0",
+    "eo-tides>=0.6.3",
     "eodatasets3",
     "fiona",
     "geopandas",

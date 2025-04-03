@@ -320,7 +320,7 @@ def load_data(
     if include_s2:
         # Find datasets to load
         dss_s2 = dc.find_datasets(
-            product=["ga_s2am_ard_3", "ga_s2bm_ard_3"],
+            product=["ga_s2am_ard_3", "ga_s2bm_ard_3", "ga_s2cm_ard_3"],
             s2cloudless_cloud=(0, max_cloudcover),
             **query_params,
         )
