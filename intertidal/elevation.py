@@ -1218,7 +1218,11 @@ def intertidal_cli(
         # from least-cost connectivity analysis
         topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox)
         urban_mask = load_aclum_mask(dc, satellite_ds.odc.geobox)
-        coastal_mask, _ = load_connectivity_mask(dc, satellite_ds.odc.geobox)
+        coastal_mask, _ = load_connectivity_mask(dc, 
+                                                 satellite_ds.odc.geobox,
+                                                 add_mangroves=True,
+                                                 correct_hat=True
+                                                )
 
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
