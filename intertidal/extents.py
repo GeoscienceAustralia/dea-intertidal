@@ -7,6 +7,8 @@ import pandas as pd
 import geopandas as gpd
 
 from skimage import graph
+from skimage.measure import label, regionprops
+from skimage.morphology import binary_erosion, disk
 from odc.geo.geobox import GeoBox
 from odc.geo.gridspec import GridSpec
 from odc.geo.types import xy_
@@ -19,6 +21,50 @@ from intertidal.io import (
     extract_geobox,
 )
 
+def class_connection(split_classes, reference, connectivity=1):
+    """
+
+    Identifies areas of water pixels that are adjacent to or directly
+    connected to intertidal pixels.
+
+    Parameters:
+    -----------
+    split_classes : xarray.DataArray
+        An array containing True for pixels that require class separation
+        based on their connection to the reference dataset e.g. inland and
+        oceanic water pixels.
+    reference : xarray.DataArray
+        An array containing True for reference, or truth, pixels e.g.
+        pixels in a coastal cost-distance connectivity mask.
+    connectivity : integer, optional
+        An integer passed to the 'connectivity' parameter of the
+        `skimage.measure.label` function.
+
+    Returns:
+    --------
+    connection_mask : xarray.DataArray
+        An array containing True for pixels connected to the reference array 
+        e.g. all water pixels contained within or intersecting a coastal 
+        cost-distance connectivity mask.
+    """
+
+    # First, break `water_intertidal` array into unique, discrete
+    # regions/blobs.
+    blobs = xr.apply_ufunc(label, split_classes, 0, False, connectivity)
+
+    # For each unique region/blob, use region properties to determine
+    # whether it overlaps with a feature from `intertidal`. If
+    # it does, then it is considered to be adjacent or directly connected
+    # to intertidal pixels
+    connection_mask = blobs.isin(
+        [
+            i.label
+            for i in regionprops(blobs.values, reference.values)
+            if i.max_intensity
+        ]
+    )
+
+    return connection_mask
 
 def _cost_distance(
     cost_surface, start_array, sampling=None, geometric=True, **mcp_kwargs
@@ -212,24 +258,31 @@ def load_connectivity_mask(
     )
 
     # Load DEM data
-    dem_da = dc.load(
+    # Load all SRTM DEM layers
+    dem = dc.load(
         product="ga_srtm_dem1sv1_0",
-        measurements=[elevation_band],
+        # measurements=[elevation_band],
         resampling="bilinear",
         like=geobox_buffered,
-    ).squeeze()[elevation_band]
+    )#.squeeze()[elevation_band]
+
+    # Use SRTM 'dem_h' nodata values for starting values in costdist
+    dem_starts = dem['dem_h'].squeeze()#['dem_h']
+
+    # Use SRTM 'dem_s' by default for cost values in costdist
+    dem_costs = dem[elevation_band].squeeze()#[elevation_band]
 
     # Identify starting points (ocean nodata points)
     if add_mangroves:
         print("Adding GMW mangroves to starting points")
         try:
-            gmw_da = load_gmw_mask(dem_da)
-            starts_da = (dem_da == 0) | gmw_da
+            gmw_da = load_gmw_mask(dem_costs)
+            starts_da = (dem_starts == dem_starts.nodata) | gmw_da
         except Exception as e:
             print(f"No valid GMW mangroves found: {e}")
-            starts_da = dem_da == 0
+            starts_da = dem_starts == dem_starts.nodata
     else:
-        starts_da = dem_da == 0
+        starts_da = dem_starts == dem_starts.nodata
 
     # Raise error if no valid starting points
     if not starts_da.any():
@@ -239,8 +292,8 @@ def load_connectivity_mask(
     # costs based on height above HAT vs height above MSL
     if correct_hat:
         print("Applying HAT correction")
-        hat_correction = load_hat(dem_da)
-        dem_da = dem_da - hat_correction.data
+        hat_correction = load_hat(dem_costs)
+        dem_costs = dem_costs - hat_correction.data
 
     # Calculate cost surface, optionally using custom preprocess
     # function (negative values are not allowed, so negative
@@ -248,9 +301,9 @@ def load_connectivity_mask(
     # 0 and infinity)
     if preprocess is not None:
         print("Using custom pre-process function")
-        costs_da = preprocess(dem_da).clip(0, np.inf)
+        costs_da = preprocess(dem_costs).clip(0, np.inf)
     else:
-        costs_da = dem_da.clip(0, np.inf)
+        costs_da = dem_costs.clip(0, np.inf)
 
     # Run cost distance surface
     print("Running cost distance calculation")
@@ -387,6 +440,17 @@ def extents(
     mostly_wet = (freq >= 0.50) & ~is_nan
     mostly_wet_inland = mostly_wet & ~coastal_mask
 
+    # Reclassify inland_wet pixels to ocean pixels (mostly_wet)
+    # if they are connected to the coastal mask
+    wet_combined = mostly_wet|mostly_wet_inland
+    wet_combined = wet_combined == wet_combined.notnull()
+
+    connection_mask = class_connection(split_classes = wet_combined,
+                                      reference = coastal_mask,
+                                      connectivity=1)
+    mostly_wet = wet_combined & connection_mask
+    mostly_wet_inland = wet_combined & ~connection_mask
+    
     # Identify low-confidence pixels as those with greater than 0.15
     # correlation. Use connectivity mask to mask out any that are "inland"
     intertidal_lc = (corr >= min_correlation) & coastal_mask
