@@ -33,7 +33,7 @@ from intertidal.utils import (
 )
 from intertidal.extents import extents, load_connectivity_mask
 from intertidal.exposure import exposure
-from intertidal.tidal_bias_offset import bias_offset
+from intertidal.tidal_bias_offset import bias_offset, generate_tide_graph
 
 
 def ds_to_flat(
@@ -1303,6 +1303,14 @@ def intertidal_cli(
         # (requires exposure/offsets to have been calculated)
         metadata_dict = tidal_metadata(ds) if exposure_offsets else None
 
+        # Generate tide bias graph
+        tide_graph_fig = generate_tide_graph(
+            satellite_ds,
+            modelled_freq,
+            model=tide_model,
+            directory=tide_model_dir
+        )
+
         # Export data and metadata
         export_dataset_metadata(
             ds_prepared,
@@ -1315,6 +1323,7 @@ def intertidal_cli(
             dataset_version=output_version,
             product_maturity=product_maturity,
             dataset_maturity=dataset_maturity,
+            tide_graph_fig=tide_graph_fig,
             additional_metadata=metadata_dict,
             run_id=run_id,
             log=log,

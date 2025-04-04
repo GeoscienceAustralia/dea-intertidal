@@ -813,8 +813,14 @@ def _ls_platform_instrument(year):
     elif year in (2021, 2022):
         platform = "landsat-7,landsat-8,landsat-9,sentinel-2a,sentinel-2b"
         instrument = "ETM_OLI_TIRS_MSI"
-    else:
+    elif year in (2023, 2024):
         platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b"
+        instrument = "OLI_TIRS_MSI"
+    elif year == 2025:
+        platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b,sentinel-2c"
+        instrument = "OLI_TIRS_MSI"
+    else:
+        platform = "landsat-8,landsat-9,sentinel-2b,sentinel-2c"
         instrument = "OLI_TIRS_MSI"
 
     return platform, instrument
@@ -839,7 +845,7 @@ def prepare_for_export(
         The dataset containing the bands to be exported.
     custom_dtypes : dictionary, optional
         An optional dictionary containing names of bands as keys,
-        and tuples in the form `(np.uint8, 255)` providing the 
+        and tuples in the form `(np.uint8, 255)` providing the
         dtype and nodata value to use for that band.
     float_dtype : string or numpy data type, optional
         The data type to use for floating point layers (default is
@@ -857,9 +863,7 @@ def prepare_for_export(
         The input dataset with correctly set nodata attributes and dtypes.
     """
 
-    def _prepare_band(
-        band, custom_dtypes, float_dtype, output_location, overwrite
-    ):
+    def _prepare_band(band, custom_dtypes, float_dtype, output_location, overwrite):
         # Export specific bands as integer data types by first filling
         # NaN with nodata value before converting to int, then setting
         # nodata attribute on layer
@@ -915,6 +919,7 @@ def export_dataset_metadata(
     product_maturity="provisional",
     dataset_maturity="final",
     additional_metadata=None,
+    tide_graph_fig=None,
     debug=False,
     run_id=None,
     log=None,
@@ -957,6 +962,9 @@ def export_dataset_metadata(
     additional_metadata : dict, optional
         An option dictionary containing additional metadata fields to
         add to the dataset metadata properties.
+    tide_graph_fig : matplotlib.figure, optional
+        If a matplotlib.figure tide graph figure object is provided,
+        export this to a PNG file.
     debug : bool, optional
         When true, this will write S3 outputs locally so they can be
         checked for correctness. Default is False.
@@ -1066,6 +1074,13 @@ def export_dataset_metadata(
                 f"{output_location.rstrip('/')}/"
                 f"{dataset_assembler.names.dataset_folder}/"
             )
+
+            # Export tide graph figure if provided
+            if tide_graph_fig is not None:
+                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace(
+                    "thumbnail", "tide_graph"
+                )
+                tide_graph_fig.savefig(tide_graph_path, bbox_inches="tight")
 
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
