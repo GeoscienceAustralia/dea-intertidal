@@ -21,6 +21,7 @@ from intertidal.io import (
     extract_geobox,
 )
 
+
 def class_connection(split_classes, reference, connectivity=1):
     """
 
@@ -56,19 +57,20 @@ def class_connection(split_classes, reference, connectivity=1):
     # whether it overlaps with a feature from `reference`. If
     # it does, then it is considered to be adjacent or directly connected
     # to reference pixels
-    connection_mask = blobs.isin(
-        [
-            i.label
-            for i in regionprops(blobs.values, reference.values)
-            if i.max_intensity
-        ]
-    )
+    connection_mask = blobs.isin([
+        i.label
+        for i in regionprops(blobs.values, reference.values)
+        if i.max_intensity
+    ])
 
     return connection_mask
 
-def _cost_distance(
-    cost_surface, start_array, sampling=None, geometric=True, **mcp_kwargs
-):
+
+def _cost_distance(cost_surface,
+                   start_array,
+                   sampling=None,
+                   geometric=True,
+                   **mcp_kwargs):
     """
     Calculate accumulated least-cost distance through a cost surface
     array from a set of starting cells to every other cell in an array,
@@ -164,9 +166,10 @@ def xr_cost_distance(cost_da, starts_da, use_cellsize=False, geometric=True):
         cellsize = None
 
     # Compute least cost array
-    costdist_array = _cost_distance(
-        cost_da, starts_da.values, sampling=cellsize, geometric=geometric
-    )
+    costdist_array = _cost_distance(cost_da,
+                                    starts_da.values,
+                                    sampling=cellsize,
+                                    geometric=geometric)
 
     # Wrap as xarray
     costdist_da = xr.DataArray(costdist_array, coords=cost_da.coords)
@@ -285,7 +288,9 @@ def load_connectivity_mask(
 
     # Raise error if no valid starting points
     if not starts_da.any():
-        raise Exception("No valid starting points found for tile, likely due to being located too far inland")
+        raise Exception(
+            "No valid starting points found for tile, likely due to being located too far inland"
+        )
 
     # Apply a Highest Astronomical Tide correction, to make
     # costs based on height above HAT vs height above MSL
@@ -310,7 +315,7 @@ def load_connectivity_mask(
         cost_da=costs_da,
         starts_da=starts_da,
         **cost_distance_kwargs,
-    )        
+    )
 
     # Reproject back to original geobox extents and resolution
     print("Reprojecting back to original GeoBox resolution")
@@ -326,18 +331,20 @@ def load_connectivity_mask(
     return costdist_mask, costdist_da
 
 
-def load_gmw_mask(ds, gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/mangroves_aux/maximum_extent_of_mangroves_Apr2019.fgb"):
+def load_gmw_mask(
+    ds,
+    gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/mangroves_aux/maximum_extent_of_mangroves_Apr2019.fgb"
+):
     """
     Experiment with loading GMW data to use as additional
     starting points in connectivity analysis.
     By default, this code uses the unioned GMW extents
     that form the analysis area of the DEA Mangrove product
     """
-    gmw_gdf = gpd.read_file(
-        gmw_path, bbox=ds.odc.geobox.boundingbox
-    )
+    gmw_gdf = gpd.read_file(gmw_path, bbox=ds.odc.geobox.boundingbox)
     gmw_da = xr_rasterize(gmw_gdf, ds)
     return gmw_da
+
 
 def load_hat(
     ds,
@@ -376,9 +383,14 @@ def load_hat(
 
     return hat_correction
 
-def extents(
-    dem, freq, corr, coastal_mask, urban_mask, min_correlation=0.15, sieve_size=5
-):
+
+def extents(dem,
+            freq,
+            corr,
+            coastal_mask,
+            urban_mask,
+            min_correlation=0.15,
+            sieve_size=5):
     """
     Classify coastal ecosystems into broad classes based on
     wetting frequency, proximity to ocean, and relationships
@@ -441,15 +453,15 @@ def extents(
 
     # Reclassify inland_wet pixels to ocean pixels (mostly_wet)
     # if they are connected to the coastal mask
-    wet_combined = mostly_wet|mostly_wet_inland
+    wet_combined = mostly_wet | mostly_wet_inland
     wet_combined = wet_combined == wet_combined.notnull()
 
-    connection_mask = class_connection(split_classes = wet_combined,
-                                      reference = coastal_mask,
-                                      connectivity=1)
+    connection_mask = class_connection(split_classes=wet_combined,
+                                       reference=coastal_mask,
+                                       connectivity=1)
     mostly_wet = wet_combined & connection_mask
     mostly_wet_inland = wet_combined & ~connection_mask
-    
+
     # Identify low-confidence pixels as those with greater than 0.15
     # correlation. Use connectivity mask to mask out any that are "inland"
     intertidal_lc = (corr >= min_correlation) & coastal_mask
@@ -465,7 +477,8 @@ def extents(
     # new layer over the top of the existing data
     extents = xr_zeros(geobox=geobox, dtype="int16") + 255  # start with 255
     extents.values[mostly_wet] = 1  # Add in mostly wet pixels
-    extents.values[mostly_wet_inland] = 4  # Add in mostly wet inland pixels on top
+    extents.values[
+        mostly_wet_inland] = 4  # Add in mostly wet inland pixels on top
     extents.values[urban_misclass] = (
         5  # Set any pixels in the misclassified urban class to land
     )
