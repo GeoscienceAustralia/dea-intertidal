@@ -669,37 +669,6 @@ def _write_thumbnail(da, path, max_resolution=320):
     with open(path, "wb") as f:
         f.write(jpeg_data)
         
-# def _write_thumbnail_composites(da, path, max_resolution=320):
-#     """
-#     Generate and save a thumbnail image from a DEA Intertidal Composites
-#     `xarray.DataArray`.
-
-#     The thumbnail is reprojected to the specified maximum resolution,
-#     colorized using the 'viridis' colormap, and compressed as a JPEG
-#     with the specified quality.
-
-#     Parameters
-#     ----------
-#     da : xarray.DataArray
-#         The input DataArray containg DEA Intertidal Elevation data.
-#     path : str
-#         The path where the thumbnail image will be saved.
-#     max_resolution : int, optional
-#         The maximum resolution of the thumbnail image, by default 320.
-#     """
-#     jpeg_data = (
-#         da.odc.reproject(
-#             how=da.odc.geobox.zoom_to(max_resolution),
-#             resampling="min",
-#         )
-#         .pipe(lambda x: x.where(np.isfinite(x)))
-#         .odc.colorize(cmap="viridis")
-#         .odc.compress("jpeg", 85, transparent=[255, 255, 255])
-#     )
-
-#     with open(path, "wb") as f:
-#         f.write(jpeg_data)
-
 
 def _write_stac(
     dataset_assembler,
