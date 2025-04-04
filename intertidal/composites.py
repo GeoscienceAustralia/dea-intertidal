@@ -12,6 +12,7 @@ from odc.algo import (
 )
 from datacube.utils.aws import configure_s3_access
 from eo_tides.eo import pixel_tides
+
 # from dea_tools.coastal import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
@@ -22,11 +23,16 @@ from intertidal.io import (
     tidal_metadata,
     export_dataset_metadata,
 )
+
+
 # Function to rename the bands
 def rename_bands(ds, old_string, new_string):
     # Create a new dataset with renamed bands
-    ds_renamed = ds.rename({band: band.replace(old_string, new_string) for band in ds.data_vars})
+    ds_renamed = ds.rename(
+        {band: band.replace(old_string, new_string) for band in ds.data_vars}
+    )
     return ds_renamed
+
 
 def tidal_composites(
     satellite_ds,
@@ -103,7 +109,7 @@ def tidal_composites(
         log_prefix = f"Study area {study_area}: "
     else:
         log_prefix = ""
-    
+
     # Model tides into for spatial extent and timesteps in satellite data
     log.info(f"Study area {study_area}: Modelling tide heights")
 
@@ -113,15 +119,17 @@ def tidal_composites(
         resample=True,
         directory=tide_model_dir,
     )
-    
-    # Mask tide data with invalid obs in the the satellite data
-    tides_highres = tides_highres.where(satellite_ds.nbart_red >-999)
 
-    threshold_ds= tides_highres.quantile([threshold_lowtide,threshold_hightide], dim="time").drop("quantile")
-    
+    # Mask tide data with invalid obs in the the satellite data
+    tides_highres = tides_highres.where(satellite_ds.nbart_red > -999)
+
+    threshold_ds = tides_highres.quantile(
+        [threshold_lowtide, threshold_hightide], dim="time"
+    ).drop("quantile")
+
     # create a mask for selecting satellite obs below the low tide treshold
     low_mask = tides_highres <= threshold_ds.isel(quantile=0)
-    
+
     # create a mask for selecting satellite obs above the high tide treshold
     high_mask = tides_highres >= threshold_ds.isel(quantile=-1)
 
@@ -130,33 +138,38 @@ def tidal_composites(
     ds_low = keep_good_only(x=satellite_ds, where=low_mask).sel(
         time=low_mask.any(dim=["x", "y"])
     )
-    #export low_mask.count and high_mask count
+    # export low_mask.count and high_mask count
     ds_high = keep_good_only(x=satellite_ds, where=high_mask).sel(
         time=high_mask.any(dim=["x", "y"])
     )
-        
+
     # Calculate low and high tide geomedians
     log.info(f"Study area {study_area}: Calculating geomedians")
     num_threads = os.cpu_count() - 2
-    
+
     ds_lowtide = int_geomedian(ds=ds_low, maxiters=max_iters, num_threads=num_threads)
     ds_hightide = int_geomedian(ds=ds_high, maxiters=max_iters, num_threads=num_threads)
-    
-    ds_lowtide['low_count_clear'] = ds_low.nbart_red.where(ds_low.nbart_red>-999).count(dim=["time"]) 
-    
+
+    ds_lowtide["low_count_clear"] = ds_low.nbart_red.where(
+        ds_low.nbart_red > -999
+    ).count(dim=["time"])
+
     # this didn't work
     # ds_lowtide['low_count_clear2'] =  keep_good_only(x=satellite_ds, where=low_mask).nbart_red.count()
-    
-    ds_lowtide['low_threshold'] = threshold_ds.isel(quantile=0) 
-    
-    ds_hightide['high_threshold'] = threshold_ds.isel(quantile=1)
-    
+
+    ds_lowtide["low_threshold"] = threshold_ds.isel(quantile=0)
+
+    ds_hightide["high_threshold"] = threshold_ds.isel(quantile=1)
+
     # this didn't work
     # ds_hightide['high_count_clear2'] = keep_good_only(x=satellite_ds, where=high_mask).nbart_red.count()
-    
-    ds_hightide['high_count_clear'] = ds_high.nbart_red.where(ds_high.nbart_red>-999).count(dim=["time"])
-    
+
+    ds_hightide["high_count_clear"] = ds_high.nbart_red.where(
+        ds_high.nbart_red > -999
+    ).count(dim=["time"])
+
     return ds_lowtide, ds_hightide
+
 
 @click.command()
 @click.option(
@@ -254,7 +267,7 @@ def tidal_composites(
     "--mask_sunglint",
     type=int,
     default=0,
-    help= "Whether to mask out pixels that are likely to be "
+    help="Whether to mask out pixels that are likely to be "
     "affected by sunglint using glint angles. Low glint angles "
     "(e.g. < 20) often correspond with sunglint. Defaults to None; "
     "set to e.g. '20' to mask out all pixels with a glint angle of "
@@ -265,8 +278,8 @@ def tidal_composites(
     type=int,
     default=10000,
     help="Value to pass to the 'max_iters' param of `int_geomedian`. This "
-         "can be set to a low value (e.g. 10) to increase the processing "
-        "speed of test runs.",
+    "can be set to a low value (e.g. 10) to increase the processing "
+    "speed of test runs.",
 )
 @click.option(
     "--tide_model",
@@ -324,23 +337,22 @@ def tidal_composites_cli(
     include_coastal_aerosol,
     overwrite,
 ):
-    
 
-    filename=f"{output_dir}/ga_s2_tidal_composites_cyear_3/{output_version.replace('.','-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_tidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
+    filename = f"{output_dir}/ga_s2_tidal_composites_cyear_3/{output_version.replace('.','-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_tidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
 
     if mask_sunglint < 1:
         mask_sunglint = None
-        
-    process_tile=True
+
+    process_tile = True
     if overwrite:
-        process_tile=True
+        process_tile = True
     else:
         if os.path.exists(filename):
-            process_tile=False
-     
+            process_tile = False
+
     # Create a unique run ID for analysis based on input params and use
     # for logs
-       
+
     input_params = locals()
     run_id = f"[{output_version}] [{label_date}] [{study_area}]"
     log = configure_logging(run_id)
@@ -351,10 +363,10 @@ def tidal_composites_cli(
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
-    if process_tile: 
-         # Create output folder. If it doesn't exist, create it
+    if process_tile:
+        # Create output folder. If it doesn't exist, create it
         # output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
-        os.makedirs(output_dir, exist_ok=True)  
+        os.makedirs(output_dir, exist_ok=True)
 
         try:
             log.info(f"{run_id}: Loading satellite data")
@@ -390,14 +402,15 @@ def tidal_composites_cli(
                 include_coastal_aerosol=include_coastal_aerosol,
                 max_cloudcover=90,
                 skip_broken_datasets=True,
-                dataset_maturity="final", 
+                dataset_maturity="final",
                 dtype="int16",
             )
             satellite_ds.load()
 
-            
             # Calculate high and low tide geomedian composites
-            log.info(f"{run_id}: Study area {study_area}: Running Intertidal composites")
+            log.info(
+                f"{run_id}: Study area {study_area}: Running Intertidal composites"
+            )
             ds_lowtide, ds_hightide = tidal_composites(
                 satellite_ds=satellite_ds,
                 threshold_lowtide=threshold_lowtide,
@@ -409,62 +422,62 @@ def tidal_composites_cli(
                 log=log,
             )
 
-           
             # Process and load low and high tide composites using Dask
             log.info(f"Study area {study_area}: Processing low tide composite")
             ds_lowtide.load()
             log.info(f"Study area {study_area}: Processing high tide composite")
             ds_hightide.load()
 
-            ds_hightide=rename_bands(ds_hightide, "nbart", "high")
-            ds_hightide=odc.geo.xr.assign_crs(ds_hightide, satellite_ds.odc.crs)  
+            ds_hightide = rename_bands(ds_hightide, "nbart", "high")
+            ds_hightide = odc.geo.xr.assign_crs(ds_hightide, satellite_ds.odc.crs)
 
-            ds_lowtide=rename_bands(ds_lowtide, "nbart", "low")
-            ds_lowtide=odc.geo.xr.assign_crs(ds_lowtide, satellite_ds.odc.crs)
+            ds_lowtide = rename_bands(ds_lowtide, "nbart", "low")
+            ds_lowtide = odc.geo.xr.assign_crs(ds_lowtide, satellite_ds.odc.crs)
 
-
-            # Concatenate 
+            # Concatenate
             ds_hltc = xarray.merge([ds_lowtide, ds_hightide])
 
-            ds_hltc['count_clear'] = satellite_ds.nbart_red.where(satellite_ds.nbart_red>-999).count(dim=["time"])
+            ds_hltc["count_clear"] = satellite_ds.nbart_red.where(
+                satellite_ds.nbart_red > -999
+            ).count(dim=["time"])
 
             custom_dtypes = {
-            "count_clear": (np.int16, -999),
-            "low_coastal_aerosol": (np.int16, -999),
-            "low_blue": (np.int16, -999),
-            "low_green": (np.int16, -999),
-            "low_red": (np.int16, -999),
-            "low_red_edge_1": (np.int16, -999),
-            "low_red_edge_2": (np.int16, -999),
-            "low_red_edge_3": (np.int16, -999),
-            "low_nir_1": (np.int16, -999),
-            "low_nir_2": (np.int16, -999),
-            "low_swir_2": (np.int16, -999),
-            "low_swir_3": (np.int16, -999),
-            "low_threshold": (np.float32, np.nan),
-            "low_count_clear": (np.int16, -999),
-            "high_coastal_aerosol": (np.int16, -999),
-            "high_blue": (np.int16, -999),
-            "high_green": (np.int16, -999),
-            "high_red": (np.int16, -999),
-            "high_red_edge_1": (np.int16, -999),
-            "high_red_edge_2": (np.int16, -999),
-            "high_red_edge_3": (np.int16, -999),
-            "high_nir_1": (np.int16, -999),
-            "high_nir_2": (np.int16, -999),
-            "high_swir_2": (np.int16, -999),
-            "high_swir_3": (np.int16, -999),
-            "high_threshold": (np.float32, np.nan),
-            "high_count_clear": (np.int16, -999),
-        }
+                "count_clear": (np.int16, -999),
+                "low_coastal_aerosol": (np.int16, -999),
+                "low_blue": (np.int16, -999),
+                "low_green": (np.int16, -999),
+                "low_red": (np.int16, -999),
+                "low_red_edge_1": (np.int16, -999),
+                "low_red_edge_2": (np.int16, -999),
+                "low_red_edge_3": (np.int16, -999),
+                "low_nir_1": (np.int16, -999),
+                "low_nir_2": (np.int16, -999),
+                "low_swir_2": (np.int16, -999),
+                "low_swir_3": (np.int16, -999),
+                "low_threshold": (np.float32, np.nan),
+                "low_count_clear": (np.int16, -999),
+                "high_coastal_aerosol": (np.int16, -999),
+                "high_blue": (np.int16, -999),
+                "high_green": (np.int16, -999),
+                "high_red": (np.int16, -999),
+                "high_red_edge_1": (np.int16, -999),
+                "high_red_edge_2": (np.int16, -999),
+                "high_red_edge_3": (np.int16, -999),
+                "high_nir_1": (np.int16, -999),
+                "high_nir_2": (np.int16, -999),
+                "high_swir_2": (np.int16, -999),
+                "high_swir_3": (np.int16, -999),
+                "high_threshold": (np.float32, np.nan),
+                "high_count_clear": (np.int16, -999),
+            }
 
-            ds_prepared = prepare_for_export(ds_hltc, 
-                                             custom_dtypes=custom_dtypes,
-                                             log=log,
-                                              )  # sets correct dtypes and nodata
+            ds_prepared = prepare_for_export(
+                ds_hltc,
+                custom_dtypes=custom_dtypes,
+                log=log,
+            )  # sets correct dtypes and nodata
 
-
-             # Export data and metadata
+            # Export data and metadata
             export_dataset_metadata(
                 ds_prepared,
                 year=label_date,
@@ -475,13 +488,12 @@ def tidal_composites_cli(
                 dataset_version=output_version,
                 product_family="composites",
                 odc_product="ga_s2_tidal_composites_cyear_3",
-                thumbnail_bands =["low_red","low_green","low_blue"],
+                thumbnail_bands=["low_red", "low_green", "low_blue"],
                 product_maturity=product_maturity,
                 dataset_maturity=dataset_maturity,
                 run_id=run_id,
                 log=log,
             )
-
 
             # Close dask client
             client.close()

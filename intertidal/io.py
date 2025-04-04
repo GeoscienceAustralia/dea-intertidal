@@ -275,11 +275,11 @@ def load_data(
     # Set masking bands to load
     s2_masking_bands = ["oa_s2cloudless_mask", "oa_nbart_contiguity"]
     ls_masking_bands = ["oa_fmask", "oa_nbart_contiguity"]
-    
+
     # Whether it include the nbart_coastal_aerosol band
     if include_coastal_aerosol:
-        s2_spectral_bands= s2_spectral_bands + ["nbart_coastal_aerosol"]
-    
+        s2_spectral_bands = s2_spectral_bands + ["nbart_coastal_aerosol"]
+
     # Set sunglint bands to load
     if mask_sunglint is not None:
         sunglint_bands = [
@@ -668,7 +668,7 @@ def _write_thumbnail(da, path, max_resolution=320):
 
     with open(path, "wb") as f:
         f.write(jpeg_data)
-        
+
 
 def _write_stac(
     dataset_assembler,
@@ -847,7 +847,7 @@ def prepare_for_export(
         The dataset containing the bands to be exported.
     custom_dtypes : dictionary, optional
         An optional dictionary containing names of bands as keys,
-        and tuples in the form `(np.uint8, 255)` providing the 
+        and tuples in the form `(np.uint8, 255)` providing the
         dtype and nodata value to use for that band.
     float_dtype : string or numpy data type, optional
         The data type to use for floating point layers (default is
@@ -865,9 +865,7 @@ def prepare_for_export(
         The input dataset with correctly set nodata attributes and dtypes.
     """
 
-    def _prepare_band(
-        band, custom_dtypes, float_dtype, output_location, overwrite
-    ):
+    def _prepare_band(band, custom_dtypes, float_dtype, output_location, overwrite):
         # Export specific bands as integer data types by first filling
         # NaN with nodata value before converting to int, then setting
         # nodata attribute on layer
@@ -924,7 +922,7 @@ def export_dataset_metadata(
     dataset_maturity="final",
     product_family="intertidal",
     odc_product="ga_s2ls_intertidal_cyear_3",
-    thumbnail_bands = ["elevation","elevation","elevation"],
+    thumbnail_bands=["elevation", "elevation", "elevation"],
     additional_metadata=None,
     debug=False,
     run_id=None,
@@ -1069,8 +1067,13 @@ def export_dataset_metadata(
                 scale_factor_thumbnail = 1
             else:
                 scale_factor_thumbnail = 12
-                
-            dataset_assembler.write_thumbnail(thumbnail_bands[0], thumbnail_bands[1], thumbnail_bands[2], scale_factor=scale_factor_thumbnail)
+
+            dataset_assembler.write_thumbnail(
+                thumbnail_bands[0],
+                thumbnail_bands[1],
+                thumbnail_bands[2],
+                scale_factor=scale_factor_thumbnail,
+            )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
@@ -1081,9 +1084,11 @@ def export_dataset_metadata(
                 dataset_assembler.names.dataset_path
                 / dataset_assembler.names.thumbnail_filename()
             )
-            
+
             if thumbnail_bands[0] == "elevation":
-                _write_thumbnail(da=ds["elevation"], path=thumbnail_path, max_resolution=320)
+                _write_thumbnail(
+                    da=ds["elevation"], path=thumbnail_path, max_resolution=320
+                )
 
             # Generate final destination path
             destination_path = (
