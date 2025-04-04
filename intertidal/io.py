@@ -1083,7 +1083,7 @@ def export_dataset_metadata(
             )
             
             if thumbnail_bands[0] == "elevation":
-                _write_thumbnail(da=ds[thumbnail_band], path=thumbnail_path, max_resolution=320)
+                _write_thumbnail(da=ds["elevation"], path=thumbnail_path, max_resolution=320)
 
             # Generate final destination path
             destination_path = (
