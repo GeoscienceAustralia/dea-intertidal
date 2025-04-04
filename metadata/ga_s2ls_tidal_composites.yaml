@@ -1,0 +1,162 @@
+---
+name: ga_s2_tidal_composites_cyear_3
+metadata_type: eo3_tidal_composites
+description: Geoscience Australia Sentinel-2 Intertidal Composites Calendar Year Collection 3
+
+license: CC-BY-4.0
+
+metadata:
+  product:
+    name: ga_s2_tidal_composites_cyear_3
+  properties:
+    odc:file_format: GeoTIFF
+    odc:product_family: tidal_composites
+    odc:producer: ga.gov.au
+
+measurements:
+
+  - name: count_clear
+    dtype: int16
+    units: "count"
+    nodata: -999
+    aliases:
+      - count_clear
+
+  - name: high_blue
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_coastal_aerosol
+    dtype: int16
+    units: "1"
+    nodata: -999
+      
+  - name: high_count_clear
+    dtype: int16
+    units: "count"
+    nodata: -999
+
+  - name: high_green
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_nir_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_nir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_red_edge_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_red_edge_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_red_edge_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_red
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_swir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: high_swir_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_blue
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_coastal_aerosol
+    dtype: int16
+    units: "1"
+    nodata: -999
+      
+  - name: low_count_clear
+    dtype: int16
+    units: "count"
+    nodata: -999
+
+  - name: low_green
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_nir_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_nir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_red_edge_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_red_edge_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_red_edge_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_red
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_swir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+
+  - name: low_swir_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+    
+  - name: low_threshold
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+    
+  - name: high_threshold
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+
+load:
+  crs: "EPSG:3577"
+  resolution:
+    y: -10
+    x: 10
+  align:
+    y: 0
+    x: 0
