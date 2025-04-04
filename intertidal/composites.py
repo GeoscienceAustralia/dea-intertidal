@@ -28,7 +28,7 @@ def rename_bands(ds, old_string, new_string):
     ds_renamed = ds.rename({band: band.replace(old_string, new_string) for band in ds.data_vars})
     return ds_renamed
 
-def intertidal_composites(
+def tidal_composites(
     satellite_ds,
     threshold_lowtide=0.2,
     threshold_hightide=0.8,
@@ -106,40 +106,7 @@ def intertidal_composites(
     
     # Model tides into for spatial extent and timesteps in satellite data
     log.info(f"Study area {study_area}: Modelling tide heights")
-    # tides_highres, tides_lowres = pixel_tides(
-    #     ds=satellite_ds,
-    #     model=tide_model,
-    #     directory=tide_model_dir,
-    # )
 
-    # # Start processing tide data, using .persist so we can re-use our results
-    # tides_highres.persist()
-
-    # # Calculate low and high tide height thresholds using quantile of
-    # # all tide observations.
-    # log.info(f"Study area {study_area}: Calculate low and high tide height thresholds")
-    # threshold_ds = (
-    #     tides_lowres.quantile(q=[threshold_lowtide, threshold_hightide], dim="time")
-    #     .odc.assign_crs(satellite_ds.odc.geobox.crs)
-    #     .odc.reproject(satellite_ds.odc.geobox, resampling="bilinear")
-    #     .drop("quantile")
-    # )
-    
-    # # Apply threshold to keep only pixels with tides less or greater than
-    # # than tide height threshold
-    # log.info(f"Study area {study_area}: Masking to low and high tide observations")
-    # low_mask = tides_highres <= threshold_ds.isel(quantile=0)
-    # high_mask = tides_highres >= threshold_ds.isel(quantile=-1)
-
-
-    threshold_ds = pixel_tides(
-        data=satellite_ds,
-        model=tide_model,
-        calculate_quantiles=(threshold_lowtide, threshold_hightide),
-        resample=True,
-        directory=tide_model_dir,
-    ).drop("quantile")
-    
     tides_highres = pixel_tides(
         data=satellite_ds,
         model=tide_model,
@@ -147,7 +114,15 @@ def intertidal_composites(
         directory=tide_model_dir,
     )
     
+    # Mask tide data with invalid obs in the the satellite data
+    tides_highres = tides_highres.where(satellite_ds.nbart_red >-999)
+
+    threshold_ds= tides_highres.quantile([threshold_lowtide,threshold_hightide], dim="time").drop("quantile")
+    
+    # create a mask for selecting satellite obs below the low tide treshold
     low_mask = tides_highres <= threshold_ds.isel(quantile=0)
+    
+    # create a mask for selecting satellite obs above the high tide treshold
     high_mask = tides_highres >= threshold_ds.isel(quantile=-1)
 
     # Mask out pixels outside of selected tides. Drop fully empty scenes
@@ -167,9 +142,19 @@ def intertidal_composites(
     ds_lowtide = int_geomedian(ds=ds_low, maxiters=max_iters, num_threads=num_threads)
     ds_hightide = int_geomedian(ds=ds_high, maxiters=max_iters, num_threads=num_threads)
     
+    ds_lowtide['low_count_clear'] = ds_low.nbart_red.where(ds_low.nbart_red>-999).count(dim=["time"]) 
     
-    ds_lowtide['low_count_clear'] = ds_low.nbart_red.count(dim=["time"])               
-    ds_hightide['high_count_clear'] = ds_high.nbart_red.count(dim=["time"])
+    # this didn't work
+    # ds_lowtide['low_count_clear2'] =  keep_good_only(x=satellite_ds, where=low_mask).nbart_red.count()
+    
+    ds_lowtide['low_threshold'] = threshold_ds.isel(quantile=0) 
+    
+    ds_hightide['high_threshold'] = threshold_ds.isel(quantile=1)
+    
+    # this didn't work
+    # ds_hightide['high_count_clear2'] = keep_good_only(x=satellite_ds, where=high_mask).nbart_red.count()
+    
+    ds_hightide['high_count_clear'] = ds_high.nbart_red.where(ds_high.nbart_red>-999).count(dim=["time"])
     
     return ds_lowtide, ds_hightide
 
@@ -269,11 +254,19 @@ def intertidal_composites(
     "--mask_sunglint",
     type=int,
     default=0,
-    help="EXPERIMENTAL: Whether to mask out pixels that are likely to be "
+    help= "Whether to mask out pixels that are likely to be "
     "affected by sunglint using glint angles. Low glint angles "
     "(e.g. < 20) often correspond with sunglint. Defaults to None; "
     "set to e.g. '20' to mask out all pixels with a glint angle of "
     "less than 20.",
+)
+@click.option(
+    "--max_iters",
+    type=int,
+    default=10000,
+    help="Value to pass to the 'max_iters' param of `int_geomedian`. This "
+         "can be set to a low value (e.g. 10) to increase the processing "
+        "speed of test runs.",
 )
 @click.option(
     "--tide_model",
@@ -310,7 +303,7 @@ def intertidal_composites(
     default=True,
     help="Whether to include the coastal aerosol band",
 )
-def intertidal_composites_cli(
+def tidal_composites_cli(
     study_area,
     start_date,
     end_date,
@@ -324,6 +317,7 @@ def intertidal_composites_cli(
     threshold_hightide,
     correct_seasonality,
     mask_sunglint,
+    max_iters,
     tide_model,
     tide_model_dir,
     aws_unsigned,
@@ -332,7 +326,7 @@ def intertidal_composites_cli(
 ):
     
 
-    filename=f"{output_dir}/ga_s2_intertidal_composites_cyear_3/{output_version.replace('.','-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_intertidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
+    filename=f"{output_dir}/ga_s2_tidal_composites_cyear_3/{output_version.replace('.','-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_tidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
 
     if mask_sunglint < 1:
         mask_sunglint = None
@@ -404,11 +398,11 @@ def intertidal_composites_cli(
             
             # Calculate high and low tide geomedian composites
             log.info(f"{run_id}: Study area {study_area}: Running Intertidal composites")
-            ds_lowtide, ds_hightide = intertidal_composites(
+            ds_lowtide, ds_hightide = tidal_composites(
                 satellite_ds=satellite_ds,
                 threshold_lowtide=threshold_lowtide,
                 threshold_hightide=threshold_hightide,
-                max_iters=10,
+                max_iters=max_iters,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
                 study_area=study_area,
@@ -432,7 +426,7 @@ def intertidal_composites_cli(
             # Concatenate 
             ds_hltc = xarray.merge([ds_lowtide, ds_hightide])
 
-            ds_hltc['count_clear'] = satellite_ds.nbart_red.count(dim=["time"])
+            ds_hltc['count_clear'] = satellite_ds.nbart_red.where(satellite_ds.nbart_red>-999).count(dim=["time"])
 
             custom_dtypes = {
             "count_clear": (np.int16, -999),
@@ -447,6 +441,7 @@ def intertidal_composites_cli(
             "low_nir_2": (np.int16, -999),
             "low_swir_2": (np.int16, -999),
             "low_swir_3": (np.int16, -999),
+            "low_threshold": (np.float32, np.nan),
             "low_count_clear": (np.int16, -999),
             "high_coastal_aerosol": (np.int16, -999),
             "high_blue": (np.int16, -999),
@@ -459,6 +454,7 @@ def intertidal_composites_cli(
             "high_nir_2": (np.int16, -999),
             "high_swir_2": (np.int16, -999),
             "high_swir_3": (np.int16, -999),
+            "high_threshold": (np.float32, np.nan),
             "high_count_clear": (np.int16, -999),
         }
 
@@ -478,7 +474,7 @@ def intertidal_composites_cli(
                 s2_lineage=dss_s2,
                 dataset_version=output_version,
                 product_family="composites",
-                odc_product="ga_s2_intertidal_composites_cyear_3",
+                odc_product="ga_s2_tidal_composites_cyear_3",
                 thumbnail_bands =["low_red","low_green","low_blue"],
                 product_maturity=product_maturity,
                 dataset_maturity=dataset_maturity,
@@ -486,39 +482,10 @@ def intertidal_composites_cli(
                 log=log,
             )
 
-            #Thumbnail image needs work
 
             # Close dask client
             client.close()
 
-            # Just in case you want to write the outputs as multiband cogs
-            # Export multiband GeoTIFFs and pngs
-            # log.info(f"Study area {study_area}: Exporting outputs pngs to {output_dir}")
-
-            # prefix = f"{output_dir}/{study_area}_{start_date}_{end_date}_glintmask{mask_sunglint}"
-          
-            # ds_hltc.to_array().odc.write_cog(
-            #     f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}.tif",
-            #     overwrite=True,
-            # )
-            # ds_hightide.to_array().odc.write_cog(
-            #     f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}.tif",
-            #     overwrite=True,
-            # )
-
-            # If you want to export images of the composites
-            # ds_lowtide.odc.to_rgba(
-            #     bands=["low_red", "low_green", "low_blue"], vmin=100, vmax=2500
-            # ).plot.imshow().figure.savefig(
-            #     f"{prefix}_composite_lowtide_rgb.png"
-            # )
-            # ds_hightide.odc.to_rgba(
-            #     bands=["high_red", "high_green", "high_blue"], vmin=100, vmax=2500
-            # ).plot.imshow().figure.savefig(
-            #     f"{prefix}_composite_hightide_rgb.png"
-            # )
-
-            # Workflow completed
             log.info(
                 f"Study area {study_area}: Completed DEA Intertidal Composites workflow"
             )
@@ -531,4 +498,4 @@ def intertidal_composites_cli(
 
 
 if __name__ == "__main__":
-    intertidal_composites_cli()
+    tidal_composites_cli()
