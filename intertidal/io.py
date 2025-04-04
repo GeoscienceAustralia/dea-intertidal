@@ -226,8 +226,8 @@ def load_data(
         set to e.g. "20" to mask out all pixels with a glint angle of
         less than 20.
     include_coastal_aerosol : bool, optional
-        Whether to include the coastal aerosol band
-        Defaults to False
+        Whether to load data from the Sentinel-2 coastal aerosol band.
+        Defaults to False.
     dask_chunks : dict, optional
         Optional custom Dask chunks to load data with. Defaults to None,
         which will use '{"x": 1600, "y": 1600}'.
@@ -968,7 +968,10 @@ def export_dataset_metadata(
     odc_product : str, optional
         Default is "ga_s2ls_intertidal_cyear_3"
     thumbnail_bands : list, optional
-        Default is ["elevation","elevation","elevation"]
+        Bands used to generate initial thumbnail image for DEA Tidal
+        Composites. For DEA Intertidal this is used to generate an
+        initial thumbnail, but is overwritten later in the workflow.
+        Default is ["elevation", "elevation", "elevation"]
     additional_metadata : dict, optional
         An option dictionary containing additional metadata fields to
         add to the dataset metadata properties.
@@ -1062,30 +1065,29 @@ def export_dataset_metadata(
             dataset_assembler.note_source_datasets("ls_ard", *ls_set)
             dataset_assembler.note_source_datasets("ancillary", *ancillary_set)
 
-            # Add a starting thumbnail; this will be overwritten later for intertidal
-            if study_area == "testing":
-                scale_factor_thumbnail = 1
-            else:
-                scale_factor_thumbnail = 12
-
+            # Add a starting thumbnail; this will be overwritten with a better
+            # thumbnail for Intertidal so is effectively ignored. `scale_factor`
+            # sets how many multiples smaller to make the thumbnail; for Tidal
+            # Composites this ensures that a sensible thumbnail is generated
+            # for the low resolution "testing" study area.
             dataset_assembler.write_thumbnail(
                 thumbnail_bands[0],
                 thumbnail_bands[1],
                 thumbnail_bands[2],
-                scale_factor=scale_factor_thumbnail,
+                scale_factor=1 if study_area == "testing" else 12,
             )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
             log.info(f"{run_id}: Assembled dataset: {metadata_path}")
 
-            # Replace the thumbnail with something nicer
-            thumbnail_path = (
-                dataset_assembler.names.dataset_path
-                / dataset_assembler.names.thumbnail_filename()
-            )
+            # For Intertidal, replace the thumbnail with something nicer
+            if product_family == "intertidal":
+                thumbnail_path = (
+                    dataset_assembler.names.dataset_path
+                    / dataset_assembler.names.thumbnail_filename()
+                )
 
-            if thumbnail_bands[0] == "elevation":
                 _write_thumbnail(
                     da=ds["elevation"], path=thumbnail_path, max_resolution=320
                 )
