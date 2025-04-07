@@ -220,7 +220,7 @@ def load_data(
         Index values before returning them. Note that this must be set
         to True if both `include_s2` and `include_ls` are True.
     mask_sunglint : int, optional
-        EXPERIMENTAL: Whether to mask out pixels that are likely to be
+        Whether to mask out pixels that are likely to be
         affected by sunglint using glint angles. Low glint angles
         (e.g. < 20) often correspond with sunglint. Defaults to None;
         set to e.g. "20" to mask out all pixels with a glint angle of
@@ -354,8 +354,9 @@ def load_data(
             x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
         )
 
-        # Optionally, apply sunglint mask
-        if mask_sunglint is not None:
+        # Optionally, apply sunglint mask (if not None and if at least angle of 1)
+        if (mask_sunglint is not None) and (mask_sunglint >= 1):
+
             # Calculate glint angle
             glint_array = glint_angle(
                 solar_azimuth=ds_s2.oa_solar_azimuth,
