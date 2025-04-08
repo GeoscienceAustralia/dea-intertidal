@@ -1092,6 +1092,7 @@ def export_dataset_metadata(
                 thumbnail_bands[1],
                 thumbnail_bands[2],
                 scale_factor=1 if study_area == "testing" else 12,
+                static_stretch=(50, 2000),
             )
 
             # Complete the dataset
