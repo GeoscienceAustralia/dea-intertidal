@@ -188,7 +188,7 @@ def tidal_composites(
     ds_lowtide["low_count_clear"] = (
         (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
     )
-    ds_lowtide["high_count_clear"] = (
+    ds_hightide["high_count_clear"] = (
         (ds_high_masked.nbart_red != nodata).sum(dim="time").astype("int16")
     )
 
