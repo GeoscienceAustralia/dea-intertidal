@@ -184,7 +184,7 @@ def load_connectivity_mask(
     resampling="bilinear",
     buffer=20000,
     preprocess=None,
-    max_threshold=100,
+    max_threshold=50,
     add_mangroves=False,
     correct_hat=False,
     mask_filters=[("dilation", 3)],
@@ -335,12 +335,13 @@ def load_gmw_mask(
     gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/derivative/dea_intertidal/supplementary/gmw_mng_2020_v4019.fgb",
 ):
     """
-    Experiment with loading GMW data to use as additional
-    starting points in connectivity analysis.
-    By default, this code uses the unioned GMW extents
-    that form the analysis area of the DEA Mangrove product
+    Load mangrove extents from Global Mangrove Watch data to use
+    as additional starting points in connectivity analysis.
+    By default, this code the Sentinel-2-based 2020 GMW extents dataset.
     """
-    gmw_gdf = gpd.read_file(gmw_path, bbox=ds.odc.geobox.boundingbox)
+    gmw_gdf = gpd.read_file(
+        gmw_path, bbox=ds.odc.geobox.to_crs("EPSG:4326").boundingbox
+    )
     gmw_da = xr_rasterize(gmw_gdf, ds)
     return gmw_da
 
@@ -440,22 +441,14 @@ def extents(
     # Identify any pixels that are nodata in frequency
     is_nan = freq.isnull()
 
-    # Spilt pixels into those that were mostly wet vs mostly dry.
-    # Identify subset of mostly wet pixels that were inland
+    # Split pixels into those that were mostly wet vs mostly dry
     mostly_dry = (freq < 0.50) & ~is_nan
     mostly_wet = (freq >= 0.50) & ~is_nan
-    mostly_wet_inland = mostly_wet & ~coastal_mask
 
-    # Reclassify inland_wet pixels to ocean pixels (mostly_wet)
-    # if they are connected to the coastal mask
-    wet_combined = mostly_wet | mostly_wet_inland
-    wet_combined = wet_combined == wet_combined.notnull()
-
-    connection_mask = class_connection(
-        split_classes=wet_combined, reference=coastal_mask, connectivity=1
-    )
-    mostly_wet = wet_combined & connection_mask
-    mostly_wet_inland = wet_combined & ~connection_mask
+    # Identify subset of mostly wet pixels that are not within
+    # or touching/connected to the coastal connectivity mask
+    mostly_wet_connected = class_connection(mostly_wet, coastal_mask)
+    mostly_wet_inland = mostly_wet & ~mostly_wet_connected
 
     # Identify low-confidence pixels as those with greater than 0.15
     # correlation. Use connectivity mask to mask out any that are "inland"
