@@ -1,3 +1,4 @@
+--find-links=https://packages.dea.ga.gov.au/hdstats/
 aiohttp
 awscli
 botocore
@@ -8,6 +9,7 @@ datacube[s3,performance]==1.8.19
 dea-tools>=0.3.4
 eodatasets3==0.30.6
 eo-tides==0.6.3
+hdstats==0.1.8.post1
 geopandas==0.14.4
 matplotlib==3.9.2
 mdutils

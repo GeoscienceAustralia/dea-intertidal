@@ -901,7 +901,7 @@ def elevation(
         f"{run_id}: Masking nodata and adding tide heights to satellite data array"
     )
     satellite_ds["tide_m"] = tide_m.where(
-        ~satellite_ds.to_array().isel(variable=0).isnull().drop("variable")
+        ~satellite_ds.to_array().isel(variable=0).isnull().drop_vars("variable")
     )
 
     # Flatten array from 3D (time, y, x) to 2D (time, z) and drop pixels
@@ -957,7 +957,7 @@ def elevation(
             flat_dem,  # DEM data
             freq,  # Frequency
             corr,  # Correlation
-            clear, # Clear count
+            clear,  # Clear count
         ],
     )
 
@@ -1107,7 +1107,7 @@ def elevation(
     default=["EOT20"],
     help="The model used for tide modelling, as supported by the "
     "`eo-tides` Python package. Options include 'EOT20' (default), "
-    "'TPXO10-atlas-v2-nc', 'FES2022', 'FES2014', 'GOT5.6', 'ensemble'."
+    "'TPXO10-atlas-v2-nc', 'FES2022', 'FES2014', 'GOT5.6', 'ensemble'.",
 )
 @click.option(
     "--tide_model_dir",
@@ -1218,7 +1218,9 @@ def intertidal_cli(
         # from least-cost connectivity analysis
         topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox)
         urban_mask = load_aclum_mask(dc, satellite_ds.odc.geobox)
-        coastal_mask, _ = load_connectivity_mask(dc, satellite_ds.odc.geobox)
+        coastal_mask, _ = load_connectivity_mask(
+            dc, satellite_ds.odc.geobox, add_mangroves=True, correct_hat=True
+        )
 
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
@@ -1254,6 +1256,9 @@ def intertidal_cli(
             coastal_mask=coastal_mask,
             urban_mask=urban_mask,
         )
+
+        # Add coastal mask output layer
+        ds["qa_coastal_mask"] = coastal_mask
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")

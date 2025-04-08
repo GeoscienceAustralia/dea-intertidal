@@ -230,7 +230,7 @@ def load_data(
         Defaults to False.
     dask_chunks : dict, optional
         Optional custom Dask chunks to load data with. Defaults to None,
-        which will use '{"x": 1600, "y": 1600}'.
+        which will use '{"x": 3200, "y": 3200}'.
     dtype : str, optional
         Desired data type for output data. Valid values are "int16"
         (default) and "float32". If `ndwi=True`, then "float32" will be
@@ -307,7 +307,7 @@ def load_data(
     load_params = {
         "like": geobox.compat,
         "group_by": "solar_day",
-        "dask_chunks": {"x": 1600, "y": 1600} if dask_chunks is None else dask_chunks,
+        "dask_chunks": {"x": 3200, "y": 3200} if dask_chunks is None else dask_chunks,
         "resampling": {
             "*": "cubic",
             "oa_fmask": "nearest",
@@ -900,6 +900,7 @@ def prepare_for_export(
             # QA layers
             "qa_ndwi_freq": (np.uint8, 255),
             "qa_count_clear": (np.int16, -999),
+            "qa_coastal_mask": (np.uint8, 255),
         }
 
     # Apply to each array in the input `ds`
