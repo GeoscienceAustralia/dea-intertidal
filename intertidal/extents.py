@@ -332,7 +332,7 @@ def load_connectivity_mask(
 
 def load_gmw_mask(
     ds,
-    gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/mangroves_aux/maximum_extent_of_mangroves_Apr2019.fgb",
+    gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/derivative/dea_intertidal/supplementary/gmw_mng_2020_v4019.fgb",
 ):
     """
     Experiment with loading GMW data to use as additional
@@ -473,9 +473,7 @@ def extents(
     extents = xr_zeros(geobox=geobox, dtype="int16") + 255  # start with 255
     extents.values[mostly_wet] = 1  # Add in mostly wet pixels
     extents.values[mostly_wet_inland] = 4  # Add in mostly wet inland pixels on top
-    extents.values[urban_misclass] = (
-        5  # Set any pixels in the misclassified urban class to land
-    )
+    extents.values[urban_misclass] = 5  # Set any pixels in misclassified urban to land
     extents.values[mostly_dry] = 5  # Add mostly dry on top
     extents.values[intertidal_lc] = 2  # Add low confidence intertidal on top
 
