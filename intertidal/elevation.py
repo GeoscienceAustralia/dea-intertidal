@@ -1257,6 +1257,9 @@ def intertidal_cli(
             urban_mask=urban_mask,
         )
 
+        # Add coastal mask output layer
+        ds["qa_coastal_mask"] = coastal_mask
+
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
 
