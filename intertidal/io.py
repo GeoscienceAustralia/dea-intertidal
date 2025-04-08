@@ -333,56 +333,61 @@ def load_data(
             **query_params,
         )
 
-        # Load datasets
-        ds_s2 = dc.load(
-            datasets=dss_s2,
-            measurements=s2_spectral_bands + s2_masking_bands + sunglint_bands,
-            **load_params,
-        )
+        # Continue if at least one dataset is found
+        if len(dss_s2) > 0:
 
-        # Create cloud mask, treating nodata and clouds as bad pixels
-        cloud_mask = enum_to_bool(
-            mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
-        )
-
-        # Identify non-contiguous pixels
-        noncontiguous_mask = enum_to_bool(ds_s2.oa_nbart_contiguity, categories=[False])
-
-        # Set cloud mask and non-contiguous pixels to nodata
-        combined_mask = cloud_mask | noncontiguous_mask
-        ds_s2 = erase_bad(
-            x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
-        )
-
-        # Optionally, apply sunglint mask (if not None and if at least angle of 1)
-        if (mask_sunglint is not None) and (mask_sunglint >= 1):
-
-            # Calculate glint angle
-            glint_array = glint_angle(
-                solar_azimuth=ds_s2.oa_solar_azimuth,
-                solar_zenith=ds_s2.oa_solar_zenith,
-                view_azimuth=ds_s2.oa_satellite_azimuth,
-                view_zenith=ds_s2.oa_satellite_view,
+            # Load datasets
+            ds_s2 = dc.load(
+                datasets=dss_s2,
+                measurements=s2_spectral_bands + s2_masking_bands + sunglint_bands,
+                **load_params,
             )
 
-            # Apply glint angle threshold and set affected pixels to nodata
-            glint_mask = glint_array > mask_sunglint
-            ds_s2 = keep_good_only(x=ds_s2[s2_spectral_bands], where=glint_mask)
-
-        # Optionally convert to float, setting all nodata pixels to `np.nan`
-        # (required for NDWI, so will be applied even if `dtype="int16"`)
-        if (dtype == "float32") or ndwi:
-            ds_s2 = to_f32(ds_s2)
-
-        # Convert to NDWI
-        if ndwi:
-            # Calculate NDWI
-            ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
-                ds_s2.nbart_green + ds_s2.nbart_nir_1
+            # Create cloud mask, treating nodata and clouds as bad pixels
+            cloud_mask = enum_to_bool(
+                mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
             )
-            data_list.append(ds_s2[["ndwi"]])
-        else:
-            data_list.append(ds_s2)
+
+            # Identify non-contiguous pixels
+            noncontiguous_mask = enum_to_bool(
+                ds_s2.oa_nbart_contiguity, categories=[False]
+            )
+
+            # Set cloud mask and non-contiguous pixels to nodata
+            combined_mask = cloud_mask | noncontiguous_mask
+            ds_s2 = erase_bad(
+                x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
+            )
+
+            # Optionally, apply sunglint mask (if not None and if at least angle of 1)
+            if (mask_sunglint is not None) and (mask_sunglint >= 1):
+
+                # Calculate glint angle
+                glint_array = glint_angle(
+                    solar_azimuth=ds_s2.oa_solar_azimuth,
+                    solar_zenith=ds_s2.oa_solar_zenith,
+                    view_azimuth=ds_s2.oa_satellite_azimuth,
+                    view_zenith=ds_s2.oa_satellite_view,
+                )
+
+                # Apply glint angle threshold and set affected pixels to nodata
+                glint_mask = glint_array > mask_sunglint
+                ds_s2 = keep_good_only(x=ds_s2[s2_spectral_bands], where=glint_mask)
+
+            # Optionally convert to float, setting all nodata pixels to `np.nan`
+            # (required for NDWI, so will be applied even if `dtype="int16"`)
+            if (dtype == "float32") or ndwi:
+                ds_s2 = to_f32(ds_s2)
+
+            # Convert to NDWI
+            if ndwi:
+                # Calculate NDWI
+                ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
+                    ds_s2.nbart_green + ds_s2.nbart_nir_1
+                )
+                data_list.append(ds_s2[["ndwi"]])
+            else:
+                data_list.append(ds_s2)
 
     # If Landsat data is requested
     if include_ls:
@@ -398,68 +403,79 @@ def load_data(
             **query_params,
         )
 
-        # Load datasets
-        ds_ls = dc.load(
-            datasets=dss_ls,
-            measurements=ls_spectral_bands + ls_masking_bands + sunglint_bands,
-            **load_params,
-        )
+        # Continue if at least one dataset is found
+        if len(dss_ls) > 0:
 
-        # First, we identify all bad pixels: nodata, cloud and shadow.
-        # We then apply morphological opening to clean up narrow false
-        # positive clouds (e.g. bright sandy beaches). By including
-        # nodata, we make sure that small areas of cloud next to Landsat
-        # 7 SLC-off nodata gaps are not accidently removed (at the cost
-        # of not being able to clean false positives next to SLC-off gaps)
-        bad_data = enum_to_bool(
-            ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
-        )
-        bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
-
-        # We now dilate ONLY pixels in our cleaned bad data dask that
-        # are outside of our iriginal nodata pixels. This ensures that
-        # Landsat 7 SLC-off nodata stripes are not also dilated.
-        nodata_mask = enum_to_bool(ds_ls.oa_fmask, categories=["nodata"])
-        bad_data_mask = mask_cleanup(
-            mask=bad_data_cleaned & ~nodata_mask,
-            mask_filters=[("dilation", 5)],
-        )
-
-        # Identify non-contiguous pixels
-        noncontiguous_mask = enum_to_bool(ds_ls.oa_nbart_contiguity, categories=[False])
-
-        # Set cleaned bad pixels and non-contiguous pixels to nodata
-        combined_mask = bad_data_mask | noncontiguous_mask
-        ds_ls = erase_bad(ds_ls[ls_spectral_bands + sunglint_bands], combined_mask)
-
-        # Optionally, apply sunglint mask
-        if mask_sunglint is not None:
-            # Calculate glint angle
-            glint_array = glint_angle(
-                solar_azimuth=ds_ls.oa_solar_azimuth,
-                solar_zenith=ds_ls.oa_solar_zenith,
-                view_azimuth=ds_ls.oa_satellite_azimuth,
-                view_zenith=ds_ls.oa_satellite_view,
+            # Load datasets
+            ds_ls = dc.load(
+                datasets=dss_ls,
+                measurements=ls_spectral_bands + ls_masking_bands + sunglint_bands,
+                **load_params,
             )
 
-            # Apply glint angle threshold and set affected pixels to nodata
-            glint_mask = glint_array > mask_sunglint
-            ds_ls = keep_good_only(x=ds_ls[ls_spectral_bands], where=glint_mask)
-
-        # Optionally convert to float, setting all nodata pixels to `np.nan`
-        # (required for NDWI, so will be applied even if `dtype="int16"`)
-        if (dtype == "float32") or ndwi:
-            ds_ls = to_f32(ds_ls)
-
-        # Convert to NDWI
-        if ndwi:
-            # Calculate NDWI
-            ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
-                ds_ls.nbart_green + ds_ls.nbart_nir
+            # First, we identify all bad pixels: nodata, cloud and shadow.
+            # We then apply morphological opening to clean up narrow false
+            # positive clouds (e.g. bright sandy beaches). By including
+            # nodata, we make sure that small areas of cloud next to Landsat
+            # 7 SLC-off nodata gaps are not accidently removed (at the cost
+            # of not being able to clean false positives next to SLC-off gaps)
+            bad_data = enum_to_bool(
+                ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
             )
-            data_list.append(ds_ls[["ndwi"]])
-        else:
-            data_list.append(ds_ls)
+            bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
+
+            # We now dilate ONLY pixels in our cleaned bad data dask that
+            # are outside of our iriginal nodata pixels. This ensures that
+            # Landsat 7 SLC-off nodata stripes are not also dilated.
+            nodata_mask = enum_to_bool(ds_ls.oa_fmask, categories=["nodata"])
+            bad_data_mask = mask_cleanup(
+                mask=bad_data_cleaned & ~nodata_mask,
+                mask_filters=[("dilation", 5)],
+            )
+
+            # Identify non-contiguous pixels
+            noncontiguous_mask = enum_to_bool(
+                ds_ls.oa_nbart_contiguity, categories=[False]
+            )
+
+            # Set cleaned bad pixels and non-contiguous pixels to nodata
+            combined_mask = bad_data_mask | noncontiguous_mask
+            ds_ls = erase_bad(ds_ls[ls_spectral_bands + sunglint_bands], combined_mask)
+
+            # Optionally, apply sunglint mask
+            if mask_sunglint is not None:
+                # Calculate glint angle
+                glint_array = glint_angle(
+                    solar_azimuth=ds_ls.oa_solar_azimuth,
+                    solar_zenith=ds_ls.oa_solar_zenith,
+                    view_azimuth=ds_ls.oa_satellite_azimuth,
+                    view_zenith=ds_ls.oa_satellite_view,
+                )
+
+                # Apply glint angle threshold and set affected pixels to nodata
+                glint_mask = glint_array > mask_sunglint
+                ds_ls = keep_good_only(x=ds_ls[ls_spectral_bands], where=glint_mask)
+
+            # Optionally convert to float, setting all nodata pixels to `np.nan`
+            # (required for NDWI, so will be applied even if `dtype="int16"`)
+            if (dtype == "float32") or ndwi:
+                ds_ls = to_f32(ds_ls)
+
+            # Convert to NDWI
+            if ndwi:
+                # Calculate NDWI
+                ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
+                    ds_ls.nbart_green + ds_ls.nbart_nir
+                )
+                data_list.append(ds_ls[["ndwi"]])
+            else:
+                data_list.append(ds_ls)
+
+    # Raise error if no satellite data was found
+    if len(data_list) == 0:
+        raise Exception(
+            "No satellite data was found at this location; unable to load data"
+        )
 
     # Combine into a single ds, sort and drop no longer needed bands
     satellite_ds = xr.concat(data_list, dim="time").sortby("time")
@@ -627,7 +643,7 @@ def load_aclum_mask(
         return reclassified_aclum
 
     # Return an array of all False (i.e. no urban) if no data is returned
-    except AttributeError:
+    except (AttributeError, KeyError):
         return odc.geo.xr.xr_zeros(geobox).astype(bool)
 
 
