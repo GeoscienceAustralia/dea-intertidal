@@ -27,8 +27,8 @@ COPY requirements.in /app/requirements.in
 
 # Install uv and requirements
 RUN pip install uv && \
-    uv pip compile /app/requirements.in -o /app/requirements.txt && \
-    uv pip install -r /app/requirements.txt --system --find-links https://packages.dea.ga.gov.au/hdstats/
+    uv pip compile /app/requirements.in -o /app/requirements.txt --emit-find-links && \
+    uv pip install -r /app/requirements.txt --system
 
 # Now copy the rest of the files
 COPY . /app
