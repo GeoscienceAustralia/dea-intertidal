@@ -1211,6 +1211,7 @@ def intertidal_cli(
             skip_broken_datasets=True,
             dataset_maturity="final",
         )
+        log.info(f"{run_id}: Loading {len(satellite_ds.time)} satellite data timesteps")
         satellite_ds.load()
 
         # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid,
