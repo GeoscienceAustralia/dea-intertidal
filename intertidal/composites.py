@@ -37,6 +37,7 @@ def tidal_composites(
     satellite_ds,
     threshold_lowtide=0.2,
     threshold_hightide=0.8,
+    eps=1e-4,
     max_iters=10000,
     tide_model="EOT20",
     tide_model_dir="/var/share/tide_models",
@@ -68,10 +69,12 @@ def tidal_composites(
         Quantile used to identify low tide observations, by default 0.2.
     threshold_hightide : float, optional
         Quantile used to identify high tide observations, by default 0.8.
+    eps: float, optional
+        Termination criteria passed on to the geomedian algorithm.
     max_iters : int, optional
-        Value to pass to the 'max_iters' param of `int_geomedian`. This
-        can be set to a low value (e.g. 10) to increase the processing
-        speed of test runs.
+        Maximum number of iterations done per output pixel in the
+        geomedian calculation. This can be set to a low value (e.g. 10)
+        to increase the processing speed of test runs.
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
         supported by the `eo-tides` Python package. Options include:
@@ -150,9 +153,13 @@ def tidal_composites(
     ds_high = satellite_ds.sel(time=high_keep)
 
     # Load low and high subsets of data into memory
-    log.info(f"{run_id}: Loading {len(ds_low.time)} low tide satellite images into memory")
+    log.info(
+        f"{run_id}: Loading {len(ds_low.time)} low tide satellite images into memory"
+    )
     ds_low.load()
-    log.info(f"{run_id}: Loading {len(ds_high.time)} high tide satellite images into memory")
+    log.info(
+        f"{run_id}: Loading {len(ds_high.time)} high tide satellite images into memory"
+    )
     ds_high.load()
 
     # Use `keep_good_only` to set any pixels outside of the tide masks to nodata
@@ -161,13 +168,19 @@ def tidal_composites(
 
     # Calculate low and high tide geomedians
     num_threads = os.cpu_count() - 2
-    log.info(f"{run_id}: Running low tide geomedian calculation")
+    log.info(f"{run_id}: Running low tide geomedian with {num_threads} threads")
     ds_lowtide = int_geomedian(
-        ds=ds_low_masked, maxiters=max_iters, num_threads=num_threads
+        ds=ds_low_masked,
+        maxiters=max_iters,
+        num_threads=num_threads,
+        eps=eps,
     )
-    log.info(f"{run_id}: Running high tide geomedian calculation")
+    log.info(f"{run_id}: Running high tide geomedian with {num_threads} threads")
     ds_hightide = int_geomedian(
-        ds=ds_high_masked, maxiters=max_iters, num_threads=num_threads
+        ds=ds_high_masked,
+        maxiters=max_iters,
+        num_threads=num_threads,
+        eps=eps,
     )
 
     # Calculate low and high tide clear counts
@@ -282,12 +295,18 @@ def tidal_composites(
     help="Whether to include the coastal aerosol band",
 )
 @click.option(
+    "--eps",
+    type=float,
+    default=1e-4,
+    help="Termination criteria passed on to the geomedian algorithm.",
+)
+@click.option(
     "--max_iters",
     type=int,
     default=1000,
-    help="Value to pass to the 'max_iters' param of `int_geomedian`. This "
-    "can be set to a low value (e.g. 10) to increase the processing "
-    "speed of test runs.",
+    help="Maximum number of iterations done per output pixel in the "
+    "geomedian calculation. This can be set to a low value (e.g. 10) "
+    "to increase the processing speed of test runs.",
 )
 @click.option(
     "--tide_model",
@@ -332,6 +351,7 @@ def tidal_composites_cli(
     threshold_hightide,
     mask_sunglint,
     include_coastal_aerosol,
+    eps,
     max_iters,
     tide_model,
     tide_model_dir,
@@ -405,6 +425,7 @@ def tidal_composites_cli(
                 satellite_ds=satellite_ds,
                 threshold_lowtide=threshold_lowtide,
                 threshold_hightide=threshold_hightide,
+                eps=eps,
                 max_iters=max_iters,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
@@ -480,9 +501,7 @@ def tidal_composites_cli(
             # Close dask client
             client.close()
 
-            log.info(
-                f"{run_id}: Completed DEA Tidal Composites workflow"
-            )
+            log.info(f"{run_id}: Completed DEA Tidal Composites workflow")
 
         except Exception as e:
             log.exception(f"{run_id}: Failed to run process with error {e}")
