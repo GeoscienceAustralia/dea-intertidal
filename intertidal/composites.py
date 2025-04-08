@@ -417,11 +417,15 @@ def tidal_composites_cli(
                 dataset_maturity="final",
                 dtype="int16",
             )
-            log.info(f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps")
+            log.info(
+                f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps"
+            )
 
             # Fail early if not enough observations
             if len(satellite_ds.time) < 20:
-                raise Exception("Insufficient satellite data available to process composites; skipping.")
+                raise Exception(
+                    "Insufficient satellite data available to process composites; skipping."
+                )
 
             # Calculate high and low tide geomedian composites
             log.info(f"{run_id}: Running DEA Tidal Composites workflow")
