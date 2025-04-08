@@ -627,7 +627,7 @@ def load_aclum_mask(
         return reclassified_aclum
 
     # Return an array of all False (i.e. no urban) if no data is returned
-    except AttributeError:
+    except AttributeError, KeyError:
         return odc.geo.xr.xr_zeros(geobox).astype(bool)
 
 
