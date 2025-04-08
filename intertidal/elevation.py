@@ -901,7 +901,7 @@ def elevation(
         f"{run_id}: Masking nodata and adding tide heights to satellite data array"
     )
     satellite_ds["tide_m"] = tide_m.where(
-        ~satellite_ds.to_array().isel(variable=0).isnull().drop("variable")
+        ~satellite_ds.to_array().isel(variable=0).isnull().drop_vars("variable")
     )
 
     # Flatten array from 3D (time, y, x) to 2D (time, z) and drop pixels
