@@ -226,7 +226,7 @@ def load_data(
         less than 20.
     dask_chunks : dict, optional
         Optional custom Dask chunks to load data with. Defaults to None,
-        which will use '{"x": 1600, "y": 1600}'.
+        which will use '{"x": 3200, "y": 3200}'.
     dtype : str, optional
         Desired data type for output data. Valid values are "int16"
         (default) and "float32". If `ndwi=True`, then "float32" will be
@@ -299,7 +299,7 @@ def load_data(
     load_params = {
         "like": geobox.compat,
         "group_by": "solar_day",
-        "dask_chunks": {"x": 1600, "y": 1600} if dask_chunks is None else dask_chunks,
+        "dask_chunks": {"x": 3200, "y": 3200} if dask_chunks is None else dask_chunks,
         "resampling": {
             "*": "cubic",
             "oa_fmask": "nearest",
