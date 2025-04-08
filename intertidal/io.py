@@ -166,6 +166,7 @@ def load_data(
     skip_broken_datasets=True,
     ndwi=True,
     mask_sunglint=None,
+    include_coastal_aerosol=False,
     dask_chunks=None,
     dtype="float32",
     **query,
@@ -219,11 +220,14 @@ def load_data(
         Index values before returning them. Note that this must be set
         to True if both `include_s2` and `include_ls` are True.
     mask_sunglint : int, optional
-        EXPERIMENTAL: Whether to mask out pixels that are likely to be
+        Whether to mask out pixels that are likely to be
         affected by sunglint using glint angles. Low glint angles
         (e.g. < 20) often correspond with sunglint. Defaults to None;
         set to e.g. "20" to mask out all pixels with a glint angle of
         less than 20.
+    include_coastal_aerosol : bool, optional
+        Whether to load data from the Sentinel-2 coastal aerosol band.
+        Defaults to False.
     dask_chunks : dict, optional
         Optional custom Dask chunks to load data with. Defaults to None,
         which will use '{"x": 3200, "y": 3200}'.
@@ -271,6 +275,10 @@ def load_data(
     # Set masking bands to load
     s2_masking_bands = ["oa_s2cloudless_mask", "oa_nbart_contiguity"]
     ls_masking_bands = ["oa_fmask", "oa_nbart_contiguity"]
+
+    # Whether it include the nbart_coastal_aerosol band
+    if include_coastal_aerosol:
+        s2_spectral_bands = s2_spectral_bands + ["nbart_coastal_aerosol"]
 
     # Set sunglint bands to load
     if mask_sunglint is not None:
@@ -346,8 +354,9 @@ def load_data(
             x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
         )
 
-        # Optionally, apply sunglint mask
-        if mask_sunglint is not None:
+        # Optionally, apply sunglint mask (if not None and if at least angle of 1)
+        if (mask_sunglint is not None) and (mask_sunglint >= 1):
+
             # Calculate glint angle
             glint_array = glint_angle(
                 solar_azimuth=ds_s2.oa_solar_azimuth,
@@ -839,7 +848,7 @@ def prepare_for_export(
         The dataset containing the bands to be exported.
     custom_dtypes : dictionary, optional
         An optional dictionary containing names of bands as keys,
-        and tuples in the form `(np.uint8, 255)` providing the 
+        and tuples in the form `(np.uint8, 255)` providing the
         dtype and nodata value to use for that band.
     float_dtype : string or numpy data type, optional
         The data type to use for floating point layers (default is
@@ -857,9 +866,7 @@ def prepare_for_export(
         The input dataset with correctly set nodata attributes and dtypes.
     """
 
-    def _prepare_band(
-        band, custom_dtypes, float_dtype, output_location, overwrite
-    ):
+    def _prepare_band(band, custom_dtypes, float_dtype, output_location, overwrite):
         # Export specific bands as integer data types by first filling
         # NaN with nodata value before converting to int, then setting
         # nodata attribute on layer
@@ -914,6 +921,9 @@ def export_dataset_metadata(
     dataset_version="0.0.1",
     product_maturity="provisional",
     dataset_maturity="final",
+    product_family="intertidal",
+    odc_product="ga_s2ls_intertidal_cyear_3",
+    thumbnail_bands=["elevation", "elevation", "elevation"],
     additional_metadata=None,
     debug=False,
     run_id=None,
@@ -954,6 +964,15 @@ def export_dataset_metadata(
     dataset_maturity : str, optional
         Dataset maturity to use for the output dataset. Default is
         "final", can also be "interim".
+    product_family : str, optional
+        Default is "intertidal"
+    odc_product : str, optional
+        Default is "ga_s2ls_intertidal_cyear_3"
+    thumbnail_bands : list, optional
+        Bands used to generate initial thumbnail image for DEA Tidal
+        Composites. For DEA Intertidal this is used to generate an
+        initial thumbnail, but is overwritten later in the workflow.
+        Default is ["elevation", "elevation", "elevation"]
     additional_metadata : dict, optional
         An option dictionary containing additional metadata fields to
         add to the dataset metadata properties.
@@ -988,7 +1007,7 @@ def export_dataset_metadata(
             naming_conventions="dea_c3",
         ) as dataset_assembler:
             # General product details
-            dataset_assembler.product_family = "intertidal"
+            dataset_assembler.product_family = product_family
             dataset_assembler.producer = "ga.gov.au"
 
             # Platforms and intruments
@@ -1013,7 +1032,7 @@ def export_dataset_metadata(
             # Set additional properties
             dataset_assembler.properties.update(
                 {
-                    "odc:product": "ga_s2ls_intertidal_cyear_3",
+                    "odc:product": odc_product,
                     "odc:file_format": "GeoTIFF",
                     "odc:collection_number": 3,
                     "eo:gsd": ds.odc.geobox.resolution.x,
@@ -1047,19 +1066,32 @@ def export_dataset_metadata(
             dataset_assembler.note_source_datasets("ls_ard", *ls_set)
             dataset_assembler.note_source_datasets("ancillary", *ancillary_set)
 
-            # Add a starting thumbnail; this will be overwritten later
-            dataset_assembler.write_thumbnail("elevation", "elevation", "elevation")
+            # Add a starting thumbnail; this will be overwritten with a better
+            # thumbnail for Intertidal so is effectively ignored. `scale_factor`
+            # sets how many multiples smaller to make the thumbnail; for Tidal
+            # Composites this ensures that a sensible thumbnail is generated
+            # for the low resolution "testing" study area.
+            dataset_assembler.write_thumbnail(
+                thumbnail_bands[0],
+                thumbnail_bands[1],
+                thumbnail_bands[2],
+                scale_factor=1 if study_area == "testing" else 12,
+            )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
             log.info(f"{run_id}: Assembled dataset: {metadata_path}")
 
-            # Replace the thumbnail with something nicer
-            thumbnail_path = (
-                dataset_assembler.names.dataset_path
-                / dataset_assembler.names.thumbnail_filename()
-            )
-            _write_thumbnail(da=ds.elevation, path=thumbnail_path, max_resolution=320)
+            # For Intertidal, replace the thumbnail with something nicer
+            if product_family == "intertidal":
+                thumbnail_path = (
+                    dataset_assembler.names.dataset_path
+                    / dataset_assembler.names.thumbnail_filename()
+                )
+
+                _write_thumbnail(
+                    da=ds["elevation"], path=thumbnail_path, max_resolution=320
+                )
 
             # Generate final destination path
             destination_path = (
