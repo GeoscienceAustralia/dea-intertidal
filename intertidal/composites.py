@@ -112,7 +112,7 @@ def tidal_composites(
 
     # Use run ID name for logs if it exists
     run_id = "Processing" if run_id is None else run_id
-    
+
     # # Run tide model at low resolution to get hat and lat
     # modelledtides_lowres = pixel_tides(
     #     data=dem,
@@ -122,7 +122,6 @@ def tidal_composites(
     #     resample=False,
     # )
 
-     
     # Model tides into for spatial extent and timesteps in satellite data
     log.info(f"{run_id}: Modelling tide heights for each pixel")
     tides_highres = pixel_tides(
@@ -131,13 +130,17 @@ def tidal_composites(
         resample=True,
         directory=tide_model_dir,
     )
-    metadata_dict ={}
-    metadata_dict["intertidal:hat"] = tides_highres.max(dim='time', skipna=True).mean(skipna=True).item()
-    metadata_dict["intertidal:lat"] = tides_highres.min(dim='time', skipna=True).mean(skipna=True).item()
+    metadata_dict = {}
+    metadata_dict["intertidal:hat"] = (
+        tides_highres.max(dim="time", skipna=True).mean(skipna=True).item()
+    )
+    metadata_dict["intertidal:lat"] = (
+        tides_highres.min(dim="time", skipna=True).mean(skipna=True).item()
+    )
     metadata_dict["intertidal:tr"] = (
         metadata_dict["intertidal:hat"] - metadata_dict["intertidal:lat"]
     )
-    
+
     # Identify nodata pixels in satellite data array by loading only
     # a single band into memory
     log.info(f"{run_id}: Loading red band to identify nodata pixels")
@@ -146,14 +149,19 @@ def tidal_composites(
 
     # Mask tides to make nodata match satellite data array
     tides_highres = tides_highres.where(nodata_array)
-    
-    metadata_dict["intertidal:hot"] = tides_highres.max(dim='time', skipna=True).mean(skipna=True).item()
-    metadata_dict["intertidal:lot"] = tides_highres.min(dim='time', skipna=True).mean(skipna=True).item()
+
+    metadata_dict["intertidal:hot"] = (
+        tides_highres.max(dim="time", skipna=True).mean(skipna=True).item()
+    )
+    metadata_dict["intertidal:lot"] = (
+        tides_highres.min(dim="time", skipna=True).mean(skipna=True).item()
+    )
 
     metadata_dict["intertidal:otr"] = (
-        metadata_dict["intertidal:hot"] - metadata_dict["intertidal:lot"])
-        
-     # Calculate category
+        metadata_dict["intertidal:hot"] - metadata_dict["intertidal:lot"]
+    )
+
+    # Calculate category
     metadata_dict["intertidal:tr_class"] = (
         "microtidal"
         if metadata_dict["intertidal:tr"] < 2
