@@ -915,7 +915,7 @@ def prepare_for_export(
             # QA layers
             "qa_ndwi_freq": (np.uint8, 255),
             "qa_count_clear": (np.uint16, -999),
-            "qa_coastal_mask": (np.uint8, 255),
+            "qa_coastal_mask": (np.uint16, -999),
         }
 
     # Apply to each array in the input `ds`
