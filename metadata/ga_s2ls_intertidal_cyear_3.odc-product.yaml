@@ -118,7 +118,7 @@ measurements:
   - name: qa_coastal_mask
     dtype: uint16
     units: "mask"
-    nodata: -999
+    nodata: 65535
     aliases:
       - coastal_mask
 
