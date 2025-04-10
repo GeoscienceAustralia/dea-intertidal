@@ -356,7 +356,7 @@ def tidal_composites(
     "--cpus",
     type=int,
     default=None,
-    help="Requested number of cpus which is passed on to the geomedian function.",
+    help="Requested number of CPUs which is passed on to the geomedian function.",
 )
 @click.option(
     "--max_iters",
