@@ -116,9 +116,9 @@ measurements:
       - count_clear
 
   - name: qa_coastal_mask
-    dtype: uint8
+    dtype: uint16
     units: "mask"
-    nodata: 255
+    nodata: -999
     aliases:
       - coastal_mask
 
