@@ -38,6 +38,7 @@ def tidal_composites(
     threshold_lowtide=0.2,
     threshold_hightide=0.8,
     eps=1e-4,
+    cpus=None,
     max_iters=10000,
     tide_model="EOT20",
     tide_model_dir="/var/share/tide_models",
@@ -71,6 +72,8 @@ def tidal_composites(
         Quantile used to identify high tide observations, by default 0.8.
     eps: float, optional
         Termination criteria passed on to the geomedian algorithm.
+    cpus: int, optional
+        Requested number of cpus which is passed on to the geomedian function.
     max_iters : int, optional
         Maximum number of iterations done per output pixel in the
         geomedian calculation. This can be set to a low value (e.g. 10)
@@ -171,9 +174,11 @@ def tidal_composites(
             else "macrotidal" if metadata_dict["intertidal:tr"] > 4 else np.nan
         )
     )
-    metadata_dict["intertidal:spread"] = np.nan
-    metadata_dict["intertidal:offset_low"] = np.nan
-    metadata_dict["intertidal:offset_high"] = np.nan
+    metadata_dict["intertidal:spread"] = -999
+    metadata_dict["intertidal:offset_low"] = -999
+    metadata_dict["intertidal:offset_high"] = -999
+    log.info(f"{run_id}:tile level tidal stats metadata_dict {metadata_dict}")
+    
     # Calculate low and high tide thresholds from masked tide data
     log.info(f"{run_id}: Calculating low and high tide thresholds")
     threshold_ds = xr_quantile(
@@ -210,7 +215,11 @@ def tidal_composites(
     ds_high_masked = keep_good_only(x=ds_high, where=high_mask.sel(time=high_keep))
 
     # Calculate low and high tide geomedians
-    num_threads = os.cpu_count() - 2
+    if cpus is None:
+        num_threads = os.cpu_count() - 2
+    else:
+        num_threads = cpus - 2
+
     log.info(f"{run_id}: Running low tide geomedian with {num_threads} threads")
     ds_lowtide = int_geomedian(
         ds=ds_low_masked,
@@ -238,7 +247,7 @@ def tidal_composites(
     # Add low and high tide thresholds to the output datasets
     ds_lowtide["low_threshold"] = low_threshold
     ds_hightide["high_threshold"] = high_threshold
-    print("metadata_dict", metadata_dict)
+
     return ds_lowtide, ds_hightide, metadata_dict
 
 
@@ -344,6 +353,12 @@ def tidal_composites(
     help="Termination criteria passed on to the geomedian algorithm.",
 )
 @click.option(
+    "--cpus",
+    type=int,
+    default=None,
+    help="Requested number of cpus which is passed on to the geomedian function.",
+)
+@click.option(
     "--max_iters",
     type=int,
     default=1000,
@@ -395,6 +410,7 @@ def tidal_composites_cli(
     mask_sunglint,
     include_coastal_aerosol,
     eps,
+    cpus,
     max_iters,
     tide_model,
     tide_model_dir,
@@ -477,6 +493,7 @@ def tidal_composites_cli(
                 threshold_lowtide=threshold_lowtide,
                 threshold_hightide=threshold_hightide,
                 eps=eps,
+                cpus=cpus,
                 max_iters=max_iters,
                 tide_model=tide_model,
                 tide_model_dir=tide_model_dir,
