@@ -174,7 +174,7 @@ def tidal_composites(
             else "macrotidal" if metadata_dict["intertidal:tr"] > 4 else np.nan
         )
     )
-    metadata_dict["intertidal:spread"] = -999
+    metadata_dict["intertidal:spread"] = 100
     metadata_dict["intertidal:offset_low"] = 0
     metadata_dict["intertidal:offset_high"] = 0
     log.info(f"{run_id}:tile level tidal stats metadata_dict {metadata_dict}")
