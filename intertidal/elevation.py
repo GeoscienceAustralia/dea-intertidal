@@ -1219,7 +1219,7 @@ def intertidal_cli(
         # from least-cost connectivity analysis
         topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox)
         urban_mask = load_aclum_mask(dc, satellite_ds.odc.geobox)
-        coastal_mask, _ = load_connectivity_mask(
+        coastal_mask, conn_mask = load_connectivity_mask(
             dc, satellite_ds.odc.geobox, add_mangroves=True, correct_hat=True
         )
 
@@ -1259,7 +1259,7 @@ def intertidal_cli(
         )
 
         # Add coastal mask output layer
-        ds["qa_coastal_mask"] = coastal_mask
+        ds["qa_coastal_mask"] = conn_mask
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
