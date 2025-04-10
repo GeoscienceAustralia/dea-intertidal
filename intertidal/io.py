@@ -914,7 +914,7 @@ def prepare_for_export(
             "ta_offset_low": (np.uint8, 255),
             # QA layers
             "qa_ndwi_freq": (np.uint8, 255),
-            "qa_count_clear": (np.int16, -999),
+            "qa_count_clear": (np.uint16, -999),
             "qa_coastal_mask": (np.uint8, 255),
         }
 
