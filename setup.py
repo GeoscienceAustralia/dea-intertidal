@@ -15,7 +15,7 @@ REQUIRED = [
     "datacube",
     "dea_tools",
     "eo-tides>=0.6.3",
-    "eodatasets3",
+    "eodatasets3<1.9",
     "fiona",
     "geopandas",
     "matplotlib",
@@ -69,7 +69,7 @@ setup_kwargs = {
     "entry_points": {
         "console_scripts": [
             "dea-intertidal = intertidal.elevation:intertidal_cli",
-            "dea-intertidal-hltc = intertidal.hltc:hltc_cli",
+            "dea-tidal-composites = intertidal.composites:tidal_composites_cli",
         ]
     },
 }
