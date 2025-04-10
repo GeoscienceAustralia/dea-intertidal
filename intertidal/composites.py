@@ -218,7 +218,7 @@ def tidal_composites(
     if cpus is None:
         num_threads = os.cpu_count() - 2
     else:
-        num_threads = cpus - 2
+        num_threads = cpus
 
     log.info(f"{run_id}: Running low tide geomedian with {num_threads} threads")
     ds_lowtide = int_geomedian(
