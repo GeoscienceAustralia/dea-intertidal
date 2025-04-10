@@ -176,7 +176,7 @@ def tidal_composites(
     )
     metadata_dict["intertidal:spread"] = -999
     metadata_dict["intertidal:offset_low"] = -999
-    metadata_dict["intertidal:offset_high"] = -999
+    metadata_dict["intertidal:offset_high"] = 0
     log.info(f"{run_id}:tile level tidal stats metadata_dict {metadata_dict}")
     
     # Calculate low and high tide thresholds from masked tide data
