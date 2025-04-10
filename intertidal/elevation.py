@@ -1259,7 +1259,7 @@ def intertidal_cli(
         )
 
         # Add coastal mask output layer
-        ds["qa_coastal_mask"] = conn_mask.where(conn_mask<65535,drop=True)
+        ds["qa_coastal_mask"] = conn_mask.where(conn_mask<=32767,drop=True)
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
