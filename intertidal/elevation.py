@@ -1259,7 +1259,7 @@ def intertidal_cli(
         )
 
         # Add coastal connectivity output layer
-        ds["qa_coastal_connectivity"] = coastal_connectivity.where(coastal_connectivity<65535)
+        ds["qa_coastal_connectivity"] = coastal_connectivity.where(coastal_connectivity < 65535)
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
