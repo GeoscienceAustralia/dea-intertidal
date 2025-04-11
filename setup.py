@@ -32,6 +32,7 @@ REQUIRED = [
     "pyTMD>=2.2.1",
     "pytz",
     "rasterio",
+    "s3fs",
     "setuptools-scm",
     "seaborn",
     "sunriset",
