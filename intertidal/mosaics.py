@@ -20,12 +20,6 @@ from intertidal.utils import (
 from pathlib import Path
 import os
 
-
-def find_files(directory, pattern):
-    path = Path(directory)
-    return list(path.rglob(f"*{pattern}"))
-
-
 def _is_s3(path):
     """
     Determine whether output location is on S3.
