@@ -1258,7 +1258,7 @@ def intertidal_cli(
             urban_mask=urban_mask,
         )
 
-        # Add coastal mask output layer
+        # Add coastal connectivity output layer
         ds["qa_coastal_connectivity"] = coastal_connectivity.where(coastal_connectivity<65535)
 
         if exposure_offsets:
