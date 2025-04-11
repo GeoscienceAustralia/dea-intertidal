@@ -83,6 +83,13 @@ def _is_s3(path):
     help="Dataset maturity metadata to used in the name of the input datasets and output dataset. "
     "Defaults to 'final', can also be 'interim'.",
 )
+@click.option(
+    "--aws_unsigned/--no-aws_unsigned",
+    is_flag=True,
+    default=True,
+    help="Whether to sign AWS requests for S3 access. Defaults to "
+    "True; can be set to False by passing `--no-aws_unsigned`.",
+)
 def make_mosaic_cli(
     product,
     band,
@@ -90,8 +97,8 @@ def make_mosaic_cli(
     version,
     product_dir,
     output_dir,
-    dataset_maturity="final",
-    sunglint="",
+    dataset_maturity,
+    aws_unsigned,
 ):
     input_params = locals()
     run_id = f"[{version}] [{year}] [{band}]"
@@ -114,7 +121,7 @@ def make_mosaic_cli(
 
     fs = s3fs.S3FileSystem(anon=True)
     # Configure S3
-    configure_s3_access(cloud_defaults=True, aws_unsigned="--aws_unsigned")
+    configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
     print(
         f"{product_dir}/**/{year}--P1Y/{product}_*{year}--P1Y_{dataset_maturity}_{band}.tif"
     )
@@ -129,24 +136,22 @@ def make_mosaic_cli(
             recursive=True,
         )
 
-    if len(sunglint) > 0:
-        sunglint = sunglint + "_"
     log.info(f"{run_id}: number of cogs to mosaic {len(cogs)}")
     if len(cogs) > 0:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_location = Path(temp_dir)
             log.info(f"{run_id}: writing to {temp_location}")
             file_list_name = os.path.join(
-                temp_location, f"{product}_{year}_{band}_{version}.txt"
+                temp_location, f"{product}_{year}_{band}.txt"
             )
             vrt_name = os.path.join(
-                temp_location, f"{product}_{year}_{band}_{version}.vrt"
+                temp_location, f"{product}_{year}_{band}.vrt"
             )
             output_name = os.path.join(
-                temp_location, f"{product}_{year}_{band}_{sunglint}{version}.tif"
+                temp_location, f"{product}_{year}_{band}.tif"
             )
             output_file_path = os.path.join(
-                output_dir, f"{product}_{year}_{band}_{sunglint}{version}.tif"
+                output_dir, f"{product}_{year}_{band}.tif"
             )
             log.info(f"{run_id}: Generating file {output_name}")
             log.info(f"{run_id}: output_file_path {output_file_path}")
@@ -156,6 +161,10 @@ def make_mosaic_cli(
                     cog = cog.replace(
                         "dea-public-data-dev/",
                         "/vsicurl/https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/",
+                    )
+                    cog = cog.replace(
+                        "dea-public-data/",
+                        "/vsicurl/https://data.dea.ga.gov.au/",
                     )
                     f.write(f"{cog}\n")
             os.system(f"gdalbuildvrt {vrt_name} -input_file_list {file_list_name}")
