@@ -53,6 +53,16 @@ def _id_to_tuple(id_str):
         )
 
 
+def _contiguity_fuser(dst: np.ndarray, src: np.ndarray) -> None:
+    """
+    Ensure contiguity data is properly combined by replacing
+    pixels in `dst` that are either 0 (non-contiguous) or 255
+    (nodata) with the corresponding value from `src`, propogating
+    1 (valid contiguous data) if it exists.
+    """
+    np.copyto(dst, src, where=np.isin(dst, (255, 0)))
+
+
 def extract_geobox(
     study_area=None,
     geom=None,
@@ -306,13 +316,14 @@ def load_data(
     # Set up load params
     load_params = {
         "like": geobox.compat,
-        "group_by": "solar_day",
         "dask_chunks": {"x": 3200, "y": 3200} if dask_chunks is None else dask_chunks,
         "resampling": {
             "*": "cubic",
             "oa_fmask": "nearest",
             "oa_s2cloudless_mask": "nearest",
         },
+        "group_by": "solar_day",
+        "fuse_func": {"oa_nbart_contiguity": _contiguity_fuser},
         "skip_broken_datasets": skip_broken_datasets,
     }
 
