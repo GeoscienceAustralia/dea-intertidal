@@ -115,12 +115,12 @@ measurements:
     aliases:
       - count_clear
 
-  - name: qa_coastal_mask
-    dtype: uint8
+  - name: qa_coastal_connectivity
+    dtype: uint16
     units: "mask"
-    nodata: 255
+    nodata: 65535
     aliases:
-      - coastal_mask
+      - coastal_connectivity
 
 load:
   crs: "EPSG:3577"
