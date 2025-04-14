@@ -10,7 +10,7 @@ metadata:
     name: ga_s2_tidal_composites_cyear_3
   properties:
     odc:file_format: GeoTIFF
-    odc:product_family: tidal_composites
+    odc:product_family: composites
     odc:producer: ga.gov.au
 
 measurements:

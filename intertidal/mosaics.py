@@ -97,6 +97,14 @@ def _is_s3(path):
     "For ZSTD, 22 is the slowest/higher compression rate.",
 )
 @click.option(
+    "--overview_count",
+    type=int,
+    default=7,
+    help="The number of COG overviews to generate. Higher nunbers "
+    "will improve data loading and performance, but take longer to "
+    "generate.",
+)
+@click.option(
     "--aws_unsigned/--no-aws_unsigned",
     is_flag=True,
     default=True,
@@ -113,6 +121,7 @@ def make_mosaic_cli(
     dataset_maturity,
     compress,
     level,
+    overview_count,
     aws_unsigned,
 ):
     # Set up logs
@@ -198,15 +207,15 @@ def make_mosaic_cli(
                     "gdal_translate",
                     vrt_name,
                     output_name,
-                    "-co", "NUM_THREADS=ALL_CPUS",         # Parallelisation
-                    "-of", "COG",                          # Output format
-                    "-co", "BIGTIFF=YES",                  # Allow large TIFFs
-                    "-co", f"COMPRESS={compress}",         # Compression
-                    "-co", f"LEVEL={level}",               # Compression level
-                    "-co", "PREDICTOR=YES",                # Compression predictor
-                    "-co", "BLOCKSIZE=1024",               # Tiling
-                    # "-co", "OVERVIEWS=FORCE_USE_EXISTING", # Reuse overviews
-                    # "-co", "OVERVIEW_COUNT=6",             # Number of overviews
+                    "-co", "NUM_THREADS=ALL_CPUS",              # Parallelisation
+                    "-of", "COG",                               # Output format
+                    "-co", "BIGTIFF=YES",                       # Allow large TIFFs
+                    "-co", "BLOCKSIZE=1024",                    # Tiling
+                    "-co", "OVERVIEWS=IGNORE_EXISTING",         # Force overview regen
+                    "-co", f"OVERVIEW_COUNT={overview_count}",  # Number of overviews
+                    "-co", f"COMPRESS={compress}",              # Compression
+                    "-co", f"LEVEL={level}",                    # Compression level
+                    "-co", "PREDICTOR=YES",                     # Compression predictor
                 ],
                 check=True,
             )
