@@ -235,18 +235,16 @@ def tidal_composites(
         eps=eps,
     )
 
-    # Calculate low and high tide clear counts
-    log.info(f"{run_id}: Calculating low and high tide clear counts")
-    ds_lowtide["low_count_clear"] = (
+    # Calculate clear count (both low and high tide clear counts
+    # are identical, so we can just use one)
+    log.info(f"{run_id}: Calculating clear counts")
+    ds_lowtide["qa_count_clear"] = (
         (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
-    )
-    ds_hightide["high_count_clear"] = (
-        (ds_high_masked.nbart_red != nodata).sum(dim="time").astype("int16")
     )
 
     # Add low and high tide thresholds to the output datasets
-    ds_lowtide["low_threshold"] = low_threshold
-    ds_hightide["high_threshold"] = high_threshold
+    ds_lowtide["qa_low_threshold"] = low_threshold
+    ds_hightide["qa_high_threshold"] = high_threshold
 
     return ds_lowtide, ds_hightide, metadata_dict
 
@@ -458,7 +456,7 @@ def tidal_composites_cli(
                 geom = None
 
             # Load satellite data and dataset IDs for metadata
-            satellite_ds, dss_s2, dss_ls = load_data(
+            satellite_ds, dss_s2, _ = load_data(
                 dc=dc,
                 study_area=study_area,
                 geom=geom,
@@ -510,7 +508,7 @@ def tidal_composites_cli(
             ds_lowtide = odc.geo.xr.assign_crs(ds_lowtide, satellite_ds.odc.crs)
 
             # Concatenate into a single output dataset
-            ds_hltc = xarray.merge([ds_lowtide, ds_hightide])
+            ds_tidalcomposites = xarray.merge([ds_lowtide, ds_hightide])
 
             custom_dtypes = {
                 "low_coastal_aerosol": (np.int16, -999),
@@ -524,8 +522,6 @@ def tidal_composites_cli(
                 "low_nir_2": (np.int16, -999),
                 "low_swir_2": (np.int16, -999),
                 "low_swir_3": (np.int16, -999),
-                "low_threshold": (np.float32, np.nan),
-                "low_count_clear": (np.int16, -999),
                 "high_coastal_aerosol": (np.int16, -999),
                 "high_blue": (np.int16, -999),
                 "high_green": (np.int16, -999),
@@ -537,13 +533,14 @@ def tidal_composites_cli(
                 "high_nir_2": (np.int16, -999),
                 "high_swir_2": (np.int16, -999),
                 "high_swir_3": (np.int16, -999),
-                "high_threshold": (np.float32, np.nan),
-                "high_count_clear": (np.int16, -999),
+                "qa_low_threshold": (np.float32, np.nan),
+                "qa_high_threshold": (np.float32, np.nan),
+                "qa_count_clear": (np.int16, -999),
             }
 
             # Sets correct dtypes and nodata
             ds_prepared = prepare_for_export(
-                ds_hltc,
+                ds_tidalcomposites,
                 custom_dtypes=custom_dtypes,
                 log=log,
             )
@@ -554,7 +551,6 @@ def tidal_composites_cli(
                 year=label_date,
                 study_area=study_area,
                 output_location=output_dir,
-                ls_lineage=dss_ls,
                 s2_lineage=dss_s2,
                 dataset_version=output_version,
                 product_family="tidal_composites",
