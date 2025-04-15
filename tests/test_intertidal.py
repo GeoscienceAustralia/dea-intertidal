@@ -18,6 +18,7 @@ from dea_tools.validation import eval_metrics
 from dea_tools.datahandling import load_reproject
 
 from intertidal.elevation import intertidal_cli, elevation
+from intertidal.composites import tidal_composites_cli
 from intertidal.validation import map_raster, preprocess_validation
 
 
@@ -25,6 +26,7 @@ from intertidal.validation import map_raster, preprocess_validation
 def satellite_ds():
     """
     Loads a pre-generated timeseries of satellite data from NetCDF.
+    This is used by the `test_elevation` test below.
     """
     satellite_ds = xr.open_dataset("tests/data/satellite_ds.nc")
 
@@ -33,6 +35,32 @@ def satellite_ds():
     satellite_ds = satellite_ds.odc.assign_crs("EPSG:3577")
     
     return satellite_ds
+
+
+def test_tidal_composites_cli():
+    runner = CliRunner()
+    result = runner.invoke(
+        tidal_composites_cli,
+        [
+            "--study_area",
+            "testing",
+            "--start_date",
+            "2020",
+            "--label_date",
+            "2021",
+            "--end_date",
+            "2022",
+            "--output_version",
+            "0.0.1",
+            "--threshold_lowtide",
+            "0.15",
+            "--threshold_hightide",
+            "0.85",
+            "--tide_model",
+            "FES2014",
+        ],
+    )
+    assert result.exit_code == 0
 
 
 @pytest.mark.dependency()
