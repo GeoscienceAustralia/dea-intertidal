@@ -557,7 +557,7 @@ def tidal_composites_cli(
                 ls_lineage=dss_ls,
                 s2_lineage=dss_s2,
                 dataset_version=output_version,
-                product_family="composites",
+                product_family="tidal_composites",
                 odc_product="ga_s2_tidal_composites_cyear_3",
                 thumbnail_bands=["low_red", "low_green", "low_blue"],
                 additional_metadata=metadata_dict,
