@@ -32,6 +32,7 @@ REQUIRED = [
     "pyTMD>=2.2.1",
     "pytz",
     "rasterio",
+    "s3fs",
     "setuptools-scm",
     "seaborn",
     "sunriset",
@@ -70,6 +71,7 @@ setup_kwargs = {
         "console_scripts": [
             "dea-intertidal = intertidal.elevation:intertidal_cli",
             "dea-tidal-composites = intertidal.composites:tidal_composites_cli",
+            "dea-mosaics = intertidal.mosaics:make_mosaic_cli",
         ]
     },
 }
