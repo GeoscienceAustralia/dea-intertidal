@@ -8,6 +8,7 @@ import xarray as xr
 from pathlib import Path
 from urllib.parse import urlparse
 from rasterio.enums import Resampling
+from importlib.metadata import version
 from rasterio.errors import NotGeoreferencedWarning
 
 import datacube
@@ -1092,6 +1093,11 @@ def export_dataset_metadata(
             dataset_assembler.note_source_datasets("s2_ard", *s2_set)
             dataset_assembler.note_source_datasets("ls_ard", *ls_set)
             dataset_assembler.note_source_datasets("ancillary", *ancillary_set)
+            dataset_assembler.note_software_version(
+                name="eo-tides",
+                url="https://github.com/GeoscienceAustralia/eo-tides",
+                version=version("eo_tides"),
+            )
 
             # Add a starting thumbnail; this will be overwritten with a better
             # thumbnail for Intertidal so is effectively ignored. `scale_factor`

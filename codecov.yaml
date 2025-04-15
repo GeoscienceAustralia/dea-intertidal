@@ -1,6 +1,3 @@
-ignore:
-  - "intertidal/composites.py"
-  
 coverage:
   precision: 1
   round: down
