@@ -99,10 +99,10 @@ def _is_s3(path):
 @click.option(
     "--overview_count",
     type=int,
-    default=7,
+    default=8,
     help="The number of COG overviews to generate. Higher nunbers "
-    "will improve data loading and performance, but take longer to "
-    "generate.",
+    "will improve data streaming and performance (particularly at "
+    "continental scale), but take longer to generate.",
 )
 @click.option(
     "--aws_unsigned/--no-aws_unsigned",
