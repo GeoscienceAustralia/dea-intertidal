@@ -184,7 +184,7 @@ def load_connectivity_mask(
     resampling="bilinear",
     buffer=20000,
     preprocess=None,
-    max_threshold=50,
+    max_threshold=20,
     add_mangroves=False,
     correct_hat=False,
     mask_filters=[("dilation", 3)],
