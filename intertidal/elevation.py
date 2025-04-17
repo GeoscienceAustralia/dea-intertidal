@@ -1259,7 +1259,9 @@ def intertidal_cli(
         )
 
         # Add coastal connectivity output layer
-        ds["qa_coastal_connectivity"] = coastal_connectivity.where(coastal_connectivity < 65535)
+        ds["qa_coastal_connectivity"] = coastal_connectivity.where(
+            coastal_connectivity < 65535
+        )
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
@@ -1305,9 +1307,14 @@ def intertidal_cli(
         ds["qa_ndwi_freq"] *= 100  # Convert frequency to %
         ds_prepared = prepare_for_export(ds)  # sets correct dtypes and nodata
 
-        # Calculate additional tile-level tidal metadata attributes
-        # (requires exposure/offsets to have been calculated)
-        metadata_dict = tidal_metadata(ds) if exposure_offsets else None
+        # Calculate additional tile-level tidal metadata attributes and graph
+        metadata_dict, tide_graph_fig = tidal_metadata(
+            product_family="intertidal",
+            data=satellite_ds,
+            modelled_freq=modelled_freq,
+            model=tide_model,
+            directory=tide_model_dir,
+        )
 
         # Export data and metadata
         export_dataset_metadata(
@@ -1321,6 +1328,7 @@ def intertidal_cli(
             dataset_version=output_version,
             product_maturity=product_maturity,
             dataset_maturity=dataset_maturity,
+            tide_graph_fig=tide_graph_fig,
             additional_metadata=metadata_dict,
             run_id=run_id,
             log=log,

@@ -1,8 +1,8 @@
 import os
 import sys
-import numpy as np
 import click
-import xarray
+import numpy as np
+import xarray as xr
 import datacube
 import odc.geo.xr
 from odc.geo.geom import BoundingBox
@@ -116,15 +116,6 @@ def tidal_composites(
     # Use run ID name for logs if it exists
     run_id = "Processing" if run_id is None else run_id
 
-    # # Run tide model at low resolution to get hat and lat
-    # modelledtides_lowres = pixel_tides(
-    #     data=dem,
-    #     time=time_range,
-    #     model=tide_model,
-    #     directory=tide_model_dir,
-    #     resample=False,
-    # )
-
     # Model tides into for spatial extent and timesteps in satellite data
     log.info(f"{run_id}: Modelling tide heights for each pixel")
     tides_highres = pixel_tides(
@@ -133,17 +124,6 @@ def tidal_composites(
         resample=True,
         directory=tide_model_dir,
     )
-    metadata_dict = {}
-    metadata_dict["intertidal:hat"] = (
-        tides_highres.max(dim="time", skipna=True).mean(skipna=True).item()
-    )
-    metadata_dict["intertidal:lat"] = (
-        tides_highres.min(dim="time", skipna=True).mean(skipna=True).item()
-    )
-    metadata_dict["intertidal:tr"] = (
-        metadata_dict["intertidal:hat"] - metadata_dict["intertidal:lat"]
-    )
-
     # Identify nodata pixels in satellite data array by loading only
     # a single band into memory
     log.info(f"{run_id}: Loading red band to identify nodata pixels")
@@ -153,32 +133,6 @@ def tidal_composites(
     # Mask tides to make nodata match satellite data array
     tides_highres = tides_highres.where(nodata_array)
 
-    metadata_dict["intertidal:hot"] = (
-        tides_highres.max(dim="time", skipna=True).mean(skipna=True).item()
-    )
-    metadata_dict["intertidal:lot"] = (
-        tides_highres.min(dim="time", skipna=True).mean(skipna=True).item()
-    )
-
-    metadata_dict["intertidal:otr"] = (
-        metadata_dict["intertidal:hot"] - metadata_dict["intertidal:lot"]
-    )
-
-    # Calculate category
-    metadata_dict["intertidal:tr_class"] = (
-        "microtidal"
-        if metadata_dict["intertidal:tr"] < 2
-        else (
-            "mesotidal"
-            if 2 <= metadata_dict["intertidal:tr"] <= 4
-            else "macrotidal" if metadata_dict["intertidal:tr"] > 4 else np.nan
-        )
-    )
-    metadata_dict["intertidal:spread"] = 100
-    metadata_dict["intertidal:offset_low"] = 0
-    metadata_dict["intertidal:offset_high"] = 0
-    log.info(f"{run_id}:tile level tidal stats metadata_dict {metadata_dict}")
-    
     # Calculate low and high tide thresholds from masked tide data
     log.info(f"{run_id}: Calculating low and high tide thresholds")
     threshold_ds = xr_quantile(
@@ -215,11 +169,7 @@ def tidal_composites(
     ds_high_masked = keep_good_only(x=ds_high, where=high_mask.sel(time=high_keep))
 
     # Calculate low and high tide geomedians
-    if cpus is None:
-        num_threads = os.cpu_count() - 2
-    else:
-        num_threads = cpus
-
+    num_threads = cpus if cpus is not None else os.cpu_count() - 2
     log.info(f"{run_id}: Running low tide geomedian with {num_threads} threads")
     ds_lowtide = int_geomedian(
         ds=ds_low_masked,
@@ -246,7 +196,7 @@ def tidal_composites(
     ds_lowtide["qa_low_threshold"] = low_threshold
     ds_hightide["qa_high_threshold"] = high_threshold
 
-    return ds_lowtide, ds_hightide, metadata_dict
+    return ds_lowtide, ds_hightide, low_keep, high_keep
 
 
 @click.command()
@@ -486,7 +436,7 @@ def tidal_composites_cli(
 
             # Calculate high and low tide geomedian composites
             log.info(f"{run_id}: Running DEA Tidal Composites workflow")
-            ds_lowtide, ds_hightide, metadata_dict = tidal_composites(
+            ds_lowtide, ds_hightide, low_keep, high_keep = tidal_composites(
                 satellite_ds=satellite_ds,
                 threshold_lowtide=threshold_lowtide,
                 threshold_hightide=threshold_hightide,
@@ -499,16 +449,17 @@ def tidal_composites_cli(
                 log=log,
             )
 
-            # Rename high tide bands to add "high" prefix in place of "nbart"
+            # Rename low and high tide bands to add "low"/"high" prefix in place of "nbart"
             ds_hightide = rename_bands(ds_hightide, "nbart", "high")
-            ds_hightide = odc.geo.xr.assign_crs(ds_hightide, satellite_ds.odc.crs)
-
-            # Rename low tide bands to add "low" prefix in place of "nbart"
             ds_lowtide = rename_bands(ds_lowtide, "nbart", "low")
-            ds_lowtide = odc.geo.xr.assign_crs(ds_lowtide, satellite_ds.odc.crs)
 
             # Concatenate into a single output dataset
-            ds_tidalcomposites = xarray.merge([ds_lowtide, ds_hightide])
+            ds_tidalcomposites = xr.merge([ds_lowtide, ds_hightide])
+
+            # Ensure spatial information is still attached
+            ds_tidalcomposites = odc.geo.xr.assign_crs(
+                ds_tidalcomposites, satellite_ds.odc.crs
+            )
 
             custom_dtypes = {
                 "low_coastal_aerosol": (np.int16, -999),
@@ -545,6 +496,25 @@ def tidal_composites_cli(
                 log=log,
             )
 
+            # Add new array to data to label high or low tide
+            # images selected for geomedian analysis.
+            label = xr.where(
+                high_keep | low_keep,
+                "Clear low and high tide images",
+                "All satellite observations",
+            )
+            satellite_ds = satellite_ds.assign(label=label)
+
+            # Calculate additional tile-level tidal metadata and graph.
+            metadata_dict, tide_graph_fig = tidal_metadata(
+                product_family="tidal_composites",
+                data=satellite_ds,
+                plot_var="label",
+                modelled_freq="30min",
+                model=tide_model,
+                directory=tide_model_dir,
+            )
+
             # Export data and metadata
             export_dataset_metadata(
                 ds_prepared,
@@ -556,6 +526,7 @@ def tidal_composites_cli(
                 product_family="tidal_composites",
                 odc_product="ga_s2_tidal_composites_cyear_3",
                 thumbnail_bands=["low_red", "low_green", "low_blue"],
+                tide_graph_fig=tide_graph_fig,
                 additional_metadata=metadata_dict,
                 product_maturity=product_maturity,
                 dataset_maturity=dataset_maturity,
@@ -565,7 +536,6 @@ def tidal_composites_cli(
 
             # Close dask client
             client.close()
-
             log.info(f"{run_id}: Completed DEA Tidal Composites workflow")
 
         except Exception as e:

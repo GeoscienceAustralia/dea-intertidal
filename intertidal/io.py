@@ -5,6 +5,7 @@ import tempfile
 import subprocess
 import numpy as np
 import xarray as xr
+import matplotlib.pyplot as plt
 from pathlib import Path
 from urllib.parse import urlparse
 from rasterio.enums import Resampling
@@ -23,6 +24,7 @@ from odc.algo import (
     erase_bad,
     to_f32,
 )
+from eo_tides.stats import tide_stats
 from dea_tools.coastal import glint_angle
 from eodatasets3 import DatasetAssembler, serialise
 from eodatasets3.scripts.tostac import json_fallback
@@ -783,46 +785,41 @@ def _write_stac(
     return stac
 
 
-def tidal_metadata(ds):
+def tidal_metadata(product_family, **tide_stats_kwargs):
     """
-    Generate tile-based tidal attribute metadata from DEA Intertidal
-    outputs.
+    Generate tidal statistics and tide bias plot for a given input tile.
+    Tidal statistics are calculated based on the centroid of the tile.
 
     Parameters
     ----------
-    ds : xarray.Dataset
-        Dataset containing tidal attribute variables.
+    product_family : string
+        Either "intertidal" or "tidal_composites".
+    **tide_stats_kwargs :
+        Any required parameters to pass to `eo_tides.stats.tide_stats`,
+        e.g. `data`, `model`, `directory` etc.
 
     Returns
     -------
-    dict
-        A dictionary containing metadata for tidal attributes including
-        mean tidal attribute values, Tide Range (tr), Observed Tide Range
-        (otr), and tide range category classification, classifying tiles
-        into microtidal (less than 2 m), mesotidal (between 2
-        and 4 m), or macrotidal (greater than 4 m) tide ranges.
+    metadata_dict : dict
+        A dictionary of tidal statistics for the tile.
+    fig : matplotlib.figure.Figure
+        A matplotlib figure depicting observed and modelled tides.
     """
-    # Identify tidal attribute variables
-    tide_vars = [var for var in ds.data_vars if var.startswith("ta_")]
 
-    # Calculate mean per variable and extract as dictionary
-    metadata_dict = ds[tide_vars].mean().to_array().to_series().to_dict()
-
-    # Rename to standard name format and round to two decimal places
-    metadata_dict = {
-        key.replace("ta_", "intertidal:"): round(value, 2)
-        for key, value in metadata_dict.items()
-    }
-
-    # Add tide range metadata
-    metadata_dict["intertidal:tr"] = (
-        metadata_dict["intertidal:hat"] - metadata_dict["intertidal:lat"]
+    # Run tidal stats based on centre of tile
+    metadata_df = tide_stats(
+        plain_english=False,
+        **tide_stats_kwargs,
     )
-    metadata_dict["intertidal:otr"] = (
-        metadata_dict["intertidal:hot"] - metadata_dict["intertidal:lot"]
-    )
+    fig = plt.gcf()
 
-    # Calculate category
+    # Update to use expected metadata format and rounding
+    metadata_dict = (
+        metadata_df.drop(["mot", "mat", "x", "y"]).add_prefix("intertidal:").to_dict()
+    )
+    metadata_dict = {k: round(v, 3) for k, v in metadata_dict.items()}
+
+    # Calculate macro/meso/micro-tidal category
     metadata_dict["intertidal:tr_class"] = (
         "microtidal"
         if metadata_dict["intertidal:tr"] < 2
@@ -833,13 +830,68 @@ def tidal_metadata(ds):
         )
     )
 
-    return metadata_dict
+    # Update figure line and point colours
+    if product_family == "intertidal":
+        fig.axes[0].get_lines()[0].set_color("#90b7d8")
+        fig.axes[0].get_lines()[0].set_alpha(1.0)
+        fig.axes[0].get_lines()[1].set_color("black")
+        fig.axes[0].get_lines()[1].set_markersize(4)
+        fig.axes[0].get_lines()[1].set_markeredgecolor("none")
+
+        # HAT/LOT lines
+        fig.axes[0].get_lines()[2].set_color("none")
+        fig.axes[0].get_lines()[3].set_color("none")
+        fig.axes[0].get_lines()[4].set_color("none")
+        fig.axes[0].get_lines()[5].set_color("none")
+
+    elif product_family == "tidal_composites":
+        fig.axes[0].get_lines()[0].set_color("#90b7d8")
+        fig.axes[0].get_lines()[0].set_alpha(1.0)
+        fig.axes[0].get_lines()[1].set_markeredgecolor("none")
+        fig.axes[0].get_lines()[2].set_markeredgecolor("#343c47")
+        fig.axes[0].get_lines()[1].set_marker("o")
+        fig.axes[0].get_lines()[2].set_marker("o")
+        fig.axes[0].get_lines()[1].set_markersize(4)
+        fig.axes[0].get_lines()[2].set_markersize(5)
+        fig.axes[0].get_lines()[1].set_color("black")
+        fig.axes[0].get_lines()[2].set_color("white")
+
+        # HAT/LOT lines
+        fig.axes[0].get_lines()[3].set_color("none")
+        fig.axes[0].get_lines()[4].set_color("none")
+        fig.axes[0].get_lines()[5].set_color("none")
+        fig.axes[0].get_lines()[6].set_color("none")
+
+    # Set background to transparent
+    fig.patch.set_facecolor("#5d646c00")
+    fig.axes[0].set_facecolor("#5d646c00")
+
+    # Set spines and axis labels to white
+    for spine in fig.axes[0].spines.values():
+        spine.set_edgecolor("#ffffff")
+    fig.axes[0].tick_params(axis="both", colors="#ffffff")
+    fig.axes[0].yaxis.label.set_color("#ffffff")
+
+    # Update the legend
+    legend = fig.axes[0].get_legend()
+    legend.remove()
+    fig.axes[0].legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.11),
+        ncol=20,
+        borderaxespad=0,
+        frameon=False,
+        labelcolor="white",
+    )
+
+    fig.set_size_inches(8, 2.5)
+    return metadata_dict, fig
 
 
-def _ls_platform_instrument(year):
+def _s2ls_platform_instrument(year):
     """
-    Indentify relevant Landsat platforms and instruments for a given
-    year of DEA Intertidal analysis. Only applicable from 2015 onward.
+    Indentify relevant Sentinel-2 and Landsat platforms and instruments
+    for a given year of DEA Intertidal analysis. Only applicable from 2015 onward.
     """
     # Platforms and intruments
     year = int(year)
@@ -849,9 +901,35 @@ def _ls_platform_instrument(year):
     elif year in (2021, 2022):
         platform = "landsat-7,landsat-8,landsat-9,sentinel-2a,sentinel-2b"
         instrument = "ETM_OLI_TIRS_MSI"
-    else:
+    elif year in (2023, 2024):
         platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b"
         instrument = "OLI_TIRS_MSI"
+    elif year == 2025:
+        platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b,sentinel-2c"
+        instrument = "OLI_TIRS_MSI"
+    else:
+        platform = "landsat-8,landsat-9,sentinel-2b,sentinel-2c"
+        instrument = "OLI_TIRS_MSI"
+
+    return platform, instrument
+
+
+def _s2_platform_instrument(year):
+    """
+    Indentify relevant Sentinel-2 platforms and instruments
+    for a given year of DEA Tidal Composites analysis. Only applicable from 2015 onward.
+    """
+    # Platforms and intruments
+    year = int(year)
+    if year <= 2024:
+        platform = "sentinel-2a,sentinel-2b"
+        instrument = "MSI"
+    elif year == 2025:
+        platform = "sentinel-2a,sentinel-2b,sentinel-2c"
+        instrument = "MSI"
+    else:
+        platform = "sentinel-2b,sentinel-2c"
+        instrument = "MSI"
 
     return platform, instrument
 
@@ -953,6 +1031,7 @@ def export_dataset_metadata(
     odc_product="ga_s2ls_intertidal_cyear_3",
     thumbnail_bands=["elevation", "elevation", "elevation"],
     additional_metadata=None,
+    tide_graph_fig=None,
     debug=False,
     run_id=None,
     log=None,
@@ -1004,6 +1083,9 @@ def export_dataset_metadata(
     additional_metadata : dict, optional
         An option dictionary containing additional metadata fields to
         add to the dataset metadata properties.
+    tide_graph_fig : matplotlib.figure, optional
+        If a matplotlib.figure tide graph figure object is provided,
+        export this to a PNG file.
     debug : bool, optional
         When true, this will write S3 outputs locally so they can be
         checked for correctness. Default is False.
@@ -1039,7 +1121,10 @@ def export_dataset_metadata(
             dataset_assembler.producer = "ga.gov.au"
 
             # Platforms and intruments
-            platform, instrument = _ls_platform_instrument(year)
+            if product_family == "intertidal":
+                platform, instrument = _s2ls_platform_instrument(year)
+            elif product_family == "tidal_composites":
+                platform, instrument = _s2_platform_instrument(year)
             dataset_assembler.platform = platform
             dataset_assembler.instrument = instrument
 
@@ -1111,6 +1196,10 @@ def export_dataset_metadata(
                 scale_factor=1 if study_area == "testing" else 12,
                 static_stretch=(50, 2000),
             )
+            thumbnail_path = (
+                dataset_assembler.names.dataset_path
+                / dataset_assembler.names.thumbnail_filename()
+            )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
@@ -1118,11 +1207,6 @@ def export_dataset_metadata(
 
             # For Intertidal, replace the thumbnail with something nicer
             if product_family == "intertidal":
-                thumbnail_path = (
-                    dataset_assembler.names.dataset_path
-                    / dataset_assembler.names.thumbnail_filename()
-                )
-
                 _write_thumbnail(
                     da=ds["elevation"], path=thumbnail_path, max_resolution=320
                 )
@@ -1132,6 +1216,16 @@ def export_dataset_metadata(
                 f"{output_location.rstrip('/')}/"
                 f"{dataset_assembler.names.dataset_folder}/"
             )
+
+            # Export tide graph figure if provided
+            if tide_graph_fig is not None:
+                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace(
+                    "thumbnail.jpg", "tide_graph.png"
+                )
+                tide_graph_fig.savefig(tide_graph_path, bbox_inches="tight")
+                dataset_assembler.note_accessory_file(
+                    "metadata:tide_graph", tide_graph_path
+                )
 
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
