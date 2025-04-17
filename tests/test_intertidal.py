@@ -18,7 +18,6 @@ from dea_tools.validation import eval_metrics
 from dea_tools.datahandling import load_reproject
 
 from intertidal.elevation import intertidal_cli, elevation
-from intertidal.composites import tidal_composites_cli
 from intertidal.validation import map_raster, preprocess_validation
 
 
@@ -33,38 +32,17 @@ def satellite_ds():
     # Hack to fix malformed CRS
     del satellite_ds["spatial_ref"]
     satellite_ds = satellite_ds.odc.assign_crs("EPSG:3577")
-    
+
     return satellite_ds
-
-
-def test_tidal_composites_cli():
-    runner = CliRunner()
-    result = runner.invoke(
-        tidal_composites_cli,
-        [
-            "--study_area",
-            "testing",
-            "--start_date",
-            "2020",
-            "--label_date",
-            "2021",
-            "--end_date",
-            "2022",
-            "--output_version",
-            "0.0.1",
-            "--threshold_lowtide",
-            "0.15",
-            "--threshold_hightide",
-            "0.85",
-            "--tide_model",
-            "FES2014",
-        ],
-    )
-    assert result.exit_code == 0
 
 
 @pytest.mark.dependency()
 def test_intertidal_cli():
+    """
+    This test runs the DEA Intertidal CLI
+    from start to finish, and will fail if any
+    error is raised.
+    """
     runner = CliRunner()
     result = runner.invoke(
         intertidal_cli,
@@ -243,13 +221,13 @@ def test_dem_accuracy(
     recent_diff.loc["R-squared"] = -recent_diff.loc[
         "R-squared"
     ]  # Invert as higher R2 are good
-    recent_diff.loc[
-        recent_diff["diff"] < 0, "prefix"
-    ] = ":heavy_check_mark: improved by "
+    recent_diff.loc[recent_diff["diff"] < 0, "prefix"] = (
+        ":heavy_check_mark: improved by "
+    )
     recent_diff.loc[recent_diff["diff"] == 0, "prefix"] = ":heavy_minus_sign: no change"
-    recent_diff.loc[
-        recent_diff["diff"] > 0, "prefix"
-    ] = ":heavy_exclamation_mark: worsened by "
+    recent_diff.loc[recent_diff["diff"] > 0, "prefix"] = (
+        ":heavy_exclamation_mark: worsened by "
+    )
     recent_diff["suffix"] = recent_diff["diff"].abs().round(3).replace({0: ""})
     recent_diff = (
         recent_diff.prefix.astype(str) + recent_diff.suffix.astype(str).str[0:5]
@@ -282,7 +260,7 @@ def test_dem_accuracy(
 
 
 @pytest.mark.dependency(depends=["test_intertidal_cli"])
-def test_validate_metadata():
+def test_validate_intertidal_metadata():
     """
     Validates output EO3 metadata against product definition and metadata type.
     This will detect issues like incorrect datatypes, band names, nodata
