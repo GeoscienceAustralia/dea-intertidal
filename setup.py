@@ -15,7 +15,7 @@ REQUIRED = [
     "datacube",
     "dea_tools",
     "eo-tides>=0.6.3",
-    "eodatasets3",
+    "eodatasets3<1.9",
     "fiona",
     "geopandas",
     "matplotlib",
@@ -32,6 +32,7 @@ REQUIRED = [
     "pyTMD>=2.2.1",
     "pytz",
     "rasterio",
+    "s3fs",
     "setuptools-scm",
     "seaborn",
     "sunriset",
@@ -69,7 +70,8 @@ setup_kwargs = {
     "entry_points": {
         "console_scripts": [
             "dea-intertidal = intertidal.elevation:intertidal_cli",
-            "dea-intertidal-hltc = intertidal.hltc:hltc_cli",
+            "dea-tidal-composites = intertidal.composites:tidal_composites_cli",
+            "dea-mosaics = intertidal.mosaics:make_mosaic_cli",
         ]
     },
 }

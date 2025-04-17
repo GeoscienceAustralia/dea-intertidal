@@ -8,6 +8,7 @@ import xarray as xr
 from pathlib import Path
 from urllib.parse import urlparse
 from rasterio.enums import Resampling
+from importlib.metadata import version
 from rasterio.errors import NotGeoreferencedWarning
 
 import datacube
@@ -51,6 +52,16 @@ def _id_to_tuple(id_str):
             "custom vector file, make sure you run the 'Optional: "
             "load study area from vector file' notebook cell."
         )
+
+
+def _contiguity_fuser(dst: np.ndarray, src: np.ndarray) -> None:
+    """
+    Ensure contiguity data is properly combined by replacing
+    pixels in `dst` that are either 0 (non-contiguous) or 255
+    (nodata) with the corresponding value from `src`, propogating
+    1 (valid contiguous data) if it exists.
+    """
+    np.copyto(dst, src, where=np.isin(dst, (255, 0)))
 
 
 def extract_geobox(
@@ -166,6 +177,7 @@ def load_data(
     skip_broken_datasets=True,
     ndwi=True,
     mask_sunglint=None,
+    include_coastal_aerosol=False,
     dask_chunks=None,
     dtype="float32",
     **query,
@@ -219,14 +231,17 @@ def load_data(
         Index values before returning them. Note that this must be set
         to True if both `include_s2` and `include_ls` are True.
     mask_sunglint : int, optional
-        EXPERIMENTAL: Whether to mask out pixels that are likely to be
+        Whether to mask out pixels that are likely to be
         affected by sunglint using glint angles. Low glint angles
         (e.g. < 20) often correspond with sunglint. Defaults to None;
         set to e.g. "20" to mask out all pixels with a glint angle of
         less than 20.
+    include_coastal_aerosol : bool, optional
+        Whether to load data from the Sentinel-2 coastal aerosol band.
+        Defaults to False.
     dask_chunks : dict, optional
         Optional custom Dask chunks to load data with. Defaults to None,
-        which will use '{"x": 1600, "y": 1600}'.
+        which will use '{"x": 3200, "y": 3200}'.
     dtype : str, optional
         Desired data type for output data. Valid values are "int16"
         (default) and "float32". If `ndwi=True`, then "float32" will be
@@ -272,6 +287,10 @@ def load_data(
     s2_masking_bands = ["oa_s2cloudless_mask", "oa_nbart_contiguity"]
     ls_masking_bands = ["oa_fmask", "oa_nbart_contiguity"]
 
+    # Whether it include the nbart_coastal_aerosol band
+    if include_coastal_aerosol:
+        s2_spectral_bands = s2_spectral_bands + ["nbart_coastal_aerosol"]
+
     # Set sunglint bands to load
     if mask_sunglint is not None:
         sunglint_bands = [
@@ -298,13 +317,14 @@ def load_data(
     # Set up load params
     load_params = {
         "like": geobox.compat,
-        "group_by": "solar_day",
-        "dask_chunks": {"x": 1600, "y": 1600} if dask_chunks is None else dask_chunks,
+        "dask_chunks": {"x": 3200, "y": 3200} if dask_chunks is None else dask_chunks,
         "resampling": {
             "*": "cubic",
             "oa_fmask": "nearest",
             "oa_s2cloudless_mask": "nearest",
         },
+        "group_by": "solar_day",
+        "fuse_func": {"oa_nbart_contiguity": _contiguity_fuser},
         "skip_broken_datasets": skip_broken_datasets,
     }
 
@@ -325,55 +345,61 @@ def load_data(
             **query_params,
         )
 
-        # Load datasets
-        ds_s2 = dc.load(
-            datasets=dss_s2,
-            measurements=s2_spectral_bands + s2_masking_bands + sunglint_bands,
-            **load_params,
-        )
+        # Continue if at least one dataset is found
+        if len(dss_s2) > 0:
 
-        # Create cloud mask, treating nodata and clouds as bad pixels
-        cloud_mask = enum_to_bool(
-            mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
-        )
-
-        # Identify non-contiguous pixels
-        noncontiguous_mask = enum_to_bool(ds_s2.oa_nbart_contiguity, categories=[False])
-
-        # Set cloud mask and non-contiguous pixels to nodata
-        combined_mask = cloud_mask | noncontiguous_mask
-        ds_s2 = erase_bad(
-            x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
-        )
-
-        # Optionally, apply sunglint mask
-        if mask_sunglint is not None:
-            # Calculate glint angle
-            glint_array = glint_angle(
-                solar_azimuth=ds_s2.oa_solar_azimuth,
-                solar_zenith=ds_s2.oa_solar_zenith,
-                view_azimuth=ds_s2.oa_satellite_azimuth,
-                view_zenith=ds_s2.oa_satellite_view,
+            # Load datasets
+            ds_s2 = dc.load(
+                datasets=dss_s2,
+                measurements=s2_spectral_bands + s2_masking_bands + sunglint_bands,
+                **load_params,
             )
 
-            # Apply glint angle threshold and set affected pixels to nodata
-            glint_mask = glint_array > mask_sunglint
-            ds_s2 = keep_good_only(x=ds_s2[s2_spectral_bands], where=glint_mask)
-
-        # Optionally convert to float, setting all nodata pixels to `np.nan`
-        # (required for NDWI, so will be applied even if `dtype="int16"`)
-        if (dtype == "float32") or ndwi:
-            ds_s2 = to_f32(ds_s2)
-
-        # Convert to NDWI
-        if ndwi:
-            # Calculate NDWI
-            ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
-                ds_s2.nbart_green + ds_s2.nbart_nir_1
+            # Create cloud mask, treating nodata and clouds as bad pixels
+            cloud_mask = enum_to_bool(
+                mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
             )
-            data_list.append(ds_s2[["ndwi"]])
-        else:
-            data_list.append(ds_s2)
+
+            # Identify non-contiguous pixels
+            noncontiguous_mask = enum_to_bool(
+                ds_s2.oa_nbart_contiguity, categories=[False]
+            )
+
+            # Set cloud mask and non-contiguous pixels to nodata
+            combined_mask = cloud_mask | noncontiguous_mask
+            ds_s2 = erase_bad(
+                x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
+            )
+
+            # Optionally, apply sunglint mask (if not None and if at least angle of 1)
+            if (mask_sunglint is not None) and (mask_sunglint >= 1):
+
+                # Calculate glint angle
+                glint_array = glint_angle(
+                    solar_azimuth=ds_s2.oa_solar_azimuth,
+                    solar_zenith=ds_s2.oa_solar_zenith,
+                    view_azimuth=ds_s2.oa_satellite_azimuth,
+                    view_zenith=ds_s2.oa_satellite_view,
+                )
+
+                # Apply glint angle threshold and set affected pixels to nodata
+                glint_mask = glint_array > mask_sunglint
+                ds_s2 = keep_good_only(x=ds_s2[s2_spectral_bands], where=glint_mask)
+
+            # Optionally convert to float, setting all nodata pixels to `np.nan`
+            # (required for NDWI, so will be applied even if `dtype="int16"`)
+            if (dtype == "float32") or ndwi:
+                ds_s2 = to_f32(ds_s2)
+
+            # Convert to NDWI
+            if ndwi:
+                # Calculate NDWI
+                ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
+                    ds_s2.nbart_green + ds_s2.nbart_nir_1
+                )
+                data_list.append(ds_s2[["ndwi"]])
+            else:
+                data_list.append(ds_s2)
 
     # If Landsat data is requested
     if include_ls:
@@ -389,68 +415,79 @@ def load_data(
             **query_params,
         )
 
-        # Load datasets
-        ds_ls = dc.load(
-            datasets=dss_ls,
-            measurements=ls_spectral_bands + ls_masking_bands + sunglint_bands,
-            **load_params,
-        )
+        # Continue if at least one dataset is found
+        if len(dss_ls) > 0:
 
-        # First, we identify all bad pixels: nodata, cloud and shadow.
-        # We then apply morphological opening to clean up narrow false
-        # positive clouds (e.g. bright sandy beaches). By including
-        # nodata, we make sure that small areas of cloud next to Landsat
-        # 7 SLC-off nodata gaps are not accidently removed (at the cost
-        # of not being able to clean false positives next to SLC-off gaps)
-        bad_data = enum_to_bool(
-            ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
-        )
-        bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
-
-        # We now dilate ONLY pixels in our cleaned bad data dask that
-        # are outside of our iriginal nodata pixels. This ensures that
-        # Landsat 7 SLC-off nodata stripes are not also dilated.
-        nodata_mask = enum_to_bool(ds_ls.oa_fmask, categories=["nodata"])
-        bad_data_mask = mask_cleanup(
-            mask=bad_data_cleaned & ~nodata_mask,
-            mask_filters=[("dilation", 5)],
-        )
-
-        # Identify non-contiguous pixels
-        noncontiguous_mask = enum_to_bool(ds_ls.oa_nbart_contiguity, categories=[False])
-
-        # Set cleaned bad pixels and non-contiguous pixels to nodata
-        combined_mask = bad_data_mask | noncontiguous_mask
-        ds_ls = erase_bad(ds_ls[ls_spectral_bands + sunglint_bands], combined_mask)
-
-        # Optionally, apply sunglint mask
-        if mask_sunglint is not None:
-            # Calculate glint angle
-            glint_array = glint_angle(
-                solar_azimuth=ds_ls.oa_solar_azimuth,
-                solar_zenith=ds_ls.oa_solar_zenith,
-                view_azimuth=ds_ls.oa_satellite_azimuth,
-                view_zenith=ds_ls.oa_satellite_view,
+            # Load datasets
+            ds_ls = dc.load(
+                datasets=dss_ls,
+                measurements=ls_spectral_bands + ls_masking_bands + sunglint_bands,
+                **load_params,
             )
 
-            # Apply glint angle threshold and set affected pixels to nodata
-            glint_mask = glint_array > mask_sunglint
-            ds_ls = keep_good_only(x=ds_ls[ls_spectral_bands], where=glint_mask)
-
-        # Optionally convert to float, setting all nodata pixels to `np.nan`
-        # (required for NDWI, so will be applied even if `dtype="int16"`)
-        if (dtype == "float32") or ndwi:
-            ds_ls = to_f32(ds_ls)
-
-        # Convert to NDWI
-        if ndwi:
-            # Calculate NDWI
-            ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
-                ds_ls.nbart_green + ds_ls.nbart_nir
+            # First, we identify all bad pixels: nodata, cloud and shadow.
+            # We then apply morphological opening to clean up narrow false
+            # positive clouds (e.g. bright sandy beaches). By including
+            # nodata, we make sure that small areas of cloud next to Landsat
+            # 7 SLC-off nodata gaps are not accidently removed (at the cost
+            # of not being able to clean false positives next to SLC-off gaps)
+            bad_data = enum_to_bool(
+                ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
             )
-            data_list.append(ds_ls[["ndwi"]])
-        else:
-            data_list.append(ds_ls)
+            bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
+
+            # We now dilate ONLY pixels in our cleaned bad data dask that
+            # are outside of our iriginal nodata pixels. This ensures that
+            # Landsat 7 SLC-off nodata stripes are not also dilated.
+            nodata_mask = enum_to_bool(ds_ls.oa_fmask, categories=["nodata"])
+            bad_data_mask = mask_cleanup(
+                mask=bad_data_cleaned & ~nodata_mask,
+                mask_filters=[("dilation", 5)],
+            )
+
+            # Identify non-contiguous pixels
+            noncontiguous_mask = enum_to_bool(
+                ds_ls.oa_nbart_contiguity, categories=[False]
+            )
+
+            # Set cleaned bad pixels and non-contiguous pixels to nodata
+            combined_mask = bad_data_mask | noncontiguous_mask
+            ds_ls = erase_bad(ds_ls[ls_spectral_bands + sunglint_bands], combined_mask)
+
+            # Optionally, apply sunglint mask
+            if mask_sunglint is not None:
+                # Calculate glint angle
+                glint_array = glint_angle(
+                    solar_azimuth=ds_ls.oa_solar_azimuth,
+                    solar_zenith=ds_ls.oa_solar_zenith,
+                    view_azimuth=ds_ls.oa_satellite_azimuth,
+                    view_zenith=ds_ls.oa_satellite_view,
+                )
+
+                # Apply glint angle threshold and set affected pixels to nodata
+                glint_mask = glint_array > mask_sunglint
+                ds_ls = keep_good_only(x=ds_ls[ls_spectral_bands], where=glint_mask)
+
+            # Optionally convert to float, setting all nodata pixels to `np.nan`
+            # (required for NDWI, so will be applied even if `dtype="int16"`)
+            if (dtype == "float32") or ndwi:
+                ds_ls = to_f32(ds_ls)
+
+            # Convert to NDWI
+            if ndwi:
+                # Calculate NDWI
+                ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
+                    ds_ls.nbart_green + ds_ls.nbart_nir
+                )
+                data_list.append(ds_ls[["ndwi"]])
+            else:
+                data_list.append(ds_ls)
+
+    # Raise error if no satellite data was found
+    if len(data_list) == 0:
+        raise Exception(
+            "No satellite data was found at this location; unable to load data"
+        )
 
     # Combine into a single ds, sort and drop no longer needed bands
     satellite_ds = xr.concat(data_list, dim="time").sortby("time")
@@ -599,7 +636,6 @@ def load_aclum_mask(
                 553,
                 554,
                 555,
-                560,
                 561,
                 562,
                 563,
@@ -618,7 +654,7 @@ def load_aclum_mask(
         return reclassified_aclum
 
     # Return an array of all False (i.e. no urban) if no data is returned
-    except AttributeError:
+    except (AttributeError, KeyError):
         return odc.geo.xr.xr_zeros(geobox).astype(bool)
 
 
@@ -897,6 +933,7 @@ def prepare_for_export(
             # QA layers
             "qa_ndwi_freq": (np.uint8, 255),
             "qa_count_clear": (np.int16, -999),
+            "qa_coastal_connectivity": (np.uint16, 65535),
         }
 
     # Apply to each array in the input `ds`
@@ -918,6 +955,9 @@ def export_dataset_metadata(
     dataset_version="0.0.1",
     product_maturity="provisional",
     dataset_maturity="final",
+    product_family="intertidal",
+    odc_product="ga_s2ls_intertidal_cyear_3",
+    thumbnail_bands=["elevation", "elevation", "elevation"],
     additional_metadata=None,
     tide_graph_fig=None,
     debug=False,
@@ -959,6 +999,15 @@ def export_dataset_metadata(
     dataset_maturity : str, optional
         Dataset maturity to use for the output dataset. Default is
         "final", can also be "interim".
+    product_family : str, optional
+        Default is "intertidal"
+    odc_product : str, optional
+        Default is "ga_s2ls_intertidal_cyear_3"
+    thumbnail_bands : list, optional
+        Bands used to generate initial thumbnail image for DEA Tidal
+        Composites. For DEA Intertidal this is used to generate an
+        initial thumbnail, but is overwritten later in the workflow.
+        Default is ["elevation", "elevation", "elevation"]
     additional_metadata : dict, optional
         An option dictionary containing additional metadata fields to
         add to the dataset metadata properties.
@@ -996,7 +1045,7 @@ def export_dataset_metadata(
             naming_conventions="dea_c3",
         ) as dataset_assembler:
             # General product details
-            dataset_assembler.product_family = "intertidal"
+            dataset_assembler.product_family = product_family
             dataset_assembler.producer = "ga.gov.au"
 
             # Platforms and intruments
@@ -1021,7 +1070,7 @@ def export_dataset_metadata(
             # Set additional properties
             dataset_assembler.properties.update(
                 {
-                    "odc:product": "ga_s2ls_intertidal_cyear_3",
+                    "odc:product": odc_product,
                     "odc:file_format": "GeoTIFF",
                     "odc:collection_number": 3,
                     "eo:gsd": ds.odc.geobox.resolution.x,
@@ -1054,20 +1103,39 @@ def export_dataset_metadata(
             dataset_assembler.note_source_datasets("s2_ard", *s2_set)
             dataset_assembler.note_source_datasets("ls_ard", *ls_set)
             dataset_assembler.note_source_datasets("ancillary", *ancillary_set)
+            dataset_assembler.note_software_version(
+                name="eo-tides",
+                url="https://github.com/GeoscienceAustralia/eo-tides",
+                version=version("eo_tides"),
+            )
 
-            # Add a starting thumbnail; this will be overwritten later
-            dataset_assembler.write_thumbnail("elevation", "elevation", "elevation")
+            # Add a starting thumbnail; this will be overwritten with a better
+            # thumbnail for Intertidal so is effectively ignored. `scale_factor`
+            # sets how many multiples smaller to make the thumbnail; for Tidal
+            # Composites this ensures that a sensible thumbnail is generated
+            # for the low resolution "testing" study area.
+            dataset_assembler.write_thumbnail(
+                thumbnail_bands[0],
+                thumbnail_bands[1],
+                thumbnail_bands[2],
+                scale_factor=1 if study_area == "testing" else 12,
+                static_stretch=(50, 2000),
+            )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
             log.info(f"{run_id}: Assembled dataset: {metadata_path}")
 
-            # Replace the thumbnail with something nicer
-            thumbnail_path = (
-                dataset_assembler.names.dataset_path
-                / dataset_assembler.names.thumbnail_filename()
-            )
-            _write_thumbnail(da=ds.elevation, path=thumbnail_path, max_resolution=320)
+            # For Intertidal, replace the thumbnail with something nicer
+            if product_family == "intertidal":
+                thumbnail_path = (
+                    dataset_assembler.names.dataset_path
+                    / dataset_assembler.names.thumbnail_filename()
+                )
+
+                _write_thumbnail(
+                    da=ds["elevation"], path=thumbnail_path, max_resolution=320
+                )
 
             # Generate final destination path
             destination_path = (

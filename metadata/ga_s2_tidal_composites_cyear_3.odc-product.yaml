@@ -1,0 +1,200 @@
+---
+name: ga_s2_tidal_composites_cyear_3
+metadata_type: eo3_intertidal
+description: Geoscience Australia Sentinel-2 Tidal Composites Calendar Year Collection 3
+
+license: CC-BY-4.0
+
+metadata:
+  product:
+    name: ga_s2_tidal_composites_cyear_3
+  properties:
+    odc:file_format: GeoTIFF
+    odc:product_family: tidal_composites
+    odc:producer: ga.gov.au
+
+measurements:
+
+  - name: low_coastal_aerosol
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band01
+
+  - name: low_blue
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band02
+
+  - name: low_green
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band03
+
+  - name: low_red
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band04
+
+  - name: low_red_edge_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band05
+
+  - name: low_red_edge_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band06
+
+  - name: low_red_edge_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band07
+
+  - name: low_nir_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band08
+
+  - name: low_nir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band8a
+
+  - name: low_swir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band11
+
+  - name: low_swir_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - low_band12
+
+  - name: high_coastal_aerosol
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band01
+
+  - name: high_blue
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band02
+     
+  - name: high_green
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band03
+
+  - name: high_red
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band04
+
+  - name: high_red_edge_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band05
+
+  - name: high_red_edge_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band06
+
+  - name: high_red_edge_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band07
+
+  - name: high_nir_1
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band08
+
+  - name: high_nir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band8a
+
+  - name: high_swir_2
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band11
+
+  - name: high_swir_3
+    dtype: int16
+    units: "1"
+    nodata: -999
+    aliases:
+      - high_band12
+
+  - name: qa_low_threshold
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+    aliases:
+      - low_threshold
+    
+  - name: qa_high_threshold
+    dtype: float32
+    units: "metres above MSL"
+    nodata: .nan
+    aliases:
+      - high_threshold
+
+  - name: qa_count_clear
+    dtype: int16
+    units: "count"
+    nodata: -999
+    aliases:
+      - count_clear
+
+load:
+  crs: "EPSG:3577"
+  resolution:
+    y: -10
+    x: 10
+  align:
+    y: 0
+    x: 0
