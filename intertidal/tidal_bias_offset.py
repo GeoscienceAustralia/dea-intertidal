@@ -1,8 +1,5 @@
 import xarray as xr
 import numpy as np
-import matplotlib.pyplot as plt
-
-from eo_tides.stats import tide_stats
 
 
 def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
@@ -66,7 +63,7 @@ def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
     # heights as a percentage of the modelled highest and lowest tides.
     offset_hightide = (abs(max_mod - max_obs)) / mod_range * 100
     offset_lowtide = (abs(min_mod - min_obs)) / mod_range * 100
-    
+
     # Add the lowest and highest astronomical tides
     if lat_hat:
         lat = min_mod
@@ -86,48 +83,3 @@ def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
         return lot, hot, spread, offset_lowtide, offset_hightide
     else:
         return spread, offset_lowtide, offset_hightide
-
-
-def generate_tide_graph(data, modelled_freq, model, directory):
-
-    tide_stats(
-        data=data,
-        modelled_freq=modelled_freq,
-        model=model,
-        directory=directory,
-        plain_english=False,
-    )
-    fig = plt.gcf()
-    
-    # Update line and point colours
-    fig.axes[0].get_lines()[0].set_color("#90b7d8")
-    fig.axes[0].get_lines()[0].set_alpha(1.0)
-    fig.axes[0].get_lines()[1].set_color("black")
-    fig.axes[0].get_lines()[1].set_markersize(4)
-    fig.axes[0].get_lines()[1].set_markeredgecolor("none")
-    
-    # Set background to transparent
-    fig.patch.set_facecolor("#5d646c00")
-    fig.axes[0].set_facecolor("#5d646c00")
-    
-    # Set spines and axis labels to white
-    for spine in fig.axes[0].spines.values():
-        spine.set_edgecolor("#ffffff")
-    fig.axes[0].tick_params(axis="both", colors="#ffffff")
-    fig.axes[0].yaxis.label.set_color("#ffffff")
-    
-    # Update the legend
-    legend = fig.axes[0].get_legend()
-    legend.remove()
-    fig.axes[0].legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.09),
-        ncol=20,
-        borderaxespad=0,
-        frameon=False,
-        labelcolor="white",
-    )
-    
-    fig.set_size_inches(8, 2.5)
-    return fig
-    # fig.savefig(output_path, bbox_inches="tight")
