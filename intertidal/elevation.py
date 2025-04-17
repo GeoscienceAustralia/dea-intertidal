@@ -1309,10 +1309,11 @@ def intertidal_cli(
 
         # Calculate additional tile-level tidal metadata attributes and graph
         metadata_dict, tide_graph_fig = tidal_metadata(
-            satellite_ds,
-            modelled_freq,
-            tide_model=tide_model,
-            tide_model_dir=tide_model_dir,
+            product_family="intertidal",
+            data=satellite_ds,
+            modelled_freq=modelled_freq,
+            model=tide_model,
+            directory=tide_model_dir,
         )
 
         # Export data and metadata

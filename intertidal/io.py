@@ -785,33 +785,18 @@ def _write_stac(
     return stac
 
 
-def tidal_metadata(data, modelled_freq, tide_model, tide_model_dir):
+def tidal_metadata(product_family, **tide_stats_kwargs):
     """
     Generate tidal statistics and tide bias plot for a given input tile.
-    Tidal statistics are calculated based on the centroid of the tile. 
+    Tidal statistics are calculated based on the centroid of the tile.
 
     Parameters
     ----------
-    data : xarray.Dataset or xarray.DataArray
-        The input dataset containing satellite observations used to model
-        tides and calculate statistics.
-    modelled_freq : str
-        The frequency at which to model tides across the entire analysis period.
-    tide_model : str, optional
-        The tide model or a list of models used to model tides, as
-        supported by the `eo-tides` Python package. Options include:
-        - "EOT20" (default)
-        - "TPXO10-atlas-v2-nc"
-        - "FES2022"
-        - "FES2022_extrapolated"
-        - "FES2014"
-        - "FES2014_extrapolated"
-        - "GOT5.6"
-        - "ensemble" (experimental: combine all above into single ensemble)
-    tide_model_dir : str, optional
-        The directory containing tide model data files. Defaults to
-        "/var/share/tide_models"; for more information about the
-        directory structure, refer to `eo-tides.utils.list_models`.
+    product_family : string
+        Either "intertidal" or "tidal_composites".
+    **tide_stats_kwargs :
+        Any required parameters to pass to `eo_tides.stats.tide_stats`,
+        e.g. `data`, `model`, `directory` etc.
 
     Returns
     -------
@@ -823,11 +808,8 @@ def tidal_metadata(data, modelled_freq, tide_model, tide_model_dir):
 
     # Run tidal stats based on centre of tile
     metadata_df = tide_stats(
-        data=data,
-        modelled_freq=modelled_freq,
-        model=tide_model,
-        directory=tide_model_dir,
         plain_english=False,
+        **tide_stats_kwargs,
     )
     fig = plt.gcf()
 
@@ -849,11 +831,36 @@ def tidal_metadata(data, modelled_freq, tide_model, tide_model_dir):
     )
 
     # Update figure line and point colours
-    fig.axes[0].get_lines()[0].set_color("#90b7d8")
-    fig.axes[0].get_lines()[0].set_alpha(1.0)
-    fig.axes[0].get_lines()[1].set_color("black")
-    fig.axes[0].get_lines()[1].set_markersize(4)
-    fig.axes[0].get_lines()[1].set_markeredgecolor("none")
+    if product_family == "intertidal":
+        fig.axes[0].get_lines()[0].set_color("#90b7d8")
+        fig.axes[0].get_lines()[0].set_alpha(1.0)
+        fig.axes[0].get_lines()[1].set_color("black")
+        fig.axes[0].get_lines()[1].set_markersize(4)
+        fig.axes[0].get_lines()[1].set_markeredgecolor("none")
+
+        # HAT/LOT lines
+        fig.axes[0].get_lines()[2].set_color("none")
+        fig.axes[0].get_lines()[3].set_color("none")
+        fig.axes[0].get_lines()[4].set_color("none")
+        fig.axes[0].get_lines()[5].set_color("none")
+
+    elif product_family == "tidal_composites":
+        fig.axes[0].get_lines()[0].set_color("#90b7d8")
+        fig.axes[0].get_lines()[0].set_alpha(1.0)
+        fig.axes[0].get_lines()[1].set_markeredgecolor("none")
+        fig.axes[0].get_lines()[2].set_markeredgecolor("#343c47")
+        fig.axes[0].get_lines()[1].set_marker("o")
+        fig.axes[0].get_lines()[2].set_marker("o")
+        fig.axes[0].get_lines()[1].set_markersize(4)
+        fig.axes[0].get_lines()[2].set_markersize(5)
+        fig.axes[0].get_lines()[1].set_color("black")
+        fig.axes[0].get_lines()[2].set_color("white")
+
+        # HAT/LOT lines
+        fig.axes[0].get_lines()[3].set_color("none")
+        fig.axes[0].get_lines()[4].set_color("none")
+        fig.axes[0].get_lines()[5].set_color("none")
+        fig.axes[0].get_lines()[6].set_color("none")
 
     # Set background to transparent
     fig.patch.set_facecolor("#5d646c00")
@@ -870,7 +877,7 @@ def tidal_metadata(data, modelled_freq, tide_model, tide_model_dir):
     legend.remove()
     fig.axes[0].legend(
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.09),
+        bbox_to_anchor=(0.5, 1.11),
         ncol=20,
         borderaxespad=0,
         frameon=False,
@@ -1189,6 +1196,10 @@ def export_dataset_metadata(
                 scale_factor=1 if study_area == "testing" else 12,
                 static_stretch=(50, 2000),
             )
+            thumbnail_path = (
+                dataset_assembler.names.dataset_path
+                / dataset_assembler.names.thumbnail_filename()
+            )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
@@ -1196,11 +1207,6 @@ def export_dataset_metadata(
 
             # For Intertidal, replace the thumbnail with something nicer
             if product_family == "intertidal":
-                thumbnail_path = (
-                    dataset_assembler.names.dataset_path
-                    / dataset_assembler.names.thumbnail_filename()
-                )
-
                 _write_thumbnail(
                     da=ds["elevation"], path=thumbnail_path, max_resolution=320
                 )
@@ -1214,9 +1220,12 @@ def export_dataset_metadata(
             # Export tide graph figure if provided
             if tide_graph_fig is not None:
                 tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace(
-                    "thumbnail", "tide_graph"
+                    "thumbnail.jpg", "tide_graph.png"
                 )
                 tide_graph_fig.savefig(tide_graph_path, bbox_inches="tight")
+                dataset_assembler.note_accessory_file(
+                    "metadata:tide_graph", tide_graph_path
+                )
 
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
