@@ -212,6 +212,7 @@ def make_mosaic_cli(
                     "-co", "BIGTIFF=YES",                       # Allow large TIFFs
                     "-co", "BLOCKSIZE=1024",                    # Tiling
                     "-co", "OVERVIEWS=IGNORE_EXISTING",         # Force overview regen
+                    "-co", "OVERVIEW_RESAMPLING=NEAREST",       # Resampling for overviews
                     "-co", f"OVERVIEW_COUNT={overview_count}",  # Number of overviews
                     "-co", f"COMPRESS={compress}",              # Compression
                     "-co", f"LEVEL={level}",                    # Compression level
