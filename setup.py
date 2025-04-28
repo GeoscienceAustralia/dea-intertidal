@@ -26,6 +26,7 @@ REQUIRED = [
     "pandas",
     "pyogrio",
     "pyproj",
+    "pystac<1.12",
     "pytest",
     "pytest-dependency",
     "pytest-cov",
