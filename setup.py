@@ -3,46 +3,44 @@
 import os
 from setuptools import find_packages, setup
 
-# Where are we?
-IS_SANDBOX = "sandbox" in os.getenv("JUPYTER_IMAGE", default="")
-
 # What packages are required for this module to be executed?
 REQUIRED = [
     "aiohttp",
-    "affine",
+    "awscli",
     "botocore",
+    "Bottleneck",
     "click",
-    "datacube",
-    "dea_tools",
-    "eo-tides>=0.6.3",
+    "dask",
+    "datacube[s3,performance]",
+    "dea_tools>=0.3.6",
     "eodatasets3<1.9",
-    "fiona",
+    "eo-tides>=0.6.3",
+    "hdstats",
     "geopandas",
     "matplotlib",
     "mdutils",
     "numpy",
-    "odc-geo", 
-    "odc-ui",
     "odc-algo",
+    "odc-geo",
+    "odc-ui",
     "pandas",
+    "pyogrio",
     "pyproj",
     "pytest",
     "pytest-dependency",
     "pytest-cov",
-    "pyTMD>=2.2.1",
     "pytz",
     "rasterio",
+    "rioxarray",
     "s3fs",
-    "setuptools-scm",
     "seaborn",
-    "sunriset",
     "scikit-image",
     "scikit-learn",
     "scipy",
+    "sunriset",
     "shapely",
     "tqdm",
     "xarray",
-    "xskillscore",
 ]
 
 # Package metadata
@@ -51,7 +49,7 @@ DESCRIPTION = "Tools for running Digital Earth Australia Intertidal"
 URL = "https://github.com/GeoscienceAustralia/dea-intertidal"
 EMAIL = "earth.observation@ga.gov.au"
 AUTHOR = "Geoscience Australia"
-REQUIRES_PYTHON = ">=3.8.0"
+REQUIRES_PYTHON = ">=3.10.0"
 
 # Setup kwargs
 setup_kwargs = {
@@ -63,7 +61,7 @@ setup_kwargs = {
     "author_email": EMAIL,
     "python_requires": REQUIRES_PYTHON,
     "url": URL,
-    "install_requires": REQUIRED if not IS_SANDBOX else [],
+    "install_requires": REQUIRED,
     "packages": find_packages(),
     "include_package_data": True,
     "license": "Apache License 2.0",
