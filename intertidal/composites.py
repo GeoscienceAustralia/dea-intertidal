@@ -33,10 +33,39 @@ def rename_bands(ds, old_string, new_string):
     return ds_renamed
 
 
+def tidal_thresholds(
+    tides_highres,
+    threshold_lowtide=0.15,
+    threshold_hightide=0.85,
+    min_obs=0,
+):
+    # Calculate per-pixel integer rankings for each tide height
+    rank_n = tides_highres.rank(dim="time")
+
+    # Calculate low and high ranking thresholds from total rankings.
+    # Low threshold needs to be rounded up ("ceil"), and high tide
+    # rounded down ("floor") to ensure we capture all matching values.
+    rank_max = rank_n.max(dim="time")
+    rank_thresh_low = np.ceil(rank_max * threshold_lowtide)
+    rank_thresh_high = np.floor(rank_max * threshold_hightide)
+
+    # Update thresholds to ensure minimum number of valid observations
+    if min_obs > 0:
+        rank_thresh_low = np.maximum(rank_thresh_low, min_obs)
+        rank_thresh_high = np.minimum(rank_thresh_high, rank_max - min_obs)
+
+    # Calculate tide thresholds by masking tides by ranking threshold
+    tide_thresh_low = tides_highres.where(rank_n <= rank_thresh_low).max(dim="time")
+    tide_thresh_high = tides_highres.where(rank_n >= rank_thresh_high).min(dim="time")
+
+    return tide_thresh_low, tide_thresh_high
+
+
 def tidal_composites(
     satellite_ds,
-    threshold_lowtide=0.2,
-    threshold_hightide=0.8,
+    threshold_lowtide=0.15,
+    threshold_hightide=0.85,
+    min_obs=0,
     eps=1e-4,
     cpus=None,
     max_iters=10000,
@@ -55,7 +84,7 @@ def tidal_composites(
     to filter satellite data to low and high tide images prior to
     loading it into memory, allowing more efficient processing.
 
-    Based on the method described in:
+    Pixel-based implementation of the method originally published in:
 
     Sagar, S., Phillips, C., Bala, B., Roberts, D., & Lymburner, L.
     (2018). Generating Continental Scale Pixel-Based Surface Reflectance
@@ -67,9 +96,12 @@ def tidal_composites(
     satellite_ds : xarray.Dataset
         A satellite data time series containing spectral bands.
     threshold_lowtide : float, optional
-        Quantile used to identify low tide observations, by default 0.2.
+        Quantile used to identify low tide observations, by default 0.15.
     threshold_hightide : float, optional
-        Quantile used to identify high tide observations, by default 0.8.
+        Quantile used to identify high tide observations, by default 0.85.
+    min_obs : int, optional
+        Minimum number of clear observations to enforce when calculating tide
+        height thresholds. Defaults to 0, which will not apply any minimum.
     eps: float, optional
         Termination criteria passed on to the geomedian algorithm.
     cpus: int, optional
@@ -134,14 +166,17 @@ def tidal_composites(
     tides_highres = tides_highres.where(nodata_array)
 
     # Calculate low and high tide thresholds from masked tide data
-    log.info(f"{run_id}: Calculating low and high tide thresholds")
-    threshold_ds = xr_quantile(
-        src=tides_highres.to_dataset(),
-        quantiles=[threshold_lowtide, threshold_hightide],
-        nodata=np.nan,
+    log.info(
+        f"{run_id}: Calculating low and high tide thresholds with minimum observations {min_obs}"
     )
-    low_threshold = threshold_ds.isel(quantile=0).tide_height.drop("quantile")
-    high_threshold = threshold_ds.isel(quantile=-1).tide_height.drop("quantile")
+    # threshold_ds = xr_quantile(
+    #     src=tides_highres.to_dataset(),
+    #     quantiles=[threshold_lowtide, threshold_hightide],
+    #     nodata=np.nan,
+    # )
+    # low_threshold = threshold_ds.isel(quantile=0).tide_height.drop("quantile")
+    # high_threshold = threshold_ds.isel(quantile=-1).tide_height.drop("quantile")
+    low_threshold, high_threshold = tidal_thresholds(tides_highres, min_obs=min_obs)
 
     # Create masks for selecting satellite observations below and above the
     # low and high tide thresholds
@@ -270,14 +305,21 @@ def tidal_composites(
 @click.option(
     "--threshold_lowtide",
     type=float,
-    default=0.2,
-    help="The quantile used to identify low tide observations. " "Defaults to 0.2.",
+    default=0.15,
+    help="The quantile used to identify low tide observations. Defaults to 0.15.",
 )
 @click.option(
     "--threshold_hightide",
     type=float,
-    default=0.8,
-    help="The quantile used to identify high tide observations. " "Defaults to 0.8.",
+    default=0.85,
+    help="The quantile used to identify high tide observations. Defaults to 0.85.",
+)
+@click.option(
+    "--min_obs",
+    type=int,
+    default=0,
+    help="Minimum number of clear observations to enforce when calculating tide "
+    "height thresholds. Defaults to 0, which will not apply any minimum.",
 )
 @click.option(
     "--mask_sunglint",
@@ -355,6 +397,7 @@ def tidal_composites_cli(
     resolution,
     threshold_lowtide,
     threshold_hightide,
+    min_obs,
     mask_sunglint,
     include_coastal_aerosol,
     eps,
@@ -429,7 +472,7 @@ def tidal_composites_cli(
             )
 
             # Fail early if not enough observations
-            if len(satellite_ds.time) < 20:
+            if len(satellite_ds.time) < 50:
                 raise Exception(
                     "Insufficient satellite data available to process composites; skipping."
                 )
@@ -440,6 +483,7 @@ def tidal_composites_cli(
                 satellite_ds=satellite_ds,
                 threshold_lowtide=threshold_lowtide,
                 threshold_hightide=threshold_hightide,
+                min_obs=min_obs,
                 eps=eps,
                 cpus=cpus,
                 max_iters=max_iters,
