@@ -167,7 +167,7 @@ def tidal_composites(
 
     # Calculate low and high tide thresholds from masked tide data
     log.info(
-        f"{run_id}: Calculating low and high tide thresholds with minimum observations {min_obs}"
+        f"{run_id}: Calculating low and high tide thresholds with minimum {min_obs} observations"
     )
     # threshold_ds = xr_quantile(
     #     src=tides_highres.to_dataset(),
@@ -176,7 +176,12 @@ def tidal_composites(
     # )
     # low_threshold = threshold_ds.isel(quantile=0).tide_height.drop("quantile")
     # high_threshold = threshold_ds.isel(quantile=-1).tide_height.drop("quantile")
-    low_threshold, high_threshold = tidal_thresholds(tides_highres, min_obs=min_obs)
+    low_threshold, high_threshold = tidal_thresholds(
+        tides_highres=tides_highres,
+        threshold_lowtide=threshold_lowtide,
+        threshold_hightide=threshold_hightide,
+        min_obs=min_obs,
+    )
 
     # Create masks for selecting satellite observations below and above the
     # low and high tide thresholds
