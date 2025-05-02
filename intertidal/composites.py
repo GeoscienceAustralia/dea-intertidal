@@ -42,10 +42,14 @@ def tidal_thresholds(
     # Calculate per-pixel integer rankings for each tide height
     rank_n = tides_highres.rank(dim="time")
 
-    # Calculate low and high ranking thresholds from total rankings.
-    # Low threshold needs to be rounded up ("ceil"), and high tide
-    # rounded down ("floor") to ensure we capture all matching values.
-    rank_max = rank_n.max(dim="time")
+    # Calculate pixel-based low and high ranking thresholds from
+    # max ranking. Max rankiing needs to be rounded up ("ceil")
+    # as xarray will give multiple observation an average rank
+    # value if they are both identical.
+    # Additionally to ensure we capture all matching values, Low
+    # threshold needs to be rounded up ("ceil"), and high tide
+    # rounded down ("floor").
+    rank_max = np.ceil(rank_n.max(dim="time"))
     rank_thresh_low = np.ceil(rank_max * threshold_lowtide)
     rank_thresh_high = np.floor(rank_max * threshold_hightide)
 
@@ -169,13 +173,6 @@ def tidal_composites(
     log.info(
         f"{run_id}: Calculating low and high tide thresholds with minimum {min_obs} observations"
     )
-    # threshold_ds = xr_quantile(
-    #     src=tides_highres.to_dataset(),
-    #     quantiles=[threshold_lowtide, threshold_hightide],
-    #     nodata=np.nan,
-    # )
-    # low_threshold = threshold_ds.isel(quantile=0).tide_height.drop("quantile")
-    # high_threshold = threshold_ds.isel(quantile=-1).tide_height.drop("quantile")
     low_threshold, high_threshold = tidal_thresholds(
         tides_highres=tides_highres,
         threshold_lowtide=threshold_lowtide,
@@ -236,7 +233,7 @@ def tidal_composites(
     ds_lowtide["qa_low_threshold"] = low_threshold
     ds_hightide["qa_high_threshold"] = high_threshold
 
-    return ds_lowtide, ds_hightide, low_keep, high_keep
+    return ds_lowtide, ds_hightide
 
 
 @click.command()
@@ -493,7 +490,7 @@ def tidal_composites_cli(
 
             # Calculate high and low tide geomedian composites
             log.info(f"{run_id}: Running DEA Tidal Composites workflow")
-            ds_lowtide, ds_hightide, low_keep, high_keep = tidal_composites(
+            ds_lowtide, ds_hightide = tidal_composites(
                 satellite_ds=satellite_ds,
                 threshold_lowtide=threshold_lowtide,
                 threshold_hightide=threshold_hightide,
@@ -554,20 +551,12 @@ def tidal_composites_cli(
                 log=log,
             )
 
-            # Add new array to data to label high or low tide
-            # images selected for geomedian analysis.
-            label = xr.where(
-                high_keep | low_keep,
-                "Clear low and high tide images",
-                "All satellite observations",
-            )
-            satellite_ds = satellite_ds.assign(label=label)
-
             # Calculate additional tile-level tidal metadata and graph.
             metadata_dict, tide_graph_fig = tidal_metadata(
                 product_family="tidal_composites",
+                threshold_lowtide=threshold_lowtide,
+                threshold_hightide=threshold_hightide,
                 data=satellite_ds,
-                plot_var="label",
                 modelled_freq="30min",
                 model=tide_model,
                 directory=tide_model_dir,

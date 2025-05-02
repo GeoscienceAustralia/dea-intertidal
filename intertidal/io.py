@@ -785,15 +785,27 @@ def _write_stac(
     return stac
 
 
-def tidal_metadata(product_family, **tide_stats_kwargs):
+def tidal_metadata(
+    product_family,
+    threshold_lowtide=0.15,
+    threshold_hightide=0.85,
+    **tide_stats_kwargs,
+):
     """
     Generate tidal statistics and tide bias plot for a given input tile.
     Tidal statistics are calculated based on the centroid of the tile.
+
+    For `product_family=="tidal_composites"`, observations matching the
+    low and high tide thresholds will be plotted in white.
 
     Parameters
     ----------
     product_family : string
         Either "intertidal" or "tidal_composites".
+    threshold_lowtide : float, optional
+        Quantile used to identify low tide observations, by default 0.15.
+    threshold_hightide : float, optional
+        Quantile used to identify high tide observations, by default 0.85.
     **tide_stats_kwargs :
         Any required parameters to pass to `eo_tides.stats.tide_stats`,
         e.g. `data`, `model`, `directory` etc.
@@ -831,36 +843,50 @@ def tidal_metadata(product_family, **tide_stats_kwargs):
     )
 
     # Update figure line and point colours
-    if product_family == "intertidal":
-        fig.axes[0].get_lines()[0].set_color("#90b7d8")
-        fig.axes[0].get_lines()[0].set_alpha(1.0)
-        fig.axes[0].get_lines()[1].set_color("black")
-        fig.axes[0].get_lines()[1].set_markersize(4)
-        fig.axes[0].get_lines()[1].set_markeredgecolor("none")
+    modelled = fig.axes[0].get_lines()[0]
+    observed = fig.axes[0].get_lines()[1]
+    hat = fig.axes[0].get_lines()[2]
+    hot = fig.axes[0].get_lines()[3]
+    lot = fig.axes[0].get_lines()[4]
+    lat = fig.axes[0].get_lines()[5]
 
-        # HAT/LOT lines
-        fig.axes[0].get_lines()[2].set_color("none")
-        fig.axes[0].get_lines()[3].set_color("none")
-        fig.axes[0].get_lines()[4].set_color("none")
-        fig.axes[0].get_lines()[5].set_color("none")
+    # Set styling
+    modelled.set_color("#90b7d8")
+    modelled.set_alpha(1.0)
+    observed.set_color("black")
+    observed.set_markersize(4)
+    observed.set_markeredgecolor("none")
 
-    elif product_family == "tidal_composites":
-        fig.axes[0].get_lines()[0].set_color("#90b7d8")
-        fig.axes[0].get_lines()[0].set_alpha(1.0)
-        fig.axes[0].get_lines()[1].set_markeredgecolor("none")
-        fig.axes[0].get_lines()[2].set_markeredgecolor("#343c47")
-        fig.axes[0].get_lines()[1].set_marker("o")
-        fig.axes[0].get_lines()[2].set_marker("o")
-        fig.axes[0].get_lines()[1].set_markersize(4)
-        fig.axes[0].get_lines()[2].set_markersize(5)
-        fig.axes[0].get_lines()[1].set_color("black")
-        fig.axes[0].get_lines()[2].set_color("white")
+    # Remove HAT/LOT lines
+    hat.set_color("none")
+    hot.set_color("none")
+    lot.set_color("none")
+    lat.set_color("none")
 
-        # HAT/LOT lines
-        fig.axes[0].get_lines()[3].set_color("none")
-        fig.axes[0].get_lines()[4].set_color("none")
-        fig.axes[0].get_lines()[5].set_color("none")
-        fig.axes[0].get_lines()[6].set_color("none")
+    # For Tidal Composites, manually set low and high
+    # tide observations to white
+    if product_family == "tidal_composites":
+
+        # Extract observed data from plot
+        xdata = observed.get_xdata()
+        ydata = observed.get_ydata()
+
+        # Calculate thresholds and plot subset of points in white
+        min_thresh, max_thresh = np.quantile(
+            ydata, [threshold_lowtide, threshold_hightide]
+        )
+        mask = (ydata <= min_thresh) | (ydata >= max_thresh)
+        fig.axes[0].plot(
+            xdata[mask],
+            ydata[mask],
+            marker="o",
+            linestyle="None",
+            color="white",
+            markersize=5,
+            markeredgecolor="#343c47",
+            markeredgewidth=0.8,
+            label="Low and high tide images",
+        )
 
     # Set background to transparent
     fig.patch.set_facecolor("#5d646c00")
