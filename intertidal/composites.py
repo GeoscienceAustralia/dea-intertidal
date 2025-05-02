@@ -43,10 +43,10 @@ def tidal_thresholds(
     rank_n = tides_highres.rank(dim="time")
 
     # Calculate pixel-based low and high ranking thresholds from
-    # max ranking. Max rankiing needs to be rounded up ("ceil")
-    # as xarray will give multiple observation an average rank
-    # value if they are both identical.
-    # Additionally to ensure we capture all matching values, Low
+    # max ranking. Max ranking needs to be rounded up to the nearest
+    # integer using "ceil" as xarray will give multiple observation
+    # an average rank (e.g. 50.5) value if they are both identical.
+    # Additionally: to ensure we capture all matching values, Low
     # threshold needs to be rounded up ("ceil"), and high tide
     # rounded down ("floor").
     rank_max = np.ceil(rank_n.max(dim="time"))
