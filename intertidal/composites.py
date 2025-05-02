@@ -185,9 +185,9 @@ def tidal_composites(
     low_mask = tides_highres <= low_threshold
     high_mask = tides_highres >= high_threshold
 
-    # Keep only scenes with at least some valid data to speed up geomedian
-    low_keep = low_mask.any(dim=["x", "y"])
-    high_keep = high_mask.any(dim=["x", "y"])
+    # Keep only scenes with at least 1% valid data to speed up geomedian
+    low_keep = low_mask.mean(dim=["x", "y"]) >= 0.01
+    high_keep = high_mask.mean(dim=["x", "y"]) >= 0.01
     ds_low = satellite_ds.sel(time=low_keep)
     ds_high = satellite_ds.sel(time=high_keep)
 
@@ -343,8 +343,7 @@ def tidal_composites(
     "--include_coastal_aerosol/--no-include_coastal_aerosol",
     type=bool,
     default=True,
-    help="Whether to include the coastal aerosol band. "
-    "Defaults to True",
+    help="Whether to include the coastal aerosol band. Defaults to True",
 )
 @click.option(
     "--eps",
