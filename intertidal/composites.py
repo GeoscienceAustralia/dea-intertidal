@@ -336,10 +336,18 @@ def tidal_composites(
     "which will mask all pixels with a glint angle of less than 20.",
 )
 @click.option(
+    "--gqa_filter/--no-gqa_filter",
+    type=bool,
+    default=True,
+    help="Whether to filter scenes when loading data based on gqa values. "
+    "Defaults to True",
+)
+@click.option(
     "--include_coastal_aerosol/--no-include_coastal_aerosol",
     type=bool,
     default=True,
-    help="Whether to include the coastal aerosol band",
+    help="Whether to include the coastal aerosol band. "
+    "Defaults to True",
 )
 @click.option(
     "--eps",
@@ -404,6 +412,7 @@ def tidal_composites_cli(
     threshold_hightide,
     min_obs,
     mask_sunglint,
+    gqa_filter,
     include_coastal_aerosol,
     eps,
     cpus,
@@ -463,7 +472,7 @@ def tidal_composites_cli(
                 crs="EPSG:3577",
                 include_s2=True,
                 include_ls=False,
-                filter_gqa=True,
+                filter_gqa=gqa_filter,
                 ndwi=False,
                 mask_sunglint=mask_sunglint,
                 include_coastal_aerosol=include_coastal_aerosol,
