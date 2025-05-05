@@ -65,6 +65,20 @@ def tidal_thresholds(
     return tide_thresh_low, tide_thresh_high
 
 
+def filter_granules(dataset):
+    """
+    Return False for any Sentinel-2 dataset with a MGRS
+    granule region code in the list of bad region codes.
+    """
+    drop_list = ["50HKG", "50HNF", "51LWD", "51LXE", "51LZF",
+                 "52LBL", "52LCL", "52LDK", "53HNA", "53LRC",
+                 "54GYU", "54LWR", "54LXR", "54LYR", "55GBP",
+                 "55KEA", "55KFV", "55KGV", "55KHT", "55KHU",
+                 "56KKC", "56KLC", "56KMC", "56KMV", "56KNU",
+                 "54LWQ", "54LWP"]
+    return dataset.metadata.region_code not in drop_list
+
+
 def tidal_composites(
     satellite_ds,
     threshold_lowtide=0.15,
@@ -459,6 +473,8 @@ def tidal_composites_cli(
                 geom = None
 
             # Load satellite data and dataset IDs for metadata
+            # Use `filter_granules` predicate function to drop list of
+            # custom Sentinel-2 MGRS granules with poor data coverage
             satellite_ds, dss_s2, _ = load_data(
                 dc=dc,
                 study_area=study_area,
@@ -476,6 +492,7 @@ def tidal_composites_cli(
                 skip_broken_datasets=True,
                 dataset_maturity="final",
                 dtype="int16",
+                dataset_predicate=filter_granules,
             )
             log.info(
                 f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps"
