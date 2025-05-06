@@ -294,7 +294,7 @@ def load_data(
         s2_spectral_bands = s2_spectral_bands + ["nbart_coastal_aerosol"]
 
     # Set sunglint bands to load
-    if mask_sunglint is not None:
+    if (mask_sunglint is not None) and (mask_sunglint >= 1):
         sunglint_bands = [
             "oa_solar_zenith",
             "oa_solar_azimuth",
