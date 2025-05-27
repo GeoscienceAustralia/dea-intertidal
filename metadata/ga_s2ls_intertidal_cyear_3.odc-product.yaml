@@ -40,12 +40,12 @@ measurements:
         description: Intertidal extents class
         bits: [0, 1, 2, 3, 4, 5, 6, 7]
         values:
-          1: Ocean and coastal waters
-          2: Exposed intertidal (low confidence)
-          3: Exposed intertidal (high confidence)
-          4: Inland waters 
-          5: Land
-        
+          "1": Ocean and coastal waters
+          "2": Exposed intertidal (low confidence)
+          "3": Exposed intertidal (high confidence)
+          "4": Inland waters
+          "5": Land
+
   - name: ta_hat
     dtype: float32
     units: "metres above MSL"
@@ -114,6 +114,13 @@ measurements:
     nodata: -999
     aliases:
       - count_clear
+
+  - name: qa_coastal_connectivity
+    dtype: uint16
+    units: "mask"
+    nodata: 65535
+    aliases:
+      - coastal_connectivity
 
 load:
   crs: "EPSG:3577"

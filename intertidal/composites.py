@@ -1,31 +1,95 @@
 import os
 import sys
-import numpy as np
 import click
-
+import numpy as np
+import xarray as xr
 import datacube
 import odc.geo.xr
+from odc.geo.geom import BoundingBox
 from odc.algo import (
     int_geomedian,
     keep_good_only,
+    xr_quantile,
 )
 from datacube.utils.aws import configure_s3_access
-
-from dea_tools.coastal import pixel_tides
+from eo_tides.eo import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
 
 from intertidal.utils import configure_logging
-from intertidal.elevation import load_data
+from intertidal.io import (
+    load_data,
+    prepare_for_export,
+    tidal_metadata,
+    export_dataset_metadata,
+)
 
 
-def intertidal_composites(
+# Function to rename the bands
+def rename_bands(ds, old_string, new_string):
+    # Create a new dataset with renamed bands
+    ds_renamed = ds.rename(
+        {band: band.replace(old_string, new_string) for band in ds.data_vars}
+    )
+    return ds_renamed
+
+
+def tidal_thresholds(
+    tides_highres,
+    threshold_lowtide=0.15,
+    threshold_hightide=0.85,
+    min_obs=0,
+):
+    # Calculate per-pixel integer rankings for each tide height
+    rank_n = tides_highres.rank(dim="time")
+
+    # Calculate pixel-based low and high ranking thresholds from
+    # max ranking. Max ranking needs to be rounded up to the nearest
+    # integer using "ceil" as xarray will give multiple observation
+    # an average rank (e.g. 50.5) value if they are both identical.
+    # Additionally: to ensure we capture all matching values, Low
+    # threshold needs to be rounded up ("ceil"), and high tide
+    # rounded down ("floor").
+    rank_max = np.ceil(rank_n.max(dim="time"))
+    rank_thresh_low = np.ceil(rank_max * threshold_lowtide)
+    rank_thresh_high = np.floor(rank_max * threshold_hightide)
+
+    # Update thresholds to ensure minimum number of valid observations
+    if min_obs > 0:
+        rank_thresh_low = np.maximum(rank_thresh_low, min_obs)
+        rank_thresh_high = np.minimum(rank_thresh_high, rank_max - min_obs)
+
+    # Calculate tide thresholds by masking tides by ranking threshold
+    tide_thresh_low = tides_highres.where(rank_n <= rank_thresh_low).max(dim="time")
+    tide_thresh_high = tides_highres.where(rank_n >= rank_thresh_high).min(dim="time")
+
+    return tide_thresh_low, tide_thresh_high
+
+
+def filter_granules(dataset):
+    """
+    Return False for any Sentinel-2 dataset with a MGRS
+    granule region code in the list of bad region codes.
+    """
+    drop_list = ["50HKG", "50HNF", "51LWD", "51LXE", "51LZF",
+                 "52LBL", "52LCL", "52LDK", "53HNA", "53LRC",
+                 "54GYU", "54LWR", "54LXR", "54LYR", "55GBP",
+                 "55KEA", "55KFV", "55KGV", "55KHT", "55KHU",
+                 "56KKC", "56KLC", "56KMC", "56KMV", "56KNU",
+                 "54LWQ", "54LWP"]
+    return dataset.metadata.region_code not in drop_list
+
+
+def tidal_composites(
     satellite_ds,
-    threshold_lowtide=0.2,
-    threshold_hightide=0.8,
+    threshold_lowtide=0.15,
+    threshold_hightide=0.85,
+    min_obs=0,
+    eps=1e-4,
+    cpus=None,
     max_iters=10000,
-    tide_model="FES2014",
+    tide_model="EOT20",
     tide_model_dir="/var/share/tide_models",
-    study_area=None,
+    run_id=None,
     log=None,
 ):
     """
@@ -33,10 +97,12 @@ def intertidal_composites(
     and high tide using satellite imagery and tidal modeling.
 
     This function uses tools from `odc.algo` to keep data in its
-    original integer datatype until the last possible moment, improving
-    the efficiency of Dask processing.
+    original integer datatype throughout the analysis to minimise
+    memory usage. Modelled tide data and nodata pixels are used
+    to filter satellite data to low and high tide images prior to
+    loading it into memory, allowing more efficient processing.
 
-    Based on the method described in:
+    Pixel-based implementation of the method originally published in:
 
     Sagar, S., Phillips, C., Bala, B., Roberts, D., & Lymburner, L.
     (2018). Generating Continental Scale Pixel-Based Surface Reflectance
@@ -48,27 +114,36 @@ def intertidal_composites(
     satellite_ds : xarray.Dataset
         A satellite data time series containing spectral bands.
     threshold_lowtide : float, optional
-        Quantile used to identify low tide observations, by default 0.2.
+        Quantile used to identify low tide observations, by default 0.15.
     threshold_hightide : float, optional
-        Quantile used to identify high tide observations, by default 0.8.
+        Quantile used to identify high tide observations, by default 0.85.
+    min_obs : int, optional
+        Minimum number of clear observations to enforce when calculating tide
+        height thresholds. Defaults to 0, which will not apply any minimum.
+    eps: float, optional
+        Termination criteria passed on to the geomedian algorithm.
+    cpus: int, optional
+        Requested number of cpus which is passed on to the geomedian function.
     max_iters : int, optional
-        Value to pass to the 'max_iters' param of `int_geomedian`. This
-        can be set to a low value (e.g. 10) to increase the processing
-        speed of test runs.
+        Maximum number of iterations done per output pixel in the
+        geomedian calculation. This can be set to a low value (e.g. 10)
+        to increase the processing speed of test runs.
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
-        supported by the `pyTMD` Python package. Options include:
-        - "FES2014" (default; pre-configured on DEA Sandbox)
-        - "TPXO9-atlas-v5"
-        - "TPXO8-atlas"
-        - "EOT20"
-        - "HAMTIDE11"
-        - "GOT4.10"
+        supported by the `eo-tides` Python package. Options include:
+        - "EOT20" (default)
+        - "TPXO10-atlas-v2-nc"
+        - "FES2022"
+        - "FES2022_extrapolated"
+        - "FES2014"
+        - "FES2014_extrapolated"
+        - "GOT5.6"
+        - "ensemble" (experimental: combine all above into single ensemble)
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
-        directory structure, refer to `dea_tools.coastal.model_tides`.
-    study_area : string, optional
+        directory structure, refer to `eo-tides.utils.list_models`.
+    run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
     log : logging.Logger, optional
@@ -88,55 +163,89 @@ def intertidal_composites(
     if log is None:
         log = configure_logging()
 
-    # Use study area name for logs if it exists
-    if study_area is not None:
-        log_prefix = f"Study area {study_area}: "
-    else:
-        log_prefix = ""
+    # Use run ID name for logs if it exists
+    run_id = "Processing" if run_id is None else run_id
 
     # Model tides into for spatial extent and timesteps in satellite data
-    log.info(f"Study area {study_area}: Modelling tide heights")
-    tides_highres, tides_lowres = pixel_tides(
-        satellite_ds,
+    log.info(f"{run_id}: Modelling tide heights for each pixel")
+    tides_highres = pixel_tides(
+        data=satellite_ds,
         model=tide_model,
+        resample=True,
         directory=tide_model_dir,
-        cutoff=np.inf,
-        dask_compute=False,
+    )
+    # Identify nodata pixels in satellite data array by loading only
+    # a single band into memory
+    log.info(f"{run_id}: Loading red band to identify nodata pixels")
+    nodata = satellite_ds.nbart_red.nodata
+    nodata_array = (satellite_ds.nbart_red != nodata).compute()
+
+    # Mask tides to make nodata match satellite data array
+    tides_highres = tides_highres.where(nodata_array)
+
+    # Calculate low and high tide thresholds from masked tide data
+    log.info(
+        f"{run_id}: Calculating low and high tide thresholds with minimum {min_obs} observations"
+    )
+    low_threshold, high_threshold = tidal_thresholds(
+        tides_highres=tides_highres,
+        threshold_lowtide=threshold_lowtide,
+        threshold_hightide=threshold_hightide,
+        min_obs=min_obs,
     )
 
-    # Start processing tide data, using .persist so we can re-use our results
-    tides_highres.persist()
+    # Create masks for selecting satellite observations below and above the
+    # low and high tide thresholds
+    low_mask = tides_highres <= low_threshold
+    high_mask = tides_highres >= high_threshold
 
-    # Calculate low and high tide height thresholds using quantile of
-    # all tide observations.
-    log.info(f"Study area {study_area}: Calculate low and high tide height thresholds")
-    threshold_ds = (
-        tides_lowres.quantile(q=[threshold_lowtide, threshold_hightide], dim="time")
-        .odc.assign_crs(satellite_ds.odc.geobox.crs)
-        .odc.reproject(satellite_ds.odc.geobox, resampling="bilinear")
-        .drop("quantile")
-    )
+    # Keep only scenes with at least 1% valid data to speed up geomedian
+    low_keep = low_mask.mean(dim=["x", "y"]) >= 0.01
+    high_keep = high_mask.mean(dim=["x", "y"]) >= 0.01
+    ds_low = satellite_ds.sel(time=low_keep)
+    ds_high = satellite_ds.sel(time=high_keep)
 
-    # Apply threshold to keep only pixels with tides less or greater than
-    # than tide height threshold
-    log.info(f"Study area {study_area}: Masking to low and high tide observations")
-    low_mask = tides_highres <= threshold_ds.isel(quantile=0)
-    high_mask = tides_highres >= threshold_ds.isel(quantile=-1)
+    # Load low and high subsets of data into memory
+    log.info(
+        f"{run_id}: Loading {len(ds_low.time)} low tide satellite images into memory"
+    )
+    ds_low.load()
+    log.info(
+        f"{run_id}: Loading {len(ds_high.time)} high tide satellite images into memory"
+    )
+    ds_high.load()
 
-    # Mask out pixels outside of selected tides. Drop fully empty scenes
-    # to speed up geomedian
-    ds_low = keep_good_only(x=satellite_ds, where=low_mask).sel(
-        time=low_mask.any(dim=["x", "y"])
-    )
-    ds_high = keep_good_only(x=satellite_ds, where=high_mask).sel(
-        time=high_mask.any(dim=["x", "y"])
-    )
+    # Use `keep_good_only` to set any pixels outside of the tide masks to nodata
+    ds_low_masked = keep_good_only(x=ds_low, where=low_mask.sel(time=low_keep))
+    ds_high_masked = keep_good_only(x=ds_high, where=high_mask.sel(time=high_keep))
 
     # Calculate low and high tide geomedians
-    log.info(f"Study area {study_area}: Calculating geomedians")
-    num_threads = os.cpu_count() - 2
-    ds_lowtide = int_geomedian(ds=ds_low, maxiters=max_iters, num_threads=num_threads)
-    ds_hightide = int_geomedian(ds=ds_high, maxiters=max_iters, num_threads=num_threads)
+    num_threads = cpus if cpus is not None else os.cpu_count() - 2
+    log.info(f"{run_id}: Running low tide geomedian with {num_threads} threads")
+    ds_lowtide = int_geomedian(
+        ds=ds_low_masked,
+        maxiters=max_iters,
+        num_threads=num_threads,
+        eps=eps,
+    )
+    log.info(f"{run_id}: Running high tide geomedian with {num_threads} threads")
+    ds_hightide = int_geomedian(
+        ds=ds_high_masked,
+        maxiters=max_iters,
+        num_threads=num_threads,
+        eps=eps,
+    )
+
+    # Calculate clear count (both low and high tide clear counts
+    # are identical, so we can just use one)
+    log.info(f"{run_id}: Calculating clear counts")
+    ds_lowtide["qa_count_clear"] = (
+        (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
+    )
+
+    # Add low and high tide thresholds to the output datasets
+    ds_lowtide["qa_low_threshold"] = low_threshold
+    ds_hightide["qa_high_threshold"] = high_threshold
 
     return ds_lowtide, ds_hightide
 
@@ -147,52 +256,137 @@ def intertidal_composites(
     type=str,
     required=True,
     help="A string providing a GridSpec tile ID (e.g. in the form "
-    "'x143y56') to run the analysis on.",
+    "'x123y123') to run the analysis on.",
 )
 @click.option(
     "--start_date",
     type=str,
-    default="2020",
+    required=True,
     help="The start date of satellite data to load from the "
-    "datacube. This can be any date format accepted by datacube. ",
+    "datacube. This can be any date format accepted by datacube. "
+    "For DEA Tidal Composites, this is set to provide a three year window "
+    "centred over `label_date` below.",
 )
 @click.option(
     "--end_date",
     type=str,
-    default="2022",
+    required=True,
     help="The end date of satellite data to load from the "
-    "datacube. This can be any date format accepted by datacube. ",
+    "datacube. This can be any date format accepted by datacube. "
+    "For DEA Tidal Composites, this is set to provide a three year window "
+    "centred over `label_date` below.",
+)
+@click.option(
+    "--label_date",
+    type=str,
+    required=True,
+    help="The date used to label output arrays, and to use as the date "
+    "assigned to the dataset when indexed into Datacube.",
+)
+@click.option(
+    "--output_version",
+    type=str,
+    required=True,
+    help="The version number to use for output files and metadata (e.g. " "'0.0.1').",
+)
+@click.option(
+    "--output_dir",
+    type=str,
+    default="data/processed/",
+    help="The directory/location to output data and metadata; supports "
+    "both local disk and S3 locations. Defaults to 'data/processed/'.",
+)
+@click.option(
+    "--product_maturity",
+    type=str,
+    default="provisional",
+    help="Product maturity metadata to use for the output dataset. "
+    "Defaults to 'provisional', can also be 'stable'.",
+)
+@click.option(
+    "--dataset_maturity",
+    type=str,
+    default="final",
+    help="Dataset maturity metadata to use for the output dataset. "
+    "Defaults to 'final', can also be 'interim'.",
 )
 @click.option(
     "--resolution",
     type=int,
     default=10,
     help="The spatial resolution in metres used to load satellite "
-    "data and produce intertidal outputs. Defaults to 10 metre "
+    "data and produce tidal composite outputs. Defaults to 10 metre "
     "Sentinel-2 resolution.",
 )
 @click.option(
     "--threshold_lowtide",
     type=float,
-    default=0.2,
-    help="The quantile used to identify low tide observations. " "Defaults to 0.2.",
+    default=0.15,
+    help="The quantile used to identify low tide observations. Defaults to 0.15.",
 )
 @click.option(
     "--threshold_hightide",
     type=float,
-    default=0.8,
-    help="The quantile used to identify high tide observations. " "Defaults to 0.8.",
+    default=0.85,
+    help="The quantile used to identify high tide observations. Defaults to 0.85.",
+)
+@click.option(
+    "--min_obs",
+    type=int,
+    default=0,
+    help="Minimum number of clear observations to enforce when calculating tide "
+    "height thresholds. Defaults to 0, which will not apply any minimum.",
+)
+@click.option(
+    "--mask_sunglint",
+    type=int,
+    default=20,
+    help="Whether to mask out pixels that are likely to be "
+    "affected by sunglint using glint angles. Low glint angles "
+    "(e.g. < 20) often correspond with sunglint. Defaults to 20, "
+    "which will mask all pixels with a glint angle of less than 20.",
+)
+@click.option(
+    "--gqa_filter/--no-gqa_filter",
+    type=bool,
+    default=True,
+    help="Whether to filter scenes when loading data based on gqa values. "
+    "Defaults to True",
+)
+@click.option(
+    "--include_coastal_aerosol/--no-include_coastal_aerosol",
+    type=bool,
+    default=True,
+    help="Whether to include the coastal aerosol band. Defaults to True",
+)
+@click.option(
+    "--eps",
+    type=float,
+    default=1e-4,
+    help="Termination criteria passed on to the geomedian algorithm.",
+)
+@click.option(
+    "--cpus",
+    type=int,
+    default=None,
+    help="Requested number of CPUs which is passed on to the geomedian function.",
+)
+@click.option(
+    "--max_iters",
+    type=int,
+    default=1000,
+    help="Maximum number of iterations done per output pixel in the "
+    "geomedian calculation. This can be set to a low value (e.g. 10) "
+    "to increase the processing speed of test runs.",
 )
 @click.option(
     "--tide_model",
     type=str,
     multiple=True,
-    default=["FES2014"],
+    default=["EOT20"],
     help="The model used for tide modelling, as supported by the "
-    "`pyTMD` Python package. Options include 'FES2014' (default), "
-    "'TPXO9-atlas-v5', 'TPXO8-atlas', 'EOT20', 'HAMTIDE11', 'GOT4.10'. "
-    "This parameter can be repeated to request multiple models, e.g.: "
-    "`--tide_model FES2014 --tide_model FES2012`.",
+    "`eo-tides` Python package. Options include 'EOT20' (default), "
+    "'TPXO10-atlas-v2-nc', 'FES2022', 'FES2014', 'GOT5.6', 'ensemble'.",
 )
 @click.option(
     "--tide_model_dir",
@@ -200,7 +394,7 @@ def intertidal_composites(
     default="/var/share/tide_models",
     help="The directory containing tide model data files. Defaults to "
     "'/var/share/tide_models'; for more information about the required "
-    "directory structure, refer to `dea_tools.coastal.model_tides`.",
+    "directory structure, refer to `eo-tides.utils.list_models`.",
 )
 @click.option(
     "--aws_unsigned/--no-aws_unsigned",
@@ -208,106 +402,211 @@ def intertidal_composites(
     default=True,
     help="Whether to use sign AWS requests for S3 access",
 )
-def intertidal_composites_cli(
+@click.option(
+    "--overwrite/--no-overwrite",
+    type=bool,
+    default=True,
+    help="Whether to overwrite tile data if it already exists.",
+)
+def tidal_composites_cli(
     study_area,
     start_date,
     end_date,
+    label_date,
+    output_version,
+    output_dir,
+    product_maturity,
+    dataset_maturity,
     resolution,
     threshold_lowtide,
     threshold_hightide,
+    min_obs,
+    mask_sunglint,
+    gqa_filter,
+    include_coastal_aerosol,
+    eps,
+    cpus,
+    max_iters,
     tide_model,
     tide_model_dir,
     aws_unsigned,
+    overwrite,
 ):
-    log = configure_logging(
-        f"Study area {study_area}: Generating Intertidal composites"
-    )
+    # Create sample filename to test if data exists on file system
+    filename = f"{output_dir}ga_s2_tidal_composites_cyear_3/{output_version.replace('.','-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_tidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
+
+    process_tile = True
+    if overwrite:
+        process_tile = True
+    else:
+        if os.path.exists(filename):
+            process_tile = False
+
+    # Create a unique run ID based on input params and use for logs
+    input_params = locals()
+    run_id = f"[{output_version}] [{label_date}] [{study_area}]"
+    log = configure_logging(run_id)
+
+    # Record params in logs
+    log.info(f"{run_id}: Using parameters {input_params}")
 
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
-    # Create output folder. If it doesn't exist, create it
-    output_dir = f"data/interim/{study_area}/{start_date}-{end_date}"
-    os.makedirs(output_dir, exist_ok=True)
+    if process_tile:
 
-    try:
-        log.info(f"Study area {study_area}: Loading satellite data")
+        try:
 
-        # Connect to datacube to access data
-        dc = datacube.Datacube(app="Intertidal_composites_CLI")
+            # Create local dask cluster to improve data load time
+            client = create_local_dask_cluster(return_client=True)
 
-        # Lazily load Sentinel-2 satellite data
-        satellite_ds = load_data(
-            dc=dc,
-            study_area=study_area,
-            time_range=(start_date, end_date),
-            resolution=resolution,
-            crs="EPSG:3577",
-            include_s2=True,
-            include_ls=False,
-            filter_gqa=False,
-            ndwi=False,
-            dtype="int16",
-        )
+            # Connect to datacube to load data
+            dc = datacube.Datacube(app="Composites_CLI")
 
-        # Create local dask cluster to improve data load time
-        client = create_local_dask_cluster(return_client=True)
+            # Use a custom polygon if in testing mode
+            if study_area == "testing":
+                log.info(f"{run_id}: Running in testing mode using custom study area")
+                geom = BoundingBox(
+                    467510, -1665790, 468260, -1664840, crs="EPSG:3577"
+                ).polygon
+            else:
+                geom = None
 
-        # Calculate high and low tide geomedian composites
-        log.info(f"Study area {study_area}: Running geomedians")
-        ds_lowtide, ds_hightide = intertidal_composites(
-            satellite_ds=satellite_ds,
-            threshold_lowtide=threshold_lowtide,
-            threshold_hightide=threshold_hightide,
-            max_iters=10,
-            study_area=study_area,
-            log=log,
-        )
+            # Load satellite data and dataset IDs for metadata
+            # Use `filter_granules` predicate function to drop list of
+            # custom Sentinel-2 MGRS granules with poor data coverage
+            satellite_ds, dss_s2, _ = load_data(
+                dc=dc,
+                study_area=study_area,
+                geom=geom,
+                time_range=(start_date, end_date),
+                resolution=resolution,
+                crs="EPSG:3577",
+                include_s2=True,
+                include_ls=False,
+                filter_gqa=gqa_filter,
+                ndwi=False,
+                mask_sunglint=mask_sunglint,
+                include_coastal_aerosol=include_coastal_aerosol,
+                max_cloudcover=90,
+                skip_broken_datasets=True,
+                dataset_maturity="final",
+                dtype="int16",
+                dataset_predicate=filter_granules,
+            )
+            log.info(
+                f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps"
+            )
 
-        # Process and load low and high tide composites using Dask
-        log.info(f"Study area {study_area}: Processing low tide composite")
-        ds_lowtide.load()
-        log.info(f"Study area {study_area}: Processing high tide composite")
-        ds_hightide.load()
+            # Fail early if not enough observations
+            if len(satellite_ds.time) < 50:
+                raise Exception(
+                    "Insufficient satellite data available to process composites; skipping."
+                )
 
-        # Close dask client
-        client.close()
+            # Calculate high and low tide geomedian composites
+            log.info(f"{run_id}: Running DEA Tidal Composites workflow")
+            ds_lowtide, ds_hightide = tidal_composites(
+                satellite_ds=satellite_ds,
+                threshold_lowtide=threshold_lowtide,
+                threshold_hightide=threshold_hightide,
+                min_obs=min_obs,
+                eps=eps,
+                cpus=cpus,
+                max_iters=max_iters,
+                tide_model=tide_model,
+                tide_model_dir=tide_model_dir,
+                run_id=run_id,
+                log=log,
+            )
 
-        # Export layers as GeoTIFFs
-        log.info(f"Study area {study_area}: Exporting outputs GeoTIFFs to {output_dir}")
+            # Rename low and high tide bands to add "low"/"high" prefix in place of "nbart"
+            ds_hightide = rename_bands(ds_hightide, "nbart", "high")
+            ds_lowtide = rename_bands(ds_lowtide, "nbart", "low")
 
-        prefix = f"{output_dir}/{study_area}_{start_date}_{end_date}"
-        ds_lowtide.to_array().odc.write_cog(
-            f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}.tif",
-            overwrite=True,
-        )
-        ds_hightide.to_array().odc.write_cog(
-            f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}.tif",
-            overwrite=True,
-        )
+            # Concatenate into a single output dataset
+            ds_tidalcomposites = xr.merge([ds_lowtide, ds_hightide])
 
-        # Export as images
-        prefix = f"data/figures/{study_area}_{start_date}_{end_date}"
-        ds_lowtide.odc.to_rgba(
-            bands=["nbart_red", "nbart_green", "nbart_blue"], vmin=100, vmax=2500
-        ).plot.imshow().figure.savefig(
-            f"{prefix}_composite_lowtide_{int(threshold_lowtide * 100)}_rgb.png"
-        )
-        ds_hightide.odc.to_rgba(
-            bands=["nbart_red", "nbart_green", "nbart_blue"], vmin=100, vmax=2500
-        ).plot.imshow().figure.savefig(
-            f"{prefix}_composite_hightide_{int(threshold_hightide * 100)}_rgb.png"
-        )
+            # Ensure spatial information is still attached
+            ds_tidalcomposites = odc.geo.xr.assign_crs(
+                ds_tidalcomposites, satellite_ds.odc.crs
+            )
 
-        # Workflow completed
-        log.info(
-            f"Study area {study_area}: Completed DEA Intertidal composites workflow"
-        )
+            custom_dtypes = {
+                "low_coastal_aerosol": (np.int16, -999),
+                "low_blue": (np.int16, -999),
+                "low_green": (np.int16, -999),
+                "low_red": (np.int16, -999),
+                "low_red_edge_1": (np.int16, -999),
+                "low_red_edge_2": (np.int16, -999),
+                "low_red_edge_3": (np.int16, -999),
+                "low_nir_1": (np.int16, -999),
+                "low_nir_2": (np.int16, -999),
+                "low_swir_2": (np.int16, -999),
+                "low_swir_3": (np.int16, -999),
+                "high_coastal_aerosol": (np.int16, -999),
+                "high_blue": (np.int16, -999),
+                "high_green": (np.int16, -999),
+                "high_red": (np.int16, -999),
+                "high_red_edge_1": (np.int16, -999),
+                "high_red_edge_2": (np.int16, -999),
+                "high_red_edge_3": (np.int16, -999),
+                "high_nir_1": (np.int16, -999),
+                "high_nir_2": (np.int16, -999),
+                "high_swir_2": (np.int16, -999),
+                "high_swir_3": (np.int16, -999),
+                "qa_low_threshold": (np.float32, np.nan),
+                "qa_high_threshold": (np.float32, np.nan),
+                "qa_count_clear": (np.int16, -999),
+            }
 
-    except Exception as e:
-        log.exception(f"Study area {study_area}: Failed to run process with error {e}")
-        sys.exit(1)
+            # Sets correct dtypes and nodata
+            ds_prepared = prepare_for_export(
+                ds_tidalcomposites,
+                custom_dtypes=custom_dtypes,
+                log=log,
+            )
+
+            # Calculate additional tile-level tidal metadata and graph.
+            metadata_dict, tide_graph_fig = tidal_metadata(
+                product_family="tidal_composites",
+                threshold_lowtide=threshold_lowtide,
+                threshold_hightide=threshold_hightide,
+                data=satellite_ds,
+                modelled_freq="30min",
+                model=tide_model,
+                directory=tide_model_dir,
+            )
+
+            # Export data and metadata
+            export_dataset_metadata(
+                ds_prepared,
+                year=label_date,
+                study_area=study_area,
+                output_location=output_dir,
+                s2_lineage=dss_s2,
+                dataset_version=output_version,
+                product_family="tidal_composites",
+                odc_product="ga_s2_tidal_composites_cyear_3",
+                thumbnail_bands=["low_red", "low_green", "low_blue"],
+                tide_graph_fig=tide_graph_fig,
+                additional_metadata=metadata_dict,
+                product_maturity=product_maturity,
+                dataset_maturity=dataset_maturity,
+                run_id=run_id,
+                log=log,
+            )
+
+            # Close dask client
+            client.close()
+            log.info(f"{run_id}: Completed DEA Tidal Composites workflow")
+
+        except Exception as e:
+            log.exception(f"{run_id}: Failed to run process with error {e}")
+            sys.exit(1)
+    else:
+        log.info(f"{run_id}: Skipping as overwrite==False")
 
 
 if __name__ == "__main__":
-    intertidal_composites_cli()
+    tidal_composites_cli()

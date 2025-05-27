@@ -7,17 +7,65 @@ import pandas as pd
 import geopandas as gpd
 
 from skimage import graph
+from skimage.measure import label, regionprops
+from skimage.morphology import binary_erosion, disk
 from odc.geo.geobox import GeoBox
 from odc.geo.gridspec import GridSpec
 from odc.geo.types import xy_
 from odc.algo import mask_cleanup
 from odc.geo.xr import xr_zeros
-from dea_tools.spatial import xr_rasterize
+from dea_tools.spatial import xr_rasterize, xr_interpolate
 from rasterio.features import sieve
 from intertidal.io import (
     load_aclum_mask,
     extract_geobox,
 )
+
+
+def class_connection(split_classes, reference, connectivity=1):
+    """
+
+    Identifies areas of water pixels that are adjacent to or directly
+    connected to intertidal pixels.
+
+    Parameters:
+    -----------
+    split_classes : xarray.DataArray
+        An array containing True for pixels that require class separation
+        based on their connection to the reference dataset e.g. inland and
+        oceanic water pixels.
+    reference : xarray.DataArray
+        An array containing True for reference, or truth, pixels e.g.
+        pixels in a coastal cost-distance connectivity mask.
+    connectivity : integer, optional
+        An integer passed to the 'connectivity' parameter of the
+        `skimage.measure.label` function.
+
+    Returns:
+    --------
+    connection_mask : xarray.DataArray
+        An array containing True for pixels connected to the reference array
+        e.g. all water pixels contained within or intersecting a coastal
+        cost-distance connectivity mask.
+    """
+
+    # First, break `split_classes` array into unique, discrete
+    # regions/blobs.
+    blobs = xr.apply_ufunc(label, split_classes, 0, False, connectivity)
+
+    # For each unique region/blob, use region properties to determine
+    # whether it overlaps with a feature from `reference`. If
+    # it does, then it is considered to be adjacent or directly connected
+    # to reference pixels
+    connection_mask = blobs.isin(
+        [
+            i.label
+            for i in regionprops(blobs.values, reference.values)
+            if i.max_intensity
+        ]
+    )
+
+    return connection_mask
 
 
 def _cost_distance(
@@ -132,11 +180,13 @@ def load_connectivity_mask(
     dc,
     geobox,
     product="ga_srtm_dem1sv1_0",
-    elevation_band="dem_h",
+    elevation_band="dem_s",
     resampling="bilinear",
     buffer=20000,
-    max_threshold=100,
+    preprocess=None,
+    max_threshold=20,
     add_mangroves=False,
+    correct_hat=False,
     mask_filters=[("dilation", 3)],
     **cost_distance_kwargs,
 ):
@@ -158,16 +208,30 @@ def load_connectivity_mask(
         Defaults to "ga_srtm_dem1sv1_0".
     elevation_band : str, optional
         The name of the band containing elevation data. Defaults to
-        "height_depth".
+        "height_smoothed".
     resampling : str, optional
         The resampling method to use, by default "bilinear".
     buffer : int, optional
         The distance by which to buffer the input GeoBox to reduce edge
         effects. This buffer will eventually be removed and clipped back
         to the original GeoBox extent. Defaults to 20,000 metres.
+    preprocess : function, optional
+        An optional lambda function that can be applied to the elevation
+        data prior to connecitivity analysis. Regardless of the outputs
+        of this function, the resulting data will always be clipped
+        between 0 and inf so that it is suitable for analysis. Defaults
+        to None.
     max_threshold: int, optional
         Value used to threshold the resulting cost distance to produce
         a mask.
+    add_mangroves : bool, optional
+        Whether to use the extent of mangroves from Global Mangrove Watch
+        as additional starting points for the connectivity analysis.
+        Defaults to False.
+    correct_hat : bool, optional
+        Whether to apply a Highest Astronomical Tide correction, to make
+        costs based on height above HAT vs height above MSL. Defaults to
+        False.
     mask_filters : list of tuples, optional
         An optional list of morphological processing steps to pass to
         the `mask_cleanup` function. The default is `[("dilation", 3)]`,
@@ -188,6 +252,7 @@ def load_connectivity_mask(
 
     # Buffer input geobox and reduce resolution to ensure that the
     # connectivity analysis is less affected by edge effects
+    print("Loading SRTM data at native 30 m resolution")
     geobox_buffered = GeoBox.from_bbox(
         geobox.buffered(xbuff=buffer, ybuff=buffer).boundingbox,
         resolution=30,
@@ -195,30 +260,56 @@ def load_connectivity_mask(
     )
 
     # Load DEM data
-    dem_da = dc.load(
+    # Load all SRTM DEM layers
+    dem = dc.load(
         product="ga_srtm_dem1sv1_0",
-        measurements=[elevation_band],
         resampling="bilinear",
         like=geobox_buffered,
-    ).squeeze()[elevation_band]
+    )
+
+    # Use SRTM 'dem_h' nodata values for starting values in costdist
+    dem_starts = dem["dem_h"].squeeze()
+
+    # Use SRTM 'dem_s' by default for cost values in costdist
+    dem_costs = dem[elevation_band].squeeze()
 
     # Identify starting points (ocean nodata points)
     if add_mangroves:
         print("Adding GMW mangroves to starting points")
         try:
-            gmw_da = load_gmw_mask(dem_da)
-            starts_da = (dem_da == dem_da.nodata) | gmw_da
-        except:
-            starts_da = dem_da == dem_da.nodata
+            gmw_da = load_gmw_mask(dem_costs)
+            starts_da = (dem_starts == dem_starts.nodata) | gmw_da
+        except Exception as e:
+            print(f"No valid GMW mangroves found: {e}")
+            starts_da = dem_starts == dem_starts.nodata
     else:
-        starts_da = dem_da == dem_da.nodata
+        starts_da = dem_starts == dem_starts.nodata
 
-    # Calculate cost surface (negative values are not allowed, so
-    # negative nodata values are resolved by clipping values to between
+    # Raise error if no valid starting points
+    if not starts_da.any():
+        raise Exception(
+            "No valid starting points found for tile, likely due to being located too far inland"
+        )
+
+    # Apply a Highest Astronomical Tide correction, to make
+    # costs based on height above HAT vs height above MSL
+    if correct_hat:
+        print("Applying HAT correction")
+        hat_correction = load_hat(dem_costs)
+        dem_costs = dem_costs - hat_correction.data
+
+    # Calculate cost surface, optionally using custom preprocess
+    # function (negative values are not allowed, so negative
+    # nodata values are resolved by clipping values to between
     # 0 and infinity)
-    costs_da = dem_da.clip(0, np.inf)
+    if preprocess is not None:
+        print("Using custom pre-process function")
+        costs_da = preprocess(dem_costs).clip(0, np.inf)
+    else:
+        costs_da = dem_costs.clip(0, np.inf)
 
     # Run cost distance surface
+    print("Running cost distance calculation")
     costdist_da = xr_cost_distance(
         cost_da=costs_da,
         starts_da=starts_da,
@@ -226,7 +317,8 @@ def load_connectivity_mask(
     )
 
     # Reproject back to original geobox extents and resolution
-    costdist_da = costdist_da.odc.reproject(how=geobox)
+    print("Reprojecting back to original GeoBox resolution")
+    costdist_da = costdist_da.odc.reproject(how=geobox, resampling="bilinear")
 
     # Apply threshold
     costdist_mask = costdist_da < max_threshold
@@ -238,15 +330,58 @@ def load_connectivity_mask(
     return costdist_mask, costdist_da
 
 
-def load_gmw_mask(ds, gmw_path="/gdata1/data/mangroves/gmw_v3_2007_vec_aus.geojson"):
+def load_gmw_mask(
+    ds,
+    gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/derivative/dea_intertidal/supplementary/gmw_mng_2020_v4019.fgb",
+):
     """
-    Experiment with loading GMW data.
+    Load mangrove extents from Global Mangrove Watch data to use
+    as additional starting points in connectivity analysis.
+    By default, this code the Sentinel-2-based 2020 GMW extents dataset.
     """
     gmw_gdf = gpd.read_file(
-        gmw_path, bbox=ds.odc.geobox.boundingbox.to_crs("EPSG:4326")
+        gmw_path, bbox=ds.odc.geobox.to_crs("EPSG:4326").boundingbox
     )
     gmw_da = xr_rasterize(gmw_gdf, ds)
     return gmw_da
+
+
+def load_hat(
+    ds,
+    hat_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/HAT_MLP_Regression/HAT_MLP_Regression.gpkg",
+    layer="HAT_MLP_Regression",
+    hat_col="HAT",
+    interp_method="idw",
+    interp_p=1,
+    interp_k=10,
+    interp_factor=100,
+):
+    """
+    Experiment with interpolating CSIRO HAT data to use
+    as a correction to elevation values.
+
+    Branson, Paul (2023): Coastal carbon - Australia's blue forest
+    future - Water Levels. v1. CSIRO. Data Collection.
+    https://doi.org/10.25919/6672-jx11
+    """
+    # Load CSIRO HAT data
+    hat = gpd.read_file(
+        hat_path,
+        layer=layer,
+        engine="pyogrio",
+    ).drop(["x", "y"], axis=1)
+
+    # Interpolate into extent of data
+    hat_correction = xr_interpolate(
+        ds=ds,
+        gdf=hat[[hat_col, "geometry"]],
+        method=interp_method,
+        p=interp_p,
+        k=interp_k,
+        factor=interp_factor,
+    ).HAT
+
+    return hat_correction
 
 
 def extents(
@@ -306,11 +441,14 @@ def extents(
     # Identify any pixels that are nodata in frequency
     is_nan = freq.isnull()
 
-    # Spilt pixels into those that were mostly wet vs mostly dry.
-    # Identify subset of mostly wet pixels that were inland
+    # Split pixels into those that were mostly wet vs mostly dry
     mostly_dry = (freq < 0.50) & ~is_nan
     mostly_wet = (freq >= 0.50) & ~is_nan
-    mostly_wet_inland = mostly_wet & ~coastal_mask
+
+    # Identify subset of mostly wet pixels that are not within
+    # or touching/connected to the coastal connectivity mask
+    mostly_wet_connected = class_connection(mostly_wet, coastal_mask)
+    mostly_wet_inland = mostly_wet & ~mostly_wet_connected
 
     # Identify low-confidence pixels as those with greater than 0.15
     # correlation. Use connectivity mask to mask out any that are "inland"
@@ -328,9 +466,7 @@ def extents(
     extents = xr_zeros(geobox=geobox, dtype="int16") + 255  # start with 255
     extents.values[mostly_wet] = 1  # Add in mostly wet pixels
     extents.values[mostly_wet_inland] = 4  # Add in mostly wet inland pixels on top
-    extents.values[urban_misclass] = (
-        5  # Set any pixels in the misclassified urban class to land
-    )
+    extents.values[urban_misclass] = 5  # Set any pixels in misclassified urban to land
     extents.values[mostly_dry] = 5  # Add mostly dry on top
     extents.values[intertidal_lc] = 2  # Add low confidence intertidal on top
 

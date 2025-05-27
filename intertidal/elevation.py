@@ -842,7 +842,7 @@ def elevation(
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
         supported by the `eo-tides` Python package. Options include:
-        - "EOT20" (default; pre-configured on DEA Sandbox)
+        - "EOT20" (default)
         - "TPXO10-atlas-v2-nc"
         - "FES2022"
         - "FES2022_extrapolated"
@@ -901,7 +901,7 @@ def elevation(
         f"{run_id}: Masking nodata and adding tide heights to satellite data array"
     )
     satellite_ds["tide_m"] = tide_m.where(
-        ~satellite_ds.to_array().isel(variable=0).isnull().drop("variable")
+        ~satellite_ds.to_array().isel(variable=0).isnull().drop_vars("variable")
     )
 
     # Flatten array from 3D (time, y, x) to 2D (time, z) and drop pixels
@@ -957,7 +957,7 @@ def elevation(
             flat_dem,  # DEM data
             freq,  # Frequency
             corr,  # Correlation
-            clear, # Clear count
+            clear,  # Clear count
         ],
     )
 
@@ -1106,9 +1106,8 @@ def elevation(
     multiple=True,
     default=["EOT20"],
     help="The model used for tide modelling, as supported by the "
-    "`eo-tides` Python package. Options include 'EOT20'; (default; " 
-    "pre-configured on DEA Sandbox), 'TPXO10-atlas-v2-nc', 'FES2022', "
-    "'FES2014', 'GOT5.6', 'ensemble'."
+    "`eo-tides` Python package. Options include 'EOT20' (default), "
+    "'TPXO10-atlas-v2-nc', 'FES2022', 'FES2014', 'GOT5.6', 'ensemble'.",
 )
 @click.option(
     "--tide_model_dir",
@@ -1212,6 +1211,7 @@ def intertidal_cli(
             skip_broken_datasets=True,
             dataset_maturity="final",
         )
+        log.info(f"{run_id}: Loading {len(satellite_ds.time)} satellite data timesteps")
         satellite_ds.load()
 
         # Load topobathy mask from GA's AusBathyTopo 250m 2023 Grid,
@@ -1219,7 +1219,9 @@ def intertidal_cli(
         # from least-cost connectivity analysis
         topobathy_mask = load_topobathy_mask(dc, satellite_ds.odc.geobox)
         urban_mask = load_aclum_mask(dc, satellite_ds.odc.geobox)
-        coastal_mask, _ = load_connectivity_mask(dc, satellite_ds.odc.geobox)
+        coastal_mask, coastal_connectivity = load_connectivity_mask(
+            dc, satellite_ds.odc.geobox, add_mangroves=True, correct_hat=True
+        )
 
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
@@ -1254,6 +1256,11 @@ def intertidal_cli(
             corr=ds.qa_ndwi_corr,
             coastal_mask=coastal_mask,
             urban_mask=urban_mask,
+        )
+
+        # Add coastal connectivity output layer
+        ds["qa_coastal_connectivity"] = coastal_connectivity.where(
+            coastal_connectivity < 65535
         )
 
         if exposure_offsets:
@@ -1300,9 +1307,14 @@ def intertidal_cli(
         ds["qa_ndwi_freq"] *= 100  # Convert frequency to %
         ds_prepared = prepare_for_export(ds)  # sets correct dtypes and nodata
 
-        # Calculate additional tile-level tidal metadata attributes
-        # (requires exposure/offsets to have been calculated)
-        metadata_dict = tidal_metadata(ds) if exposure_offsets else None
+        # Calculate additional tile-level tidal metadata attributes and graph
+        metadata_dict, tide_graph_fig = tidal_metadata(
+            product_family="intertidal",
+            data=satellite_ds,
+            modelled_freq=modelled_freq,
+            model=tide_model,
+            directory=tide_model_dir,
+        )
 
         # Export data and metadata
         export_dataset_metadata(
@@ -1316,6 +1328,7 @@ def intertidal_cli(
             dataset_version=output_version,
             product_maturity=product_maturity,
             dataset_maturity=dataset_maturity,
+            tide_graph_fig=tide_graph_fig,
             additional_metadata=metadata_dict,
             run_id=run_id,
             log=log,

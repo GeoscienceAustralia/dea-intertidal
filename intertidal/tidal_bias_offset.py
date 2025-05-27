@@ -1,8 +1,6 @@
 import xarray as xr
 import numpy as np
 
-from dea_tools.spatial import subpixel_contours, points_on_line
-
 
 def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
     """
@@ -65,7 +63,7 @@ def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
     # heights as a percentage of the modelled highest and lowest tides.
     offset_hightide = (abs(max_mod - max_obs)) / mod_range * 100
     offset_lowtide = (abs(min_mod - min_obs)) / mod_range * 100
-    
+
     # Add the lowest and highest astronomical tides
     if lat_hat:
         lat = min_mod
@@ -85,4 +83,3 @@ def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
         return lot, hot, spread, offset_lowtide, offset_hightide
     else:
         return spread, offset_lowtide, offset_hightide
-
