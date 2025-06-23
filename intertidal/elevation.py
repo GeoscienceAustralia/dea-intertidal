@@ -795,6 +795,7 @@ def elevation(
     tide_model_dir="/var/share/tide_models",
     run_id=None,
     log=None,
+    **model_tides_kwargs,
 ):
     """
     Generates DEA Intertidal Elevation outputs using satellite imagery
@@ -859,6 +860,12 @@ def elevation(
         prefix log entries.
     log : logging.Logger, optional
         Logger object, by default None.
+    **model_tides_kwargs :
+        Optional parameters passed to the `eo_tides.model.model_tides`
+        function. Important parameters include `cutoff` (used to
+        extrapolate modelled tides away from the coast; defaults to
+        `np.inf`), `crop` (whether to crop tide model constituent files
+        on-the-fly to improve performance) etc.
 
     Returns
     -------
@@ -892,6 +899,7 @@ def elevation(
         data=satellite_ds,
         model=tide_model,
         directory=tide_model_dir,
+        **model_tides_kwargs,
     )
 
     # Set tide array pixels to nodata if the satellite data array pixels
