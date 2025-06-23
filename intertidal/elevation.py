@@ -792,6 +792,8 @@ def elevation(
     correct_seasonality=False,
     max_workers=None,
     tide_model="EOT20",
+    ensemble_model_list=None,
+    ensemble_model_rankings=None,
     tide_model_dir="/var/share/tide_models",
     run_id=None,
     log=None,
@@ -850,6 +852,16 @@ def elevation(
         - "FES2014_extrapolated"
         - "GOT5.6"
         - "ensemble" (experimental: combine all above into single ensemble)
+    ensemble_model_list : list, optional
+        A list of models to include in the ensemble modelling process.
+        All values must exist as columns with the prefix "rank_" in
+        `ensemble_model_rankings`.
+    ensemble_model_rankings : str, optional
+        Path to the file containing model ranking points. This dataset
+        should include columns containing rankings for each tide
+        model, named with the prefix "rank_". e.g. "rank_EOT20".
+        Low values should represent high rankings (e.g. 1 = top ranked).
+        The default value points to an example file covering Australia.
     tide_model_dir : str, optional
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
@@ -892,6 +904,8 @@ def elevation(
         data=satellite_ds,
         model=tide_model,
         directory=tide_model_dir,
+        ensemble_models=ensemble_model_list,
+        ranking_points=ensemble_model_rankings, 
     )
 
     # Set tide array pixels to nodata if the satellite data array pixels
