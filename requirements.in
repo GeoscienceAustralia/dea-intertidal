@@ -5,9 +5,9 @@ botocore==1.37.1
 Bottleneck==1.4.2
 click==8.1.7
 dask==2024.3.1
-datacube[s3,performance]==1.9.1
+datacube[s3,performance]==1.9.3
 dea-tools==0.3.6
-eodatasets3==1.9.1
+eodatasets3==1.9.3
 eo-tides==0.6.3
 hdstats==0.1.8.post1
 geopandas==0.14.4
@@ -15,7 +15,7 @@ matplotlib==3.9.2
 mdutils==1.6.0
 numpy==1.26.4
 odc-algo==0.2.3
-odc-geo==0.4.8
+odc-geo==0.4.10
 odc-ui==0.2.1
 pandas==2.2.3
 pyogrio==0.10.0
