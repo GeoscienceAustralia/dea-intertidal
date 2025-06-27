@@ -13,7 +13,7 @@ REQUIRED = [
     "dask",
     "datacube[s3,performance]",
     "dea_tools>=0.3.6",
-    "eodatasets3",
+    "eodatasets3<1.9.2",
     "eo-tides>=0.6.3",
     "hdstats",
     "geopandas",

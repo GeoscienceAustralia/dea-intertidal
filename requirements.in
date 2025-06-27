@@ -5,9 +5,9 @@ botocore==1.37.1
 Bottleneck==1.4.2
 click==8.1.7
 dask==2024.3.1
-datacube[s3,performance]==1.9.3
+datacube[s3,performance]==1.9.1
 dea-tools==0.3.6
-eodatasets3==1.9.3
+eodatasets3==1.9.1
 eo-tides==0.6.3
 hdstats==0.1.8.post1
 geopandas==0.14.4
