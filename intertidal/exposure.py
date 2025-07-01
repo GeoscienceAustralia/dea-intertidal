@@ -242,6 +242,7 @@ def exposure(
     run_id=None,
     log=None,
     return_tide_modelling=False,
+    **model_tides_kwargs,
 ):
     """
     Calculate intertidal exposure, indicating the proportion of time
@@ -330,6 +331,12 @@ def exposure(
         exposure_ds, modelledtides_ds, modelledtides_1d,timeranges.
         If false, set the function call to return exposure_ds and
         modelledtides_ds only. Default = False.
+    **model_tides_kwargs :
+        Optional parameters passed to the `eo_tides.model.model_tides`
+        function. Important parameters include `cutoff` (used to
+        extrapolate modelled tides away from the coast; defaults to
+        `np.inf`), `crop` (whether to crop tide model constituent files
+        on-the-fly to improve performance) etc.
 
     Returns
     -------
@@ -446,6 +453,7 @@ def exposure(
         model=tide_model,
         directory=tide_model_dir,
         resample=False,
+        **model_tides_kwargs,
     )
 
     # Calculate a 1D tide height time series to use with filtered exposure calc's
