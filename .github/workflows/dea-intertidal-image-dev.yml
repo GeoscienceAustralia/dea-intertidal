@@ -69,7 +69,7 @@ jobs:
           echo "PGPORT=5432" >> $GITHUB_ENV
           echo "PGHOST=localhost" >> $GITHUB_ENV
 
-      - name: Build DEA Intertidal docker image 
+      - name: Build DEA Intertidal docker image from dev requirements 
         timeout-minutes: 30
         shell: bash
         run: |
