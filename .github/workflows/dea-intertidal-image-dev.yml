@@ -1,4 +1,4 @@
-name: Image build and test (dev)
+name: Image build and test (dev requirements)
 
 on:
   push:
