@@ -311,14 +311,14 @@ def load_data(
 
     # Set up query params
     query_params = {
-        "like": geobox.compat,  # Load into the exact GeoBox pixel grid
+        "like": geobox,  # Load into the exact GeoBox pixel grid
         "time": time_range,
         **query,  # Optional additional query parameters
     }
 
     # Set up load params
     load_params = {
-        "like": geobox.compat,
+        "like": geobox,
         "dask_chunks": {"x": 3200, "y": 3200} if dask_chunks is None else dask_chunks,
         "resampling": {
             "*": "cubic",
