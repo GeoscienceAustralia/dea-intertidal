@@ -22,8 +22,11 @@ RUN apt-get update && \
 # Set up working directory
 WORKDIR /app
 
+# Accept build-time argument for requirements file
+ARG REQUIREMENTS_IN=requirements.in
+
 # Copy requirements file first
-COPY requirements.in /app/requirements.in
+COPY ${REQUIREMENTS_IN} /app/requirements.in
 
 # Install uv and requirements
 RUN pip install uv && \
