@@ -88,6 +88,14 @@ def _is_s3(path):
     "Supports DEFLATE/ZSTD/LERC_DEFLATE/LERC_ZSTD/LZMA.",
 )
 @click.option(
+    "--resampling_method",
+    type=str,
+    default="NEAREST",
+    help="The resampling method used for generating the COG mosaic. "
+    "Passed to `gdal_translate -co OVERVIEW_RESAMPLING=...`. "
+    "Supports NEAREST, BILINEAR, CUBIC, CUBICSPLINE, LANCZOS, AVERAGE, RMS, MODE",
+)
+@click.option(
     "--level",
     type=int,
     default=9,
@@ -120,6 +128,7 @@ def make_mosaic_cli(
     output_dir,
     dataset_maturity,
     compress,
+    resampling_method,
     level,
     overview_count,
     aws_unsigned,
@@ -207,16 +216,16 @@ def make_mosaic_cli(
                     "gdal_translate",
                     vrt_name,
                     output_name,
-                    "-co", "NUM_THREADS=ALL_CPUS",              # Parallelisation
-                    "-of", "COG",                               # Output format
-                    "-co", "BIGTIFF=YES",                       # Allow large TIFFs
-                    "-co", "BLOCKSIZE=1024",                    # Tiling
-                    "-co", "OVERVIEWS=IGNORE_EXISTING",         # Force overview regen
-                    "-co", "OVERVIEW_RESAMPLING=NEAREST",       # Resampling for overviews
-                    "-co", f"OVERVIEW_COUNT={overview_count}",  # Number of overviews
-                    "-co", f"COMPRESS={compress}",              # Compression
-                    "-co", f"LEVEL={level}",                    # Compression level
-                    "-co", "PREDICTOR=YES",                     # Compression predictor
+                    "-co", "NUM_THREADS=ALL_CPUS",                     # Parallelisation
+                    "-of", "COG",                                      # Output format
+                    "-co", "BIGTIFF=YES",                              # Allow large TIFFs
+                    "-co", "BLOCKSIZE=1024",                           # Tiling
+                    "-co", "OVERVIEWS=IGNORE_EXISTING",                # Force overview regen
+                    "-co", f"OVERVIEW_RESAMPLING={resampling_method}", # Resampling for overviews
+                    "-co", f"OVERVIEW_COUNT={overview_count}",         # Number of overviews
+                    "-co", f"COMPRESS={compress}",                     # Compression
+                    "-co", f"LEVEL={level}",                           # Compression level
+                    "-co", "PREDICTOR=YES",                            # Compression predictor
                 ],
                 check=True,
             )
