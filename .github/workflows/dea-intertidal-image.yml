@@ -36,7 +36,7 @@ on:
 
 # Ensure only one test workflow runs per branch/PR at a time
 concurrency:
-  group: ${{ github.ref }} # Group by branch or PR ref
+  group: ${{ github.workflow }}-${{ github.ref }}  # Group by workflow and branch/PR ref
   cancel-in-progress: true # Cancel any in-progress runs if a new one starts
 
 permissions:
