@@ -36,7 +36,7 @@ RUN pip install uv && \
 # Now copy the rest of the files
 COPY . /app
 
-# Install DEA Intertidal and verify installation
+# Install DEA Intertidal with postgres extra and verify installation
 RUN uv pip install .[postgres] --system && \
     uv pip check && \
     dea-intertidal --help
