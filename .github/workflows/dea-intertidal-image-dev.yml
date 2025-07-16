@@ -31,6 +31,11 @@ on:
   release:
     types: [edited, published]
 
+# Ensure only one test workflow runs per branch/PR at a time
+concurrency:
+  group: ${{ github.ref }} # Group by branch or PR ref
+  cancel-in-progress: true # Cancel any in-progress runs if a new one starts
+
 permissions:
   id-token: write  # Required for requesting Json web token
   contents: write  # Required for actions/checkout
