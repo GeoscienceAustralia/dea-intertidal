@@ -14,7 +14,7 @@ geopandas==0.14.4
 matplotlib==3.9.2
 mdutils==1.6.0
 numpy==1.26.4
-odc-algo==0.2.3
+odc-algo==1.0.1
 odc-geo==0.4.10
 odc-ui==0.2.1
 pandas==2.2.3
