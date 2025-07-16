@@ -46,7 +46,7 @@ REQUIRED = [
 
 # Optional dependencies
 EXTRAS = {
-    "postgres": ["datacube[s3,performance,postgres]"],
+    "postgres": ["psycopg2"],
 }
 
 # Package metadata
