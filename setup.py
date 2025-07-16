@@ -44,6 +44,11 @@ REQUIRED = [
     "xarray",
 ]
 
+# Optional dependencies
+EXTRAS = {
+    "postgres": ["psycopg2"],
+}
+
 # Package metadata
 NAME = "dea_intertidal"
 DESCRIPTION = "Tools for running Digital Earth Australia Intertidal"
@@ -63,6 +68,7 @@ setup_kwargs = {
     "python_requires": REQUIRES_PYTHON,
     "url": URL,
     "install_requires": REQUIRED,
+    "extras_require": EXTRAS,
     "packages": find_packages(),
     "include_package_data": True,
     "license": "Apache License 2.0",
