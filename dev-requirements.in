@@ -5,7 +5,7 @@ botocore==1.37.1
 Bottleneck==1.4.2
 click==8.1.7
 dask==2024.3.1
-datacube[s3,performance]==1.9.3
+datacube[s3,performance]==1.9.6
 dea-tools==0.4.0
 eodatasets3
 eo-tides==0.8.0
