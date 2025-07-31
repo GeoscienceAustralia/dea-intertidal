@@ -15,3 +15,5 @@
 !*.dockerignore
 !*Dockerfile
 !tests/*.jpg
+
+build
