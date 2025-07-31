@@ -426,7 +426,7 @@ def pixel_dem(
         print(f"Applying tidal interval interpolation to {interp_intervals} intervals")
         interval_ds = interval_ds.interp(
             coords={
-                "interval": np.linspace(0, interval_ds.interval.max(), interp_intervals)
+                "interval": np.linspace(0, interval_ds.interval.max().item(), interp_intervals)
             },
             method="linear",
             # Required as recent versions of xarray return new coord as a variable
