@@ -1,7 +1,4 @@
-name: Image build and test
-
-env:
-  IMAGE_NAME: geoscienceaustralia/dea-intertidal
+name: Image build and test (dev requirements)
 
 on:
   push:
@@ -12,9 +9,9 @@ on:
       - 'intertidal/**'
       - 'data/**'
       - 'tests/**'
-      - '.github/workflows/dea-intertidal-image.yml'
+      - '.github/workflows/dea-intertidal-image-dev.yml'
       - 'Dockerfile'
-      - 'requirements.in'
+      - 'dev-requirements.in'
       - 'setup.py'
       - 'codecov.yaml'
 
@@ -25,9 +22,9 @@ on:
       - 'intertidal/**'
       - 'data/**'
       - 'tests/**'
-      - '.github/workflows/dea-intertidal-image.yml'
+      - '.github/workflows/dea-intertidal-image-dev.yml'
       - 'Dockerfile'
-      - 'requirements.in'
+      - 'dev-requirements.in'
       - 'setup.py'
       - 'codecov.yaml'
 
@@ -77,11 +74,11 @@ jobs:
           echo "PGPORT=5432" >> $GITHUB_ENV
           echo "PGHOST=localhost" >> $GITHUB_ENV
 
-      - name: Build DEA Intertidal docker image 
+      - name: Build DEA Intertidal docker image from dev requirements 
         timeout-minutes: 30
         shell: bash
         run: |
-          docker build -t dea_intertidal --build-arg REQUIREMENTS_IN=requirements.in .
+          docker build -t dea_intertidal --build-arg REQUIREMENTS_IN=dev-requirements.in .
 
       - name: Run integration tests
         run: |
@@ -104,72 +101,3 @@ jobs:
             --volume ${GITHUB_WORKSPACE}:/app \
             --volume ${GITHUB_WORKSPACE}/tide_models:/var/share/tide_models \
             dea_intertidal pytest -v --cov=intertidal --cov-report=xml tests
-
-      # Commit validation results produced by integration tests back into repo
-      # (relies on having previously added a volume to access outputs outside of the container)
-      - name: Commit validation results into repository
-        uses: stefanzweifel/git-auto-commit-action@v4
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        with:
-          commit_message: Automatically update integration test validation results
-          file_pattern: 'tests/validation.jpg tests/validation.csv tests/README.md'
-
-      # Post validation tesults as a comment on the pull request
-      - name: Post validation results as comment
-        uses: mshick/add-pr-comment@v2
-        if: github.event_name == 'pull_request'
-        with:
-          message: |
-            ![](https://github.com/GeoscienceAustralia/dea-intertidal/blob/${{ github.head_ref }}/tests/validation.jpg?raw=true")
-            
-            For full integration test results, refer to the [Tests directory README](https://github.com/GeoscienceAustralia/dea-intertidal/tree/${{ github.head_ref }}/tests).
-
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  push_ecr:
-    needs: [test]
-    runs-on: ubuntu-latest
-
-    # Only run on a push to the develop branch OR a release
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'release')
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          role-to-assume: arn:aws:iam::538673716275:role/github-actions-role
-          aws-region: ap-southeast-2
-
-      - name: Get tag for this build if it exists
-        if: github.event_name == 'release'
-        run: |
-          echo "RELEASE=${GITHUB_REF/refs\/tags\/}" >> $GITHUB_ENV
-
-      - name: Push release image to ECR
-        uses: whoan/docker-build-with-cache-action@master
-        if: github.event_name == 'release'
-        with:
-          registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
-          image_name: ${{ env.IMAGE_NAME }}
-          image_tag: ${{ env.RELEASE }}
-
-      - name: Get git commit hash for unstable image name
-        if: github.event_name != 'release'
-        run: |
-          echo "TAG=dev$(git rev-parse --short HEAD)" \
-          >> $GITHUB_ENV
-
-      - name: Push unstable image to ECR
-        uses: whoan/docker-build-with-cache-action@master
-        if: github.event_name != 'release'
-        with:
-          registry: 538673716275.dkr.ecr.ap-southeast-2.amazonaws.com
-          image_name: ${{ env.IMAGE_NAME }}
-          image_tag: latest,${{ env.TAG }}

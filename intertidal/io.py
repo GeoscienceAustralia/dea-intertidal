@@ -31,6 +31,7 @@ from eodatasets3.scripts.tostac import json_fallback
 from eodatasets3.verify import PackageChecksum
 from eodatasets3.stac import to_stac_item, validate_item
 from datacube.utils.masking import mask_invalid_data
+from datacube.utils.geometry import Geometry as Geometry_datacube18
 
 from intertidal.utils import configure_logging
 
@@ -120,7 +121,7 @@ def extract_geobox(
     """
 
     # List of valid input geometry types (from `odc-geo` or `datacube-core`)
-    GEOM_TYPES = (odc.geo.geom.Geometry, datacube.utils.geometry._base.Geometry)
+    GEOM_TYPES = (odc.geo.geom.Geometry, Geometry_datacube18)
 
     # Either `study_area` or `geom` must be provided
     if study_area is None and geom is None:
@@ -311,14 +312,14 @@ def load_data(
 
     # Set up query params
     query_params = {
-        "like": geobox.compat,  # Load into the exact GeoBox pixel grid
+        "like": geobox,  # Load into the exact GeoBox pixel grid
         "time": time_range,
         **query,  # Optional additional query parameters
     }
 
     # Set up load params
     load_params = {
-        "like": geobox.compat,
+        "like": geobox,
         "dask_chunks": {"x": 3200, "y": 3200} if dask_chunks is None else dask_chunks,
         "resampling": {
             "*": "cubic",
