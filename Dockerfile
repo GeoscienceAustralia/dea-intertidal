@@ -22,8 +22,11 @@ RUN apt-get update && \
 # Set up working directory
 WORKDIR /app
 
+# Accept build-time argument for requirements file
+ARG REQUIREMENTS_IN=requirements.in
+
 # Copy requirements file first
-COPY requirements.in /app/requirements.in
+COPY ${REQUIREMENTS_IN} /app/requirements.in
 
 # Install uv and requirements
 RUN pip install uv && \
@@ -33,7 +36,7 @@ RUN pip install uv && \
 # Now copy the rest of the files
 COPY . /app
 
-# Install DEA Intertidal and verify installation
-RUN uv pip install . --system && \
+# Install DEA Intertidal with postgres extra and verify installation
+RUN uv pip install .[postgres] --system && \
     uv pip check && \
     dea-intertidal --help

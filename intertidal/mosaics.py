@@ -88,6 +88,14 @@ def _is_s3(path):
     "Supports DEFLATE/ZSTD/LERC_DEFLATE/LERC_ZSTD/LZMA.",
 )
 @click.option(
+    "--overview_resampling",
+    type=str,
+    default="NEAREST",
+    help="The resampling method used for generating the overviews COG mosaic. "
+    "Passed to `gdal_translate -co OVERVIEW_RESAMPLING=...`. "
+    "Supports NEAREST, BILINEAR, CUBIC, CUBICSPLINE, LANCZOS, AVERAGE, RMS, MODE",
+)
+@click.option(
     "--level",
     type=int,
     default=9,
@@ -120,6 +128,7 @@ def make_mosaic_cli(
     output_dir,
     dataset_maturity,
     compress,
+    overview_resampling,
     level,
     overview_count,
     aws_unsigned,
@@ -169,12 +178,12 @@ def make_mosaic_cli(
             log.info(f"{run_id}: Writing data to temporary folder: {temp_location}")
 
             # Output paths for intermediate files
-            file_list_name = os.path.join(temp_location, f"{product}_{year}_{band}.txt")
-            vrt_name = os.path.join(temp_location, f"{product}_{year}_{band}.vrt")
-            output_name = os.path.join(temp_location, f"{product}_{year}_{band}.tif")
+            file_list_name = os.path.join(temp_location, f"{product}_mosaic_{year}_{band}.txt")
+            vrt_name = os.path.join(temp_location, f"{product}_mosaic_{year}_{band}.vrt")
+            output_name = os.path.join(temp_location, f"{product}_mosaic_{year}_{band}.tif")
 
             # Final output location
-            output_file_path = os.path.join(output_dir, f"{product}_{year}_{band}.tif")
+            output_file_path = os.path.join(output_dir, f"{product}_mosaic_{year}_{band}.tif")
             log.info(f"{run_id}: Output file path: {output_file_path}")
 
             # Write list of files to a temporary text file, so it can be
@@ -207,16 +216,16 @@ def make_mosaic_cli(
                     "gdal_translate",
                     vrt_name,
                     output_name,
-                    "-co", "NUM_THREADS=ALL_CPUS",              # Parallelisation
-                    "-of", "COG",                               # Output format
-                    "-co", "BIGTIFF=YES",                       # Allow large TIFFs
-                    "-co", "BLOCKSIZE=1024",                    # Tiling
-                    "-co", "OVERVIEWS=IGNORE_EXISTING",         # Force overview regen
-                    "-co", "OVERVIEW_RESAMPLING=NEAREST",       # Resampling for overviews
-                    "-co", f"OVERVIEW_COUNT={overview_count}",  # Number of overviews
-                    "-co", f"COMPRESS={compress}",              # Compression
-                    "-co", f"LEVEL={level}",                    # Compression level
-                    "-co", "PREDICTOR=YES",                     # Compression predictor
+                    "-co", "NUM_THREADS=ALL_CPUS",                     # Parallelisation
+                    "-of", "COG",                                      # Output format
+                    "-co", "BIGTIFF=YES",                              # Allow large TIFFs
+                    "-co", "BLOCKSIZE=1024",                           # Tiling
+                    "-co", "OVERVIEWS=IGNORE_EXISTING",                # Force overview regen
+                    "-co", f"OVERVIEW_RESAMPLING={overview_resampling}", # Resampling for overviews
+                    "-co", f"OVERVIEW_COUNT={overview_count}",         # Number of overviews
+                    "-co", f"COMPRESS={compress}",                     # Compression
+                    "-co", f"LEVEL={level}",                           # Compression level
+                    "-co", "PREDICTOR=YES",                            # Compression predictor
                 ],
                 check=True,
             )
