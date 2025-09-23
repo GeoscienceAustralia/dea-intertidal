@@ -8,6 +8,8 @@
 !*.sh
 !*.yaml
 !*.yml
+!*.toml
+!*.lock
 !*.in
 !*.txt
 !**.github/workflows
