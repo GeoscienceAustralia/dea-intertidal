@@ -6,9 +6,11 @@ FROM ghcr.io/osgeo/gdal:ubuntu-small-3.7.3
 
 # The installer requires curl (and certificates) to download the release archive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    git && \
+    curl \  # required to download uv
+    ca-certificates \  # required to download uv
+    build-essential \  # required to build psycopg2
+    libpq-dev \  # required to build psycopg2
+    git && \  # required for hatchling versioning
     rm -rf /var/lib/apt/lists/*
 
 # Download uv installer
