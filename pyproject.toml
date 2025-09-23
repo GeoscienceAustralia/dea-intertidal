@@ -69,7 +69,7 @@ Repository = "https://github.com/GeoscienceAustralia/eo-tides"
 
 [project.optional-dependencies]
 datacube = [
-    "datacube[s3,performance]>=1.8.19",
+    "datacube[s3,performance,postgres]>=1.8.19",
     "eodatasets3>=0.30.9",
     "odc-ui>=0.2.1",
 ]
