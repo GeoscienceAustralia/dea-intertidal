@@ -340,7 +340,7 @@ def load_gmw_mask(
     By default, this code the Sentinel-2-based 2020 GMW extents dataset.
     """
     gmw_gdf = gpd.read_file(
-        gmw_path, bbox=ds.odc.geobox.to_crs("EPSG:4326").boundingbox
+        gmw_path, bbox=tuple(ds.odc.geobox.to_crs("EPSG:4326").boundingbox)
     )
     gmw_da = xr_rasterize(gmw_gdf, ds)
     return gmw_da
