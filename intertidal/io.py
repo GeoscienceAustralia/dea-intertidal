@@ -119,9 +119,9 @@ def extract_geobox(
     try:
         from datacube.utils.geometry import Geometry as Geometry_datacube18
 
-        GEOM_TYPES = (odc.geo.geom.Geometry, Geometry_datacube18)
+        geom_types = (odc.geo.geom.Geometry, Geometry_datacube18)
     except ImportError:
-        GEOM_TYPES = odc.geo.geom.Geometry
+        geom_types = (odc.geo.geom.Geometry,)
 
     # Either `study_area` or `geom` must be provided
     if study_area is None and geom is None:
@@ -130,11 +130,11 @@ def extract_geobox(
         )
 
     # If custom geom is provided, verify it is a geometry
-    if geom is not None and not isinstance(geom, GEOM_TYPES):
+    if geom is not None and not isinstance(geom, geom_types):
         raise ValueError("Unsupported input type for `geom`; please provide a datacube Geometry object.")
 
     # Otherwise, extract GeoBox from geometry
-    if geom is not None and isinstance(geom, GEOM_TYPES):
+    if geom is not None and isinstance(geom, geom_types):
         geobox = GeoBox.from_geopolygon(geom, crs=crs, resolution=resolution)
 
     # If no custom geom provided, load tile from GridSpec tile grid
