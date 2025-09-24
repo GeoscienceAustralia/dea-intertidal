@@ -103,7 +103,7 @@ jobs:
             --env AWS_SESSION_TOKEN \
             --volume ${GITHUB_WORKSPACE}:/app \
             --volume ${GITHUB_WORKSPACE}/tide_models:/var/share/tide_models \
-            dea_intertidal uv run pytest -v --cov=intertidal --cov-report=xml tests
+            dea_intertidal uv run --venv .venv pytest -v --cov=intertidal --cov-report=xml tests
 
       # Commit validation results produced by integration tests back into repo
       # (relies on having previously added a volume to access outputs outside of the container)
