@@ -25,6 +25,27 @@ The DEA Intertidal product suite maps the changing elevation, exposure and tidal
 
 Incorporating both Sentinel-2 and Landsat data, the product suite provides an annual 10 m resolution elevation product for the intertidal zone, enabling users to better monitor and understand some of the most dynamic regions of Australia's coastlines. Utilising an improved tidal modelling capability, the product suite includes a continental scale mapping of intertidal exposure over time, enabling scientists and managers to integrate the data into ecological and migratory species applications and modelling.
 
+## Installation
+
+You can install `dea-intertidal` from PyPI with `pip` (https://pypi.org/project/dea-intertidal/). 
+By default `dea-intertidal` will be installed with minimal dependencies which excludes `datacube`:
+
+```console
+pip install dea-intertidal
+```
+
+To install with additional `datacube` dependencies:
+
+```console
+pip install dea-intertidal[datacube]
+```
+
+Functions can then be imported in Python:
+
+```python
+from intertidal.elevation import elevation
+```
+
 ## Repository structure
 
 The DEA Intertidal Github repository contains the following important sections:
