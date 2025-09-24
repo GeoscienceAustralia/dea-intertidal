@@ -1,15 +1,13 @@
-import pytest
-
-from click.testing import CliRunner
 import eodatasets3.validate
+import pytest
+from click.testing import CliRunner
 
 from intertidal.composites import tidal_composites_cli
 
 
-@pytest.mark.dependency()
+@pytest.mark.dependency
 def test_tidal_composites_cli():
-    """
-    This test runs the DEA Tidal Composites CLI
+    """This test runs the DEA Tidal Composites CLI
     from start to finish, and will fail if any
     error is raised.
     """
@@ -40,8 +38,7 @@ def test_tidal_composites_cli():
 
 @pytest.mark.dependency(depends=["test_tidal_composites_cli"])
 def test_validate_composites_metadata():
-    """
-    Validates output EO3 metadata against product definition and metadata type.
+    """Validates output EO3 metadata against product definition and metadata type.
     This will detect issues like incorrect datatypes, band names, nodata
     or missing bands.
     """

@@ -1,39 +1,36 @@
 import sys
-import numpy as np
-import pandas as pd
-import xarray as xr
-import seaborn as sns
-import matplotlib.pyplot as plt
-from skimage.morphology import binary_dilation
 from concurrent.futures import ProcessPoolExecutor
-from tqdm.auto import tqdm
 from itertools import repeat
+
 import click
-
 import datacube
-import odc.geo.xr
-from odc.geo.geom import BoundingBox
-from odc.algo import xr_quantile
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+import xarray as xr
 from datacube.utils.aws import configure_s3_access
-from eo_tides.eo import pixel_tides
 from dea_tools.dask import create_local_dask_cluster
+from eo_tides.eo import pixel_tides
+from odc.algo import xr_quantile
+from odc.geo.geom import BoundingBox
+from skimage.morphology import binary_dilation
+from tqdm.auto import tqdm
 
+from intertidal.exposure import exposure
+from intertidal.extents import extents, load_connectivity_mask
 from intertidal.io import (
+    export_dataset_metadata,
+    load_aclum_mask,
     load_data,
     load_topobathy_mask,
-    load_aclum_mask,
     prepare_for_export,
     tidal_metadata,
-    export_dataset_metadata,
 )
+from intertidal.tidal_bias_offset import bias_offset
 from intertidal.utils import (
     configure_logging,
-    round_date_strings,
     spearman_correlation,
 )
-from intertidal.extents import extents, load_connectivity_mask
-from intertidal.exposure import exposure
-from intertidal.tidal_bias_offset import bias_offset
 
 
 def ds_to_flat(
@@ -48,8 +45,7 @@ def ds_to_flat(
     correct_seasonality=False,
     valid_mask=None,
 ):
-    """
-    Flattens a three-dimensional array (x, y, time) to a two-dimensional
+    """Flattens a three-dimensional array (x, y, time) to a two-dimensional
     array (time, z) by selecting only pixels with positive correlations
     between water observations and tide height. This greatly improves
     processing time by ensuring only a narrow strip of pixels along the
@@ -107,6 +103,7 @@ def ds_to_flat(
         Frequency of wetness for each pixel (where NDWI > `ndwi_thresh`).
     corr : xr.DataArray
         Correlation of NDWI pixel wetness with tide height.
+
     """
     # Calculate clear count
     clear = satellite_ds[index].notnull().sum(dim="time").rename("qa_count_clear")
@@ -114,10 +111,7 @@ def ds_to_flat(
     # Calculate frequency of wet per pixel, then threshold
     # to exclude always wet and always dry
     freq = (
-        (satellite_ds[index] > ndwi_thresh)
-        .where(~satellite_ds[index].isnull())
-        .mean(dim="time")
-        .rename("qa_ndwi_freq")
+        (satellite_ds[index] > ndwi_thresh).where(~satellite_ds[index].isnull()).mean(dim="time").rename("qa_ndwi_freq")
     )
 
     # Mask out pixels outside of frequency bounds
@@ -130,11 +124,7 @@ def ds_to_flat(
 
     # Flatten satellite and freq data by stacking "y" and "x" dims.
     # Drop any pixels that are always empty, or empty timesteps
-    flat_ds = (
-        satellite_ds.stack(z=("y", "x"))
-        .dropna(dim="time", how="all")
-        .dropna(dim="z", how="all")
-    )
+    flat_ds = satellite_ds.stack(z=("y", "x")).dropna(dim="time", how="all").dropna(dim="z", how="all")
     freq = freq.stack(z=("y", "x"))
     clear = clear.stack(z=("y", "x"))
 
@@ -190,8 +180,7 @@ def rolling_tide_window(
     min_count=5,
     statistic="median",
 ):
-    """
-    Filter observations from a flattened array that fall within a
+    """Filter observations from a flattened array that fall within a
     specific tide window, and summarise these values using a given
     statistic (median, mean, or quantile).
 
@@ -227,17 +216,15 @@ def rolling_tide_window(
         Aggregated dataset of the selected statistic and additional
         information on the window. The returned dataset includes the
         aggregated NDWI values within the window.
-    """
 
+    """
     # Set min and max thresholds to filter dataset
     thresh_centre = tide_min + (i * window_spacing)
     thresh_min = thresh_centre - window_radius
     thresh_max = thresh_centre + window_radius
 
     # Filter dataset
-    masked_ds = flat_ds.where(
-        (flat_ds.tide_m >= thresh_min) & (flat_ds.tide_m <= thresh_max)
-    )
+    masked_ds = flat_ds.where((flat_ds.tide_m >= thresh_min) & (flat_ds.tide_m <= thresh_max))
 
     # Apply median or quantile
     if statistic == "quantile":
@@ -267,8 +254,7 @@ def pixel_rolling_median(
     min_count=5,
     max_workers=None,
 ):
-    """
-    Calculate rolling medians for each pixel in an xarray.Dataset from
+    """Calculate rolling medians for each pixel in an xarray.Dataset from
     low to high tide, using a set number of rolling windows (defined
     by `windows_n`) with radius determined by the proportion of the tide
     range specified by `window_prop_tide`.
@@ -311,8 +297,8 @@ def pixel_rolling_median(
         An two dimensional (interval, z) xarray.Dataset containing
         rolling medians for each pixel along intervals from low to high
         tide.
-    """
 
+    """
     # First obtain some required statistics on the satellite-observed
     # min, max and tide range per pixel
     tide_max = flat_ds.tide_m.max(dim="time")
@@ -376,8 +362,7 @@ def pixel_dem(
     min_periods=5,
     debug=False,
 ):
-    """
-    Calculates an estimate of intertidal elevation based on satellite
+    """Calculates an estimate of intertidal elevation based on satellite
     imagery and tide data. Elevation is modelled by identifying the
     tide height at which a pixel transitions from dry to wet; calculated
     here as the first/minimum tide height at which a rolling median of
@@ -419,15 +404,13 @@ def pixel_dem(
     xarray.Dataset
         An xarray Dataset containing the DEM for the given area, with
         a single variable 'elevation'.
-    """
 
+    """
     # Apply optional interval interpolation
     if interp_intervals is not None:
         print(f"Applying tidal interval interpolation to {interp_intervals} intervals")
         interval_ds = interval_ds.interp(
-            coords={
-                "interval": np.linspace(0, interval_ds.interval.max().item(), interp_intervals)
-            },
+            coords={"interval": np.linspace(0, interval_ds.interval.max().item(), interp_intervals)},
             method="linear",
             # Required as recent versions of xarray return new coord as a variable
         ).set_coords("interval")
@@ -438,9 +421,7 @@ def pixel_dem(
         smoothed_ds = interval_ds.rolling(
             interval=smooth_radius,
             center=False,
-            min_periods=(
-                int(smooth_radius / 2.0) if min_periods == "auto" else min_periods
-            ),
+            min_periods=(int(smooth_radius / 2.0) if min_periods == "auto" else min_periods),
         ).mean()
     else:
         smoothed_ds = interval_ds
@@ -486,9 +467,7 @@ def pixel_dem_debug(
 ):
     # Unstack data back to x, y so we can select pixels by their coordinates
     flat_unstacked = flat_ds[["tide_m", "ndwi"]].unstack().sortby(["time", "x", "y"])
-    interval_unstacked = (
-        interval_ds[["tide_m", "ndwi"]].unstack().sortby(["interval", "x", "y"])
-    )
+    interval_unstacked = interval_ds[["tide_m", "ndwi"]].unstack().sortby(["interval", "x", "y"])
 
     # Extract nearest pixel to x and y coords
     flat_pixel = flat_unstacked.sel(x=x, y=y, method="nearest")
@@ -539,9 +518,7 @@ def pixel_dem_debug(
 
     if not isinstance(ndwi_thresh, float):
         plt.plot(
-            interval_smoothed_pixel.tide_m.sel(
-                interval=~interval_smoothed_pixel.tide_m.isnull()
-            ),
+            interval_smoothed_pixel.tide_m.sel(interval=~interval_smoothed_pixel.tide_m.isnull()),
             ndwi_thresh.sel(interval=~interval_smoothed_pixel.tide_m.isnull()),
             color="black",
             linestyle="--",
@@ -549,14 +526,10 @@ def pixel_dem_debug(
             alpha=1,
         )
     else:
-        plt.gca().axvspan(
-            elev_low_mad.item(), elev_high_mad.item(), color="lightgrey", alpha=0.3
-        )
+        plt.gca().axvspan(elev_low_mad.item(), elev_high_mad.item(), color="lightgrey", alpha=0.3)
         plt.gca().axhline(ndwi_thresh, color="black", linestyle="--", lw=1, alpha=1)
 
-    plt.gca().axvline(
-        flat_dem_pixel.elevation, color="black", linestyle="--", lw=1, alpha=1
-    )
+    plt.gca().axvline(flat_dem_pixel.elevation, color="black", linestyle="--", lw=1, alpha=1)
     plt.gca().set_ylim(plot_ylim)
     plt.gca().set_xlabel("Tide height (m)")
     plt.gca().set_ylabel("NDWI")
@@ -573,8 +546,7 @@ def pixel_uncertainty(
     min_q=0.25,
     max_q=0.75,
 ):
-    """
-    Calculate one-sided uncertainty bounds around a modelled elevation
+    """Calculate one-sided uncertainty bounds around a modelled elevation
     based on observations that were misclassified by a given NDWI
     threshold.
 
@@ -625,26 +597,20 @@ def pixel_uncertainty(
     misclassified_sum : xarray.DataArray
         The sum of individual satellite observations misclassified by
         the modelled elevation and NDWI threshold.
-    """
 
+    """
     # Identify observations that were misclassifed by our modelled
     # elevation: e.g. wet observations (NDWI > threshold) at lower tide
     # heights than our modelled elevation, or dry observations (NDWI <
     # threshold) at higher tide heights than our modelled elevation.
-    misclassified_wet = (flat_ds.ndwi > ndwi_thresh) & (
-        flat_ds.tide_m < flat_dem.elevation
-    )
-    misclassified_dry = (flat_ds.ndwi < ndwi_thresh) & (
-        flat_ds.tide_m > flat_dem.elevation
-    )
+    misclassified_wet = (flat_ds.ndwi > ndwi_thresh) & (flat_ds.tide_m < flat_dem.elevation)
+    misclassified_dry = (flat_ds.ndwi < ndwi_thresh) & (flat_ds.tide_m > flat_dem.elevation)
     misclassified_all = misclassified_wet | misclassified_dry
     misclassified_ds = flat_ds.where(misclassified_all)
 
     # Calculate sum of misclassified points
     misclassified_sum = (
-        misclassified_all.sum(dim="time")
-        .rename("misclassified_px_count")
-        .where(~flat_dem.elevation.isnull())
+        misclassified_all.sum(dim="time").rename("misclassified_px_count").where(~flat_dem.elevation.isnull())
     )
 
     # Calculate uncertainty by taking the Median Absolute Deviation of
@@ -697,8 +663,7 @@ def pixel_uncertainty(
 
 
 def flat_to_ds(flat_ds, template, stacked_dim="z"):
-    """
-    Convert a flattened xarray Dataset with a stacked dimension to its
+    """Convert a flattened xarray Dataset with a stacked dimension to its
     original spatial dimensions, based on a given template.
 
     Parameters
@@ -726,8 +691,8 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
     dimension, reindexes the resulting dataset to match the coordinates
     of the template, and transposes the dimensions to match the order of
     the template's spatial y/x dimensions.
-    """
 
+    """
     unstacked_ds = (
         # First, unstack back into y/x dimensions
         flat_ds.unstack(stacked_dim)
@@ -747,8 +712,7 @@ def flat_to_ds(flat_ds, template, stacked_dim="z"):
 
 
 def clean_edge_pixels(ds):
-    """
-    Clean intertidal elevation and uncertainty data by removing pixels
+    """Clean intertidal elevation and uncertainty data by removing pixels
     along the upper edge of the intertidal zone, where mixed pixels/edge
     effects mean that modelled elevations are likely to be inaccurate.
 
@@ -766,6 +730,7 @@ def clean_edge_pixels(ds):
     -------
     xarray.Dataset
         Cleaned elevation dataset with upper intertidal edge pixels removed.
+
     """
     # Dilate nodata area to identify edges of intertidal elevation data
     dilated = binary_dilation(ds.elevation.isnull())
@@ -796,8 +761,7 @@ def elevation(
     log=None,
     **model_tides_kwargs,
 ):
-    """
-    Generates DEA Intertidal Elevation outputs using satellite imagery
+    """Generates DEA Intertidal Elevation outputs using satellite imagery
     and tidal modeling.
 
     Parameters
@@ -881,8 +845,8 @@ def elevation(
     tide_m : xarray.DataArray
         An xarray.DataArray object containing the modeled tide
         heights for each pixel in the study area.
-    """
 
+    """
     # Set up logs if no log is passed in
     if log is None:
         log = configure_logging()
@@ -904,21 +868,15 @@ def elevation(
     # Set tide array pixels to nodata if the satellite data array pixels
     # contain nodata. This ensures that we ignore any tide observations
     # where we don't have matching satellite imagery
-    log.info(
-        f"{run_id}: Masking nodata and adding tide heights to satellite data array"
-    )
-    satellite_ds["tide_m"] = tide_m.where(
-        ~satellite_ds.to_array().isel(variable=0).isnull().drop_vars("variable")
-    )
+    log.info(f"{run_id}: Masking nodata and adding tide heights to satellite data array")
+    satellite_ds["tide_m"] = tide_m.where(~satellite_ds.to_array().isel(variable=0).isnull().drop_vars("variable"))
 
     # Flatten array from 3D (time, y, x) to 2D (time, z) and drop pixels
     # with no correlation with tide. This greatly improves processing
     # time by ensuring only a narrow strip of tidally influenced pixels
     # along the coast are analysed, rather than the entire study area.
     # (This step is later reversed using the `flat_to_ds` function)
-    log.info(
-        f"{run_id}: Flattening satellite data array and filtering to intertidal candidate pixels"
-    )
+    log.info(f"{run_id}: Flattening satellite data array and filtering to intertidal candidate pixels")
     if valid_mask is not None:
         log.info(f"{run_id}: Applying valid data mask to constrain study area")
     flat_ds, freq, corr, clear = ds_to_flat(
@@ -988,8 +946,7 @@ def elevation(
     "--study_area",
     type=str,
     required=True,
-    help="A string providing a GridSpec tile ID (e.g. in the form "
-    "'x123y123') to run the analysis on.",
+    help="A string providing a GridSpec tile ID (e.g. in the form 'x123y123') to run the analysis on.",
 )
 @click.option(
     "--start_date",
@@ -1020,7 +977,7 @@ def elevation(
     "--output_version",
     type=str,
     required=True,
-    help="The version number to use for output files and metadata (e.g. " "'0.0.1').",
+    help="The version number to use for output files and metadata (e.g. '0.0.1').",
 )
 @click.option(
     "--output_dir",
@@ -1033,15 +990,13 @@ def elevation(
     "--product_maturity",
     type=str,
     default="stable",
-    help="Product maturity metadata to use for the output dataset. "
-    "Defaults to 'stable', can also be 'provisional'.",
+    help="Product maturity metadata to use for the output dataset. Defaults to 'stable', can also be 'provisional'.",
 )
 @click.option(
     "--dataset_maturity",
     type=str,
     default="final",
-    help="Dataset maturity metadata to use for the output dataset. "
-    "Defaults to 'final', can also be 'interim'.",
+    help="Dataset maturity metadata to use for the output dataset. Defaults to 'final', can also be 'interim'.",
 )
 @click.option(
     "--resolution",
@@ -1063,15 +1018,13 @@ def elevation(
     "--min_freq",
     type=float,
     default=0.01,
-    help="Minimum frequency of wetness required for a pixel to be "
-    "included in the analysis, by default 0.01.",
+    help="Minimum frequency of wetness required for a pixel to be included in the analysis, by default 0.01.",
 )
 @click.option(
     "--max_freq",
     type=float,
     default=0.99,
-    help="Maximum frequency of wetness required for a pixel to be "
-    "included in the analysis, by default 0.99.",
+    help="Maximum frequency of wetness required for a pixel to be included in the analysis, by default 0.99.",
 )
 @click.option(
     "--min_correlation",
@@ -1085,8 +1038,7 @@ def elevation(
     "--windows_n",
     type=int,
     default=100,
-    help="Number of rolling windows to iterate over in the per-pixel "
-    "rolling median calculation, by default 100.",
+    help="Number of rolling windows to iterate over in the per-pixel rolling median calculation, by default 100.",
 )
 @click.option(
     "--window_prop_tide",
@@ -1197,9 +1149,7 @@ def intertidal_cli(
         # Use a custom polygon if in testing mode
         if study_area == "testing":
             log.info(f"{run_id}: Running in testing mode using custom study area")
-            geom = BoundingBox(
-                467510, -1665790, 468260, -1664840, crs="EPSG:3577"
-            ).polygon
+            geom = BoundingBox(467510, -1665790, 468260, -1664840, crs="EPSG:3577").polygon
         else:
             geom = None
 
@@ -1233,9 +1183,7 @@ def intertidal_cli(
         # Also load ancillary dataset IDs to use in metadata
         # (both layers are continental continental products with only
         # a single dataset, so no need for a spatial/temporal query)
-        dss_ancillary = dc.find_datasets(
-            product=["ga_ausbathytopo250m_2023", "abares_clum_2020"]
-        )
+        dss_ancillary = dc.find_datasets(product=["ga_ausbathytopo250m_2023", "abares_clum_2020"])
 
         # Calculate elevation
         log.info(f"{run_id}: Calculating Intertidal Elevation")
@@ -1266,9 +1214,7 @@ def intertidal_cli(
         )
 
         # Add coastal connectivity output layer
-        ds["qa_coastal_connectivity"] = coastal_connectivity.where(
-            coastal_connectivity < 65535
-        )
+        ds["qa_coastal_connectivity"] = coastal_connectivity.where(coastal_connectivity < 65535)
 
         if exposure_offsets:
             log.info(f"{run_id}: Calculating Intertidal Exposure")
@@ -1284,7 +1230,7 @@ def intertidal_cli(
             )
 
             # Write the unfiltered exposure output as new variable in the main dataset
-            ds[f"exposure"] = exposure_ds["unfiltered"]
+            ds["exposure"] = exposure_ds["unfiltered"]
 
             # Translate unfiltered exposure outputs to match continental
             # product suite

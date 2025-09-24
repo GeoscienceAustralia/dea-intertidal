@@ -1,35 +1,33 @@
 import os
 import sys
+
 import click
-import numpy as np
-import xarray as xr
 import datacube
+import numpy as np
 import odc.geo.xr
-from odc.geo.geom import BoundingBox
+import xarray as xr
+from datacube.utils.aws import configure_s3_access
+from dea_tools.dask import create_local_dask_cluster
+from eo_tides.eo import pixel_tides
 from odc.algo import (
     int_geomedian,
     keep_good_only,
-    xr_quantile,
 )
-from datacube.utils.aws import configure_s3_access
-from eo_tides.eo import pixel_tides
-from dea_tools.dask import create_local_dask_cluster
+from odc.geo.geom import BoundingBox
 
-from intertidal.utils import configure_logging
 from intertidal.io import (
+    export_dataset_metadata,
     load_data,
     prepare_for_export,
     tidal_metadata,
-    export_dataset_metadata,
 )
+from intertidal.utils import configure_logging
 
 
 # Function to rename the bands
 def rename_bands(ds, old_string, new_string):
     # Create a new dataset with renamed bands
-    ds_renamed = ds.rename(
-        {band: band.replace(old_string, new_string) for band in ds.data_vars}
-    )
+    ds_renamed = ds.rename({band: band.replace(old_string, new_string) for band in ds.data_vars})
     return ds_renamed
 
 
@@ -66,16 +64,38 @@ def tidal_thresholds(
 
 
 def filter_granules(dataset):
-    """
-    Return False for any Sentinel-2 dataset with a MGRS
+    """Return False for any Sentinel-2 dataset with a MGRS
     granule region code in the list of bad region codes.
     """
-    drop_list = ["50HKG", "50HNF", "51LWD", "51LXE", "51LZF",
-                 "52LBL", "52LCL", "52LDK", "53HNA", "53LRC",
-                 "54GYU", "54LWR", "54LXR", "54LYR", "55GBP",
-                 "55KEA", "55KFV", "55KGV", "55KHT", "55KHU",
-                 "56KKC", "56KLC", "56KMC", "56KMV", "56KNU",
-                 "54LWQ", "54LWP"]
+    drop_list = [
+        "50HKG",
+        "50HNF",
+        "51LWD",
+        "51LXE",
+        "51LZF",
+        "52LBL",
+        "52LCL",
+        "52LDK",
+        "53HNA",
+        "53LRC",
+        "54GYU",
+        "54LWR",
+        "54LXR",
+        "54LYR",
+        "55GBP",
+        "55KEA",
+        "55KFV",
+        "55KGV",
+        "55KHT",
+        "55KHU",
+        "56KKC",
+        "56KLC",
+        "56KMC",
+        "56KMV",
+        "56KNU",
+        "54LWQ",
+        "54LWP",
+    ]
     return dataset.metadata.region_code not in drop_list
 
 
@@ -92,8 +112,7 @@ def tidal_composites(
     run_id=None,
     log=None,
 ):
-    """
-    Calculates Geometric Median composites of the coastal zone at low
+    """Calculates Geometric Median composites of the coastal zone at low
     and high tide using satellite imagery and tidal modeling.
 
     This function uses tools from `odc.algo` to keep data in its
@@ -157,8 +176,8 @@ def tidal_composites(
     ds_hightide : xarray.Dataset
         xarray.Dataset object containing a geomedian of the observations
         with the highest X quantile tide values for each pixel.
-    """
 
+    """
     # Set up logs if no log is passed in
     if log is None:
         log = configure_logging()
@@ -184,9 +203,7 @@ def tidal_composites(
     tides_highres = tides_highres.where(nodata_array)
 
     # Calculate low and high tide thresholds from masked tide data
-    log.info(
-        f"{run_id}: Calculating low and high tide thresholds with minimum {min_obs} observations"
-    )
+    log.info(f"{run_id}: Calculating low and high tide thresholds with minimum {min_obs} observations")
     low_threshold, high_threshold = tidal_thresholds(
         tides_highres=tides_highres,
         threshold_lowtide=threshold_lowtide,
@@ -206,13 +223,9 @@ def tidal_composites(
     ds_high = satellite_ds.sel(time=high_keep)
 
     # Load low and high subsets of data into memory
-    log.info(
-        f"{run_id}: Loading {len(ds_low.time)} low tide satellite images into memory"
-    )
+    log.info(f"{run_id}: Loading {len(ds_low.time)} low tide satellite images into memory")
     ds_low.load()
-    log.info(
-        f"{run_id}: Loading {len(ds_high.time)} high tide satellite images into memory"
-    )
+    log.info(f"{run_id}: Loading {len(ds_high.time)} high tide satellite images into memory")
     ds_high.load()
 
     # Use `keep_good_only` to set any pixels outside of the tide masks to nodata
@@ -239,9 +252,7 @@ def tidal_composites(
     # Calculate clear count (both low and high tide clear counts
     # are identical, so we can just use one)
     log.info(f"{run_id}: Calculating clear counts")
-    ds_lowtide["qa_count_clear"] = (
-        (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
-    )
+    ds_lowtide["qa_count_clear"] = (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
 
     # Add low and high tide thresholds to the output datasets
     ds_lowtide["qa_low_threshold"] = low_threshold
@@ -255,8 +266,7 @@ def tidal_composites(
     "--study_area",
     type=str,
     required=True,
-    help="A string providing a GridSpec tile ID (e.g. in the form "
-    "'x123y123') to run the analysis on.",
+    help="A string providing a GridSpec tile ID (e.g. in the form 'x123y123') to run the analysis on.",
 )
 @click.option(
     "--start_date",
@@ -287,7 +297,7 @@ def tidal_composites(
     "--output_version",
     type=str,
     required=True,
-    help="The version number to use for output files and metadata (e.g. " "'0.0.1').",
+    help="The version number to use for output files and metadata (e.g. '0.0.1').",
 )
 @click.option(
     "--output_dir",
@@ -300,15 +310,13 @@ def tidal_composites(
     "--product_maturity",
     type=str,
     default="provisional",
-    help="Product maturity metadata to use for the output dataset. "
-    "Defaults to 'provisional', can also be 'stable'.",
+    help="Product maturity metadata to use for the output dataset. Defaults to 'provisional', can also be 'stable'.",
 )
 @click.option(
     "--dataset_maturity",
     type=str,
     default="final",
-    help="Dataset maturity metadata to use for the output dataset. "
-    "Defaults to 'final', can also be 'interim'.",
+    help="Dataset maturity metadata to use for the output dataset. Defaults to 'final', can also be 'interim'.",
 )
 @click.option(
     "--resolution",
@@ -350,8 +358,7 @@ def tidal_composites(
     "--gqa_filter/--no-gqa_filter",
     type=bool,
     default=True,
-    help="Whether to filter scenes when loading data based on gqa values. "
-    "Defaults to True",
+    help="Whether to filter scenes when loading data based on gqa values. Defaults to True",
 )
 @click.option(
     "--include_coastal_aerosol/--no-include_coastal_aerosol",
@@ -433,14 +440,13 @@ def tidal_composites_cli(
     overwrite,
 ):
     # Create sample filename to test if data exists on file system
-    filename = f"{output_dir}ga_s2_tidal_composites_cyear_3/{output_version.replace('.','-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_tidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
+    filename = f"{output_dir}ga_s2_tidal_composites_cyear_3/{output_version.replace('.', '-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_tidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
 
     process_tile = True
     if overwrite:
         process_tile = True
-    else:
-        if os.path.exists(filename):
-            process_tile = False
+    elif os.path.exists(filename):
+        process_tile = False
 
     # Create a unique run ID based on input params and use for logs
     input_params = locals()
@@ -454,9 +460,7 @@ def tidal_composites_cli(
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
     if process_tile:
-
         try:
-
             # Create local dask cluster to improve data load time
             client = create_local_dask_cluster(return_client=True)
 
@@ -466,9 +470,7 @@ def tidal_composites_cli(
             # Use a custom polygon if in testing mode
             if study_area == "testing":
                 log.info(f"{run_id}: Running in testing mode using custom study area")
-                geom = BoundingBox(
-                    467510, -1665790, 468260, -1664840, crs="EPSG:3577"
-                ).polygon
+                geom = BoundingBox(467510, -1665790, 468260, -1664840, crs="EPSG:3577").polygon
             else:
                 geom = None
 
@@ -494,15 +496,11 @@ def tidal_composites_cli(
                 dtype="int16",
                 dataset_predicate=filter_granules,
             )
-            log.info(
-                f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps"
-            )
+            log.info(f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps")
 
             # Fail early if not enough observations
             if len(satellite_ds.time) < 50:
-                raise Exception(
-                    "Insufficient satellite data available to process composites; skipping."
-                )
+                raise Exception("Insufficient satellite data available to process composites; skipping.")
 
             # Calculate high and low tide geomedian composites
             log.info(f"{run_id}: Running DEA Tidal Composites workflow")
@@ -528,9 +526,7 @@ def tidal_composites_cli(
             ds_tidalcomposites = xr.merge([ds_lowtide, ds_hightide])
 
             # Ensure spatial information is still attached
-            ds_tidalcomposites = odc.geo.xr.assign_crs(
-                ds_tidalcomposites, satellite_ds.odc.crs
-            )
+            ds_tidalcomposites = odc.geo.xr.assign_crs(ds_tidalcomposites, satellite_ds.odc.crs)
 
             custom_dtypes = {
                 "low_coastal_aerosol": (np.int16, -999),

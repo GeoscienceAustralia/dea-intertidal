@@ -1,35 +1,21 @@
-import datacube
-import odc.geo.xr
-
-import xarray as xr
-import numpy as np
-import pandas as pd
 import geopandas as gpd
-
+import numpy as np
+import xarray as xr
+from dea_tools.spatial import xr_interpolate, xr_rasterize
+from odc.algo import mask_cleanup
+from odc.geo.geobox import GeoBox
+from odc.geo.xr import xr_zeros
+from rasterio.features import sieve
 from skimage import graph
 from skimage.measure import label, regionprops
-from skimage.morphology import binary_erosion, disk
-from odc.geo.geobox import GeoBox
-from odc.geo.gridspec import GridSpec
-from odc.geo.types import xy_
-from odc.algo import mask_cleanup
-from odc.geo.xr import xr_zeros
-from dea_tools.spatial import xr_rasterize, xr_interpolate
-from rasterio.features import sieve
-from intertidal.io import (
-    load_aclum_mask,
-    extract_geobox,
-)
 
 
 def class_connection(split_classes, reference, connectivity=1):
-    """
-
-    Identifies areas of water pixels that are adjacent to or directly
+    """Identifies areas of water pixels that are adjacent to or directly
     connected to intertidal pixels.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     split_classes : xarray.DataArray
         An array containing True for pixels that require class separation
         based on their connection to the reference dataset e.g. inland and
@@ -41,14 +27,14 @@ def class_connection(split_classes, reference, connectivity=1):
         An integer passed to the 'connectivity' parameter of the
         `skimage.measure.label` function.
 
-    Returns:
-    --------
+    Returns
+    -------
     connection_mask : xarray.DataArray
         An array containing True for pixels connected to the reference array
         e.g. all water pixels contained within or intersecting a coastal
         cost-distance connectivity mask.
-    """
 
+    """
     # First, break `split_classes` array into unique, discrete
     # regions/blobs.
     blobs = xr.apply_ufunc(label, split_classes, 0, False, connectivity)
@@ -57,22 +43,13 @@ def class_connection(split_classes, reference, connectivity=1):
     # whether it overlaps with a feature from `reference`. If
     # it does, then it is considered to be adjacent or directly connected
     # to reference pixels
-    connection_mask = blobs.isin(
-        [
-            i.label
-            for i in regionprops(blobs.values, reference.values)
-            if i.max_intensity
-        ]
-    )
+    connection_mask = blobs.isin([i.label for i in regionprops(blobs.values, reference.values) if i.max_intensity])
 
     return connection_mask
 
 
-def _cost_distance(
-    cost_surface, start_array, sampling=None, geometric=True, **mcp_kwargs
-):
-    """
-    Calculate accumulated least-cost distance through a cost surface
+def _cost_distance(cost_surface, start_array, sampling=None, geometric=True, **mcp_kwargs):
+    """Calculate accumulated least-cost distance through a cost surface
     array from a set of starting cells to every other cell in an array,
     using methods from `skimage.graph.MCP` or `skimage.graph.MCP_Geometric`.
 
@@ -100,8 +77,8 @@ def _cost_distance(
     -------
     lcd : ndarray
         A 2D array of the least-cost distances from the start cell to all other cells.
-    """
 
+    """
     # Initialise relevant least cost graph
     if geometric:
         lc_graph = graph.MCP_Geometric(
@@ -117,7 +94,7 @@ def _cost_distance(
         )
 
     # Extract starting points from the array (pixels with non-zero values)
-    starts = list(zip(*np.nonzero(start_array)))
+    starts = list(zip(*np.nonzero(start_array), strict=False))
 
     # Calculate the least-cost distance from the start cell to all other cells
     lcd = lc_graph.find_costs(starts=starts)[0]
@@ -126,8 +103,7 @@ def _cost_distance(
 
 
 def xr_cost_distance(cost_da, starts_da, use_cellsize=False, geometric=True):
-    """
-    Calculate accumulated least-cost distance through a cost surface
+    """Calculate accumulated least-cost distance through a cost surface
     array from a set of starting cells to every other cell in an
     xarray.DataArray, returning results as an xarray.DataArray.
 
@@ -156,8 +132,8 @@ def xr_cost_distance(cost_da, starts_da, use_cellsize=False, geometric=True):
     costdist_da : xarray.DataArray
         An xarray.DataArray providing least-cost distances between every
         cell and the nearest start cell.
-    """
 
+    """
     # Use resolution from input arrays if requested
     if use_cellsize:
         x, y = cost_da.odc.geobox.resolution.xy
@@ -166,9 +142,7 @@ def xr_cost_distance(cost_da, starts_da, use_cellsize=False, geometric=True):
         cellsize = None
 
     # Compute least cost array
-    costdist_array = _cost_distance(
-        cost_da, starts_da.values, sampling=cellsize, geometric=geometric
-    )
+    costdist_array = _cost_distance(cost_da, starts_da.values, sampling=cellsize, geometric=geometric)
 
     # Wrap as xarray
     costdist_da = xr.DataArray(costdist_array, coords=cost_da.coords)
@@ -190,8 +164,7 @@ def load_connectivity_mask(
     mask_filters=[("dilation", 3)],
     **cost_distance_kwargs,
 ):
-    """
-    Generates a mask based on connectivity to ocean pixels, using least-
+    """Generates a mask based on connectivity to ocean pixels, using least-
     cost distance weighted by elevation. By incorporating elevation,
     this mask will extend inland further in areas of low lying elevation
     and less far inland in areas of steep terrain.
@@ -248,8 +221,8 @@ def load_connectivity_mask(
     costdist_da : xarray.DataArray
         The output cost-distance array, reflecting distance from the
         ocean weighted by elevation.
-    """
 
+    """
     # Buffer input geobox and reduce resolution to ensure that the
     # connectivity analysis is less affected by edge effects
     print("Loading SRTM data at native 30 m resolution")
@@ -287,9 +260,7 @@ def load_connectivity_mask(
 
     # Raise error if no valid starting points
     if not starts_da.any():
-        raise Exception(
-            "No valid starting points found for tile, likely due to being located too far inland"
-        )
+        raise Exception("No valid starting points found for tile, likely due to being located too far inland")
 
     # Apply a Highest Astronomical Tide correction, to make
     # costs based on height above HAT vs height above MSL
@@ -334,14 +305,11 @@ def load_gmw_mask(
     ds,
     gmw_path="https://dea-public-data-dev.s3-ap-southeast-2.amazonaws.com/derivative/dea_intertidal/supplementary/gmw_mng_2020_v4019.fgb",
 ):
-    """
-    Load mangrove extents from Global Mangrove Watch data to use
+    """Load mangrove extents from Global Mangrove Watch data to use
     as additional starting points in connectivity analysis.
     By default, this code the Sentinel-2-based 2020 GMW extents dataset.
     """
-    gmw_gdf = gpd.read_file(
-        gmw_path, bbox=tuple(ds.odc.geobox.to_crs("EPSG:4326").boundingbox)
-    )
+    gmw_gdf = gpd.read_file(gmw_path, bbox=tuple(ds.odc.geobox.to_crs("EPSG:4326").boundingbox))
     gmw_da = xr_rasterize(gmw_gdf, ds)
     return gmw_da
 
@@ -356,8 +324,7 @@ def load_hat(
     interp_k=10,
     interp_factor=100,
 ):
-    """
-    Experiment with interpolating CSIRO HAT data to use
+    """Experiment with interpolating CSIRO HAT data to use
     as a correction to elevation values.
 
     Branson, Paul (2023): Coastal carbon - Australia's blue forest
@@ -384,11 +351,8 @@ def load_hat(
     return hat_correction
 
 
-def extents(
-    dem, freq, corr, coastal_mask, urban_mask, min_correlation=0.15, sieve_size=5
-):
-    """
-    Classify coastal ecosystems into broad classes based on
+def extents(dem, freq, corr, coastal_mask, urban_mask, min_correlation=0.15, sieve_size=5):
+    """Classify coastal ecosystems into broad classes based on
     wetting frequency, proximity to ocean, and relationships
     to tidal inundation, elevation, and urban land use.
 
@@ -433,8 +397,8 @@ def extents(
         - 3: Exposed intertidal (high confidence) (included in intertidal elevation dataset)
         - 4: Inland waters (wet >50% of observations, outside coastal mask)
         - 5: Land (wet <50% of observations)
-    """
 
+    """
     # Identify dataset geobox
     geobox = dem.odc.geobox
 

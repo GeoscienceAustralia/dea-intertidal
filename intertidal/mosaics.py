@@ -1,30 +1,22 @@
-import s3fs
-import shutil
-import os
 import glob
-import sys
-from pathlib import Path
-import tempfile
+import os
+import shutil
 import subprocess
-import pandas as pd
-import geopandas as gpd
+import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
-import click
 
+import click
+import s3fs
 from datacube.utils.aws import configure_s3_access
+
 from intertidal.utils import (
     configure_logging,
-    round_date_strings,
 )
-from pathlib import Path
-import os
 
 
 def _is_s3(path):
-    """
-    Determine whether output location is on S3.
-    """
+    """Determine whether output location is on S3."""
     uu = urlparse(path)
     return uu.scheme == "s3"
 
@@ -59,8 +51,7 @@ def _is_s3(path):
     "--product_dir",
     type=str,
     default="s3://dea-public-data-dev/derivative/",
-    help="The directory/location to read the tile COGs from; supports "
-    "both local disk and S3 locations.",
+    help="The directory/location to read the tile COGs from; supports both local disk and S3 locations.",
 )
 @click.option(
     "--output_dir",
@@ -76,8 +67,7 @@ def _is_s3(path):
     "--dataset_maturity",
     type=str,
     default="final",
-    help="The dataset maturity of the data to be mosaiced, e.g. "
-    "'final' or 'interim'.",
+    help="The dataset maturity of the data to be mosaiced, e.g. 'final' or 'interim'.",
 )
 @click.option(
     "--compress",
@@ -158,9 +148,7 @@ def make_mosaic_cli(
         log.info(f"{run_id}: Identifying input data from S3 bucket")
         fs = s3fs.S3FileSystem(anon=True)
         configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
-        cogs = fs.glob(
-            f"{product_dir}/**/**/{year}--P1Y/{product}_*{year}--P1Y_{dataset_maturity}_{band}.tif"
-        )
+        cogs = fs.glob(f"{product_dir}/**/**/{year}--P1Y/{product}_*{year}--P1Y_{dataset_maturity}_{band}.tif")
     else:
         # Determine what files are available on the local file system
         log.info(f"{run_id}: Identifying input data from local file system")
@@ -171,7 +159,6 @@ def make_mosaic_cli(
 
     log.info(f"{run_id}: Number of COGs to mosaic: {len(cogs)}")
     if len(cogs) > 0:
-
         # Create a temporary directory to house files before syncing
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_location = Path(temp_dir)
@@ -216,16 +203,26 @@ def make_mosaic_cli(
                     "gdal_translate",
                     vrt_name,
                     output_name,
-                    "-co", "NUM_THREADS=ALL_CPUS",                     # Parallelisation
-                    "-of", "COG",                                      # Output format
-                    "-co", "BIGTIFF=YES",                              # Allow large TIFFs
-                    "-co", "BLOCKSIZE=1024",                           # Tiling
-                    "-co", "OVERVIEWS=IGNORE_EXISTING",                # Force overview regen
-                    "-co", f"OVERVIEW_RESAMPLING={overview_resampling}", # Resampling for overviews
-                    "-co", f"OVERVIEW_COUNT={overview_count}",         # Number of overviews
-                    "-co", f"COMPRESS={compress}",                     # Compression
-                    "-co", f"LEVEL={level}",                           # Compression level
-                    "-co", "PREDICTOR=YES",                            # Compression predictor
+                    "-co",
+                    "NUM_THREADS=ALL_CPUS",  # Parallelisation
+                    "-of",
+                    "COG",  # Output format
+                    "-co",
+                    "BIGTIFF=YES",  # Allow large TIFFs
+                    "-co",
+                    "BLOCKSIZE=1024",  # Tiling
+                    "-co",
+                    "OVERVIEWS=IGNORE_EXISTING",  # Force overview regen
+                    "-co",
+                    f"OVERVIEW_RESAMPLING={overview_resampling}",  # Resampling for overviews
+                    "-co",
+                    f"OVERVIEW_COUNT={overview_count}",  # Number of overviews
+                    "-co",
+                    f"COMPRESS={compress}",  # Compression
+                    "-co",
+                    f"LEVEL={level}",  # Compression level
+                    "-co",
+                    "PREDICTOR=YES",  # Compression predictor
                 ],
                 check=True,
             )

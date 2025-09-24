@@ -1,30 +1,26 @@
 import os
-import pytz
-import pytest
-import pickle
-import datetime
-import rioxarray
-import numpy as np
-import pandas as pd
-import xarray as xr
-import seaborn as sns
-from mdutils import Html
-from mdutils.mdutils import MdUtils
-import matplotlib.pyplot as plt
-from click.testing import CliRunner
 
 import eodatasets3.validate
-from dea_tools.validation import eval_metrics
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import pytest
+import rioxarray
+import seaborn as sns
+import xarray as xr
+from click.testing import CliRunner
 from dea_tools.datahandling import load_reproject
+from dea_tools.validation import eval_metrics
+from mdutils import Html
+from mdutils.mdutils import MdUtils
 
-from intertidal.elevation import intertidal_cli, elevation
-from intertidal.validation import map_raster, preprocess_validation
+from intertidal.elevation import elevation, intertidal_cli
+from intertidal.validation import preprocess_validation
 
 
-@pytest.fixture()
+@pytest.fixture
 def satellite_ds():
-    """
-    Loads a pre-generated timeseries of satellite data from NetCDF.
+    """Loads a pre-generated timeseries of satellite data from NetCDF.
     This is used by the `test_elevation` test below.
     """
     satellite_ds = xr.open_dataset("tests/data/satellite_ds.nc")
@@ -36,10 +32,9 @@ def satellite_ds():
     return satellite_ds
 
 
-@pytest.mark.dependency()
+@pytest.mark.dependency
 def test_intertidal_cli():
-    """
-    This test runs the DEA Intertidal CLI
+    """This test runs the DEA Intertidal CLI
     from start to finish, and will fail if any
     error is raised.
     """
@@ -75,8 +70,7 @@ def test_dem_accuracy(
     output_plot="tests/validation.jpg",
     output_md="tests/README.md",
 ):
-    """
-    Compares elevation outputs of the previous CLI step against
+    """Compares elevation outputs of the previous CLI step against
     validation data, and calculates and evaluates a range of accuracy
     metrics.
     """
@@ -140,9 +134,7 @@ def test_dem_accuracy(
     # Heatmap plot #
     ################
 
-    lim_min, lim_max = np.percentile(
-        np.concatenate([validation_z, modelled_z]), [1, 99]
-    )
+    lim_min, lim_max = np.percentile(np.concatenate([validation_z, modelled_z]), [1, 99])
     lim_min -= 0.2
     lim_max += 0.2
     sns.kdeplot(
@@ -172,7 +164,7 @@ def test_dem_accuracy(
     )
     ax1.set_xlabel("Validation (m)")
     ax1.set_ylabel("Modelled (m)")
-    ax1.set_title(f"Modelled vs. validation elevation")
+    ax1.set_title("Modelled vs. validation elevation")
 
     # Formatting
     ax1.set_facecolor("black")
@@ -215,23 +207,13 @@ def test_dem_accuracy(
     accuracy_df_temp = accuracy_df_local.copy()
     accuracy_df_temp["Bias"] = accuracy_df_temp["Bias"].abs()
     recent_diff = accuracy_df_temp.diff(1).iloc[-1].to_frame("diff")
-    recent_diff.loc["Correlation"] = -recent_diff.loc[
-        "Correlation"
-    ]  # Invert as higher corrs are good
-    recent_diff.loc["R-squared"] = -recent_diff.loc[
-        "R-squared"
-    ]  # Invert as higher R2 are good
-    recent_diff.loc[recent_diff["diff"] < 0, "prefix"] = (
-        ":heavy_check_mark: improved by "
-    )
+    recent_diff.loc["Correlation"] = -recent_diff.loc["Correlation"]  # Invert as higher corrs are good
+    recent_diff.loc["R-squared"] = -recent_diff.loc["R-squared"]  # Invert as higher R2 are good
+    recent_diff.loc[recent_diff["diff"] < 0, "prefix"] = ":heavy_check_mark: improved by "
     recent_diff.loc[recent_diff["diff"] == 0, "prefix"] = ":heavy_minus_sign: no change"
-    recent_diff.loc[recent_diff["diff"] > 0, "prefix"] = (
-        ":heavy_exclamation_mark: worsened by "
-    )
+    recent_diff.loc[recent_diff["diff"] > 0, "prefix"] = ":heavy_exclamation_mark: worsened by "
     recent_diff["suffix"] = recent_diff["diff"].abs().round(3).replace({0: ""})
-    recent_diff = (
-        recent_diff.prefix.astype(str) + recent_diff.suffix.astype(str).str[0:5]
-    )
+    recent_diff = recent_diff.prefix.astype(str) + recent_diff.suffix.astype(str).str[0:5]
 
     mdFile = MdUtils(file_name=output_md, title="Integration tests")
     mdFile.new_header(level=1, title="Latest results")
@@ -245,8 +227,7 @@ def test_dem_accuracy(
     )
 
     mdFile.new_paragraph(
-        f"The latest integration test completed at **{latest_time}**. "
-        f"Compared to the previous run, it had an:"
+        f"The latest integration test completed at **{latest_time}**. Compared to the previous run, it had an:"
     )
     items = [
         f"RMSE accuracy of **{accuracy_df_local.RMSE[-1]:.2f} m ( {recent_diff.RMSE})**",
@@ -255,14 +236,13 @@ def test_dem_accuracy(
         f"Pearson correlation of **{accuracy_df_local.Correlation[-1]:.3f} ( {recent_diff.Correlation})**",
     ]
     mdFile.new_list(items=items)
-    mdFile.new_paragraph(Html.image(path=f"validation.jpg", size="950"))
+    mdFile.new_paragraph(Html.image(path="validation.jpg", size="950"))
     mdFile.create_md_file()
 
 
 @pytest.mark.dependency(depends=["test_intertidal_cli"])
 def test_validate_intertidal_metadata():
-    """
-    Validates output EO3 metadata against product definition and metadata type.
+    """Validates output EO3 metadata against product definition and metadata type.
     This will detect issues like incorrect datatypes, band names, nodata
     or missing bands.
     """

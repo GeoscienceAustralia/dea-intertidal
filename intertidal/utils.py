@@ -1,22 +1,18 @@
 import logging
+
 import bottleneck
-import xarray as xr
-import pandas as pd
 import numpy as np
+import pandas as pd
+import xarray as xr
 from pandas.tseries.offsets import MonthBegin, MonthEnd, YearBegin, YearEnd
-from pathlib import Path
 
 
 def configure_logging(name: str = "DEA Intertidal") -> logging.Logger:
-    """
-    Configure logging for the application.
-    """
+    """Configure logging for the application."""
     logger = logging.getLogger(name)
     if not logger.handlers:
         handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-        )
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -26,8 +22,7 @@ def configure_logging(name: str = "DEA Intertidal") -> logging.Logger:
 
 
 def round_date_strings(date, round_type="end"):
-    """
-    Round a date string up or down to the start or end of a given time
+    """Round a date string up or down to the start or end of a given time
     period.
 
     Parameters
@@ -48,16 +43,16 @@ def round_date_strings(date, round_type="end"):
 
     Examples
     --------
-    >>> round_date_strings('2020')
+    >>> round_date_strings("2020")
     '2020-12-31 00:00:00'
 
-    >>> round_date_strings('2020-01', round_type='start')
+    >>> round_date_strings("2020-01", round_type="start")
     '2020-01-01 00:00:00'
 
-    >>> round_date_strings('2020-01', round_type='end')
+    >>> round_date_strings("2020-01", round_type="end")
     '2020-01-31 00:00:00'
-    """
 
+    """
     # Determine precision of input date string
     date_segments = len(date.split("-"))
 
@@ -89,8 +84,7 @@ def intertidal_hillshade(
     vert_exag=100,
     **shade_kwargs,
 ):
-    """
-    Create a hillshade array for an intertidal zone given an elevation
+    """Create a hillshade array for an intertidal zone given an elevation
     array and a frequency array.
 
     Parameters
@@ -116,18 +110,19 @@ def intertidal_hillshade(
     -------
     xr.DataArray
         The hillshade array for the intertidal zone.
-    """
 
-    from matplotlib.colors import LightSource, Normalize
+    """
     import matplotlib.pyplot as plt
     import xarray as xr
+    from matplotlib.colors import LightSource
 
     # Fill upper and bottom of intertidal zone with min and max heights
     # so that hillshade can be applied across the entire raster
-    elev_min, elev_max = elevation.quantile([0, 1])    
+    elev_min, elev_max = elevation.quantile([0, 1])
     elevation_filled = xr.where(elevation.isnull() & (freq < 50), elev_max, elevation).fillna(elev_min)
 
     from scipy.ndimage import gaussian_filter
+
     input_data = gaussian_filter(elevation_filled, sigma=1)
 
     # Create hillshade based on elevation data
@@ -143,9 +138,7 @@ def intertidal_hillshade(
     )
 
     # Mask out non-intertidal pixels
-    hillshade = np.where(
-        np.expand_dims(elevation.notnull().values, axis=-1), hillshade, np.nan
-    )
+    hillshade = np.where(np.expand_dims(elevation.notnull().values, axis=-1), hillshade, np.nan)
 
     # Create a new xarray data array from the numpy array
     hillshaded_da = xr.DataArray(
@@ -162,23 +155,17 @@ def intertidal_hillshade(
 
 
 def spearman_correlation(x, y, dim):
-    """
-    Fast Spearman correlation using bottleneck and apply_ufunc.
-    """
-    import bottleneck
+    """Fast Spearman correlation using bottleneck and apply_ufunc."""
 
     def _covariance_gufunc(x, y):
         return np.nanmean(
-            (x - np.nanmean(x, axis=-1, keepdims=True))
-            * (y - np.nanmean(y, axis=-1, keepdims=True)),
+            (x - np.nanmean(x, axis=-1, keepdims=True)) * (y - np.nanmean(y, axis=-1, keepdims=True)),
             axis=-1,
         )
 
     def _pearson_correlation_gufunc(x, y):
-        return _covariance_gufunc(x, y) / (
-            np.nanstd(x, axis=-1) * np.nanstd(y, axis=-1)
-        )
-    
+        return _covariance_gufunc(x, y) / (np.nanstd(x, axis=-1) * np.nanstd(y, axis=-1))
+
     def _spearman_correlation_gufunc(x, y):
         x_ranks = bottleneck.nanrankdata(x, axis=-1)
         y_ranks = bottleneck.nanrankdata(y, axis=-1)
@@ -192,5 +179,3 @@ def spearman_correlation(x, y, dim):
         dask="parallelized",
         output_dtypes=[float],
     )
-
-
