@@ -28,7 +28,7 @@ ADD . /app
 
 # Sync the project into a new environment, asserting the lockfile is up to date
 WORKDIR /app
-RUN uv sync --locked --extra datacube --system
+RUN uv sync --locked --extra datacube
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
