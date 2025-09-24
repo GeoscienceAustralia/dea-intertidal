@@ -67,6 +67,11 @@ dependencies = [
 Homepage = "https://github.com/GeoscienceAustralia/eo-tides"
 Repository = "https://github.com/GeoscienceAustralia/eo-tides"
 
+[project.scripts]
+dea-intertidal = "intertidal.elevation:intertidal_cli"
+dea-tidal-composites = "intertidal.composites:tidal_composites_cli"
+dea-mosaics = "intertidal.mosaics:make_mosaic_cli"
+
 [project.optional-dependencies]
 datacube = [
     "datacube[s3,performance,postgres]>=1.8.19",
