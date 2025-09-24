@@ -12,7 +12,7 @@
 !*.lock
 !*.in
 !*.txt
-!**.github/workflows
+!**.github/workflows/
 !*.gitignore
 !*.dockerignore
 !*Dockerfile
