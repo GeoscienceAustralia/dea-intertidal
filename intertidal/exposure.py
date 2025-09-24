@@ -4,7 +4,6 @@ from math import ceil
 import numpy as np
 import pandas as pd
 import pytz
-import sunriset
 import xarray as xr
 from eo_tides.eo import _pixel_tides_resample, pixel_tides
 
@@ -38,6 +37,9 @@ def temporal_filters(x, time_range, dem):
         timesteps.
 
     """
+    # Import sunriset here to avoid dependency issues if function not used
+    import sunriset
+
     if x == "dry":
         return time_range.drop(
             time_range[

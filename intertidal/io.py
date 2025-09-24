@@ -11,8 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import odc.geo.xr
 import xarray as xr
-from datacube.utils.geometry import Geometry as Geometry_datacube18
-from datacube.utils.masking import mask_invalid_data
 from dea_tools.coastal import glint_angle
 from eo_tides.stats import tide_stats
 from eodatasets3 import DatasetAssembler, serialise
@@ -116,8 +114,14 @@ def extract_geobox(
         the CRS, resolution, shape and extent of the study area).
 
     """
-    # List of valid input geometry types (from `odc-geo` or `datacube-core`)
-    GEOM_TYPES = (odc.geo.geom.Geometry, Geometry_datacube18)
+    # List of valid input geometry types (from `odc-geo` or `datacube`).
+    # If `datacube` is not installed, only support `odc-geo` geometries
+    try:
+        from datacube.utils.geometry import Geometry as Geometry_datacube18
+
+        geom_types = (odc.geo.geom.Geometry, Geometry_datacube18)
+    except ImportError:
+        geom_types = (odc.geo.geom.Geometry,)
 
     # Either `study_area` or `geom` must be provided
     if study_area is None and geom is None:
@@ -126,11 +130,11 @@ def extract_geobox(
         )
 
     # If custom geom is provided, verify it is a geometry
-    if geom is not None and not isinstance(geom, GEOM_TYPES):
+    if geom is not None and not isinstance(geom, geom_types):
         raise ValueError("Unsupported input type for `geom`; please provide a datacube Geometry object.")
 
     # Otherwise, extract GeoBox from geometry
-    if geom is not None and isinstance(geom, GEOM_TYPES):
+    if geom is not None and isinstance(geom, geom_types):
         geobox = GeoBox.from_geopolygon(geom, crs=crs, resolution=resolution)
 
     # If no custom geom provided, load tile from GridSpec tile grid
@@ -253,6 +257,18 @@ def load_data(
         to generate ODC lineage metadata for DEA Intertidal)
 
     """
+    # Attempt to import datacube and raise an error if not available
+    try:
+        from datacube.utils.masking import mask_invalid_data
+    except ImportError as e:
+        msg = (
+            "The `load_data` function requires `datacube` to be installed. "
+            "Please consider loading data with `odc-stac` instead, or install "
+            "DEA Intertidal with the `[datacube]` extra, e.g.: `pip install "
+            "dea-intertidal[datacube]`"
+        )
+        raise ImportError(msg) from e
+
     # Set spectral bands to load
     s2_spectral_bands = [
         "nbart_blue",
@@ -516,6 +532,18 @@ def load_topobathy_mask(
         following analysis.
 
     """
+    # Attempt to import datacube and raise an error if not available
+    try:
+        from datacube.utils.masking import mask_invalid_data
+    except ImportError as e:
+        msg = (
+            "The `load_topobathy_mask` function requires `datacube` to be installed. "
+            "Please consider loading data with `odc-stac` instead, or install "
+            "DEA Intertidal with the `[datacube]` extra, e.g.: `pip install "
+            "dea-intertidal[datacube]`"
+        )
+        raise ImportError(msg) from e
+
     # Load from datacube, reprojecting to GeoBox of input satellite data
     topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
 
@@ -572,6 +600,18 @@ def load_aclum_mask(
         False equals all other classes.
 
     """
+    # Attempt to import datacube and raise an error if not available
+    try:
+        from datacube.utils.masking import mask_invalid_data
+    except ImportError as e:
+        msg = (
+            "The `load_aclum_mask` function requires `datacube` to be installed. "
+            "Please consider loading data with `odc-stac` instead, or install "
+            "DEA Intertidal with the `[datacube]` extra, e.g.: `pip install "
+            "dea-intertidal[datacube]`"
+        )
+        raise ImportError(msg) from e
+
     try:
         # Load from datacube, reprojecting to GeoBox of input satellite data
         aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
