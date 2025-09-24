@@ -5,14 +5,14 @@
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.7.3
 
 # The installer requires curl (and certificates) to download uv
-# build-essential and libpq-dev are needed for psycopg2,
-# and git is needed for hatchling version control
+# build-essential, libpq-dev and python3-dev are needed for psycopg2,
+# git is needed for hatchling version control
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     build-essential \
     libpq-dev \
-    python3.10-dev \
+    python3-dev \
     git && \
     rm -rf /var/lib/apt/lists/*
 
@@ -28,7 +28,10 @@ ADD . /app
 
 # Sync the project into a new environment, asserting the lockfile is up to date
 WORKDIR /app
-RUN uv sync --locked --extra datacube
+RUN uv sync --locked --extra datacube --system
+
+# Place executables in the environment at the front of the path
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Verify installation
 RUN uv pip check && \
