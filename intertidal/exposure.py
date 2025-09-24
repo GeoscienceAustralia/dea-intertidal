@@ -283,11 +283,7 @@ def exposure(
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
         supported by the `eo-tides` Python package. Options include:
-<<<<<<< HEAD
-        - "EOT20" (default; pre-configured on DEA Sandbox)
-=======
         - "EOT20" (default)
->>>>>>> develop
         - "TPXO10-atlas-v2-nc"
         - "FES2022"
         - "FES2022_extrapolated"
