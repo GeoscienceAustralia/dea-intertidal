@@ -1,6 +1,4 @@
 import logging
-import yaml
-import fsspec
 import bottleneck
 import xarray as xr
 import pandas as pd

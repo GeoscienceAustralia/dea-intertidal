@@ -482,6 +482,7 @@ def pixel_dem_debug(
     min_periods=5,
     certainty_method="mad",
     plot_style=None,
+    plot_ylim=(-1, 1),
 ):
     # Unstack data back to x, y so we can select pixels by their coordinates
     flat_unstacked = flat_ds[["tide_m", "ndwi"]].unstack().sortby(["time", "x", "y"])
@@ -519,7 +520,7 @@ def pixel_dem_debug(
     )
 
     # Plot
-    flat_pixel_df = flat_pixel.to_dataframe()
+    flat_pixel_df = flat_pixel.to_dataframe().drop("spatial_ref", axis=1)
     flat_pixel_df["season"] = flat_pixel.time.dt.season
     flat_pixel_df["year"] = flat_pixel.time.dt.year
 
@@ -531,14 +532,10 @@ def pixel_dem_debug(
         sns.scatterplot(data=flat_pixel_df, x="tide_m", y="ndwi", color="black", s=10)
 
     # Convert to dataframes and plot
-    interval_pixel_df = interval_pixel.to_dataframe().rename(
-        {"ndwi": "rolling median"}, axis=1
-    )
-    interval_smoothed_pixel_df = interval_smoothed_pixel.to_dataframe().rename(
-        {"ndwi": "smoothed"}, axis=1
-    )
-    interval_pixel_df.plot(x="tide_m", y="rolling median", ax=plt.gca())
-    interval_smoothed_pixel_df.plot(x="tide_m", y="smoothed", ax=plt.gca())
+    interval_pixel_df = interval_pixel.to_dataframe().drop("spatial_ref", axis=1)
+    interval_smoothed_pixel_df = interval_smoothed_pixel.to_dataframe().drop("spatial_ref", axis=1)
+    interval_pixel_df.plot(x="tide_m", y="ndwi", ax=plt.gca(), label="NDWI (rolling median)")
+    interval_smoothed_pixel_df.plot(x="tide_m", y="ndwi", ax=plt.gca(), label="NDWI (rolling median, smoothed)")
 
     if not isinstance(ndwi_thresh, float):
         plt.plot(
@@ -560,9 +557,11 @@ def pixel_dem_debug(
     plt.gca().axvline(
         flat_dem_pixel.elevation, color="black", linestyle="--", lw=1, alpha=1
     )
-    plt.gca().set_ylim(-1, 1)
+    plt.gca().set_ylim(plot_ylim)
+    plt.gca().set_xlabel("Tide height (m)")
+    plt.gca().set_ylabel("NDWI")
 
-    return interval_pixel, interval_smoothed_pixel
+    return flat_pixel_df, interval_pixel_df, interval_smoothed_pixel_df
 
 
 def pixel_uncertainty(

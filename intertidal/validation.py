@@ -70,7 +70,12 @@ def map_raster(
 
 
 def preprocess_validation(
-    validation_ds, modelled_ds, uncertainty_ds, lat, hat, clean_slope=True
+    validation_ds,
+    modelled_ds,
+    uncertainty_ds,
+    lat,
+    hat,
+    clean_slope=True,
 ):
     # Remove zero slope areas
     if clean_slope:
@@ -91,7 +96,9 @@ def preprocess_validation(
 
     # Analyse only intertidal pixels that contain valid data in both
     valid_data = (
-        intertidal.values & modelled_ds.notnull().values & validation_ds.notnull().values
+        intertidal.values
+        & modelled_ds.notnull().values
+        & validation_ds.notnull().values
     )
 
     # Export 1D modelled and validation data for valid data area

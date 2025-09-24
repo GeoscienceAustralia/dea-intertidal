@@ -1,0 +1,161 @@
+[project]
+name = "dea-intertidal"
+dynamic = ["version"]
+description = "Generating intertidal elevation, extents and exposure from satellite Earth Observation data"
+authors = [
+    { name = "Robbi Bishop-Taylor" },
+    { name = "Claire Phillips" },
+    { name = "Vanessa Newey" },
+    { name = "Stephen Sagar" },
+    { email = "Robbi.BishopTaylor@ga.gov.au"}
+]
+readme = "README.md"
+keywords = [
+    "earth observation",
+    "intertidal",
+    "exposure",
+    "coastal",
+    "tide modelling",
+    "satellite data",
+    "coastal analysis",
+    "oceanography",
+    "remote sensing",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Oceanography",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "Bottleneck>=1.4.2",
+    "click>=8.1.7",
+    "dea-tools==0.4.6.dev3",  # temporarily pin specific version of DEA Tools for Numpy 2.0 compatability
+    "eo-tides>=0.8.3",
+    "folium>=0.16.0",
+    "geopandas>=0.14.4",
+    "matplotlib>=3.9.2",
+    "numpy>=1.26.4",
+    "odc-algo>=1.1.1",
+    "odc-geo>=0.4.8",
+    "pandas>=2.2.3",
+    "pyogrio>=0.10.0",
+    "pytz>=2024.1",
+    "rasterio>=1.4.1",
+    "s3fs>=2024.9.0",
+    "seaborn>=0.13.2",
+    "scikit-image>=0.24.0",
+    "scipy>=1.14.1",
+    "sunriset>=1.0",
+    "tqdm>=4.66.5",
+    "xarray>=2024.9.0",
+    "xarray-spatial>=0.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/GeoscienceAustralia/eo-tides"
+Repository = "https://github.com/GeoscienceAustralia/eo-tides"
+
+[project.scripts]
+dea-intertidal = "intertidal.elevation:intertidal_cli"
+dea-tidal-composites = "intertidal.composites:tidal_composites_cli"
+dea-mosaics = "intertidal.mosaics:make_mosaic_cli"
+
+[project.optional-dependencies]
+datacube = [
+    "datacube[s3,performance,postgres]>=1.8.19",
+    "eodatasets3>=0.30.9",
+    "odc-ui>=0.2.1",
+]
+
+[dependency-groups]
+dev = [
+    "aiohttp>=3.10.10",
+    "awscli>=1.38.1",
+    "botocore>=1.37.1",
+    "mdutils>=1.6.0",
+    "pytest>=6.0.0",
+    "pytest-dependency>=0.6.0", 
+    "pytest-cov>=6.0.0",
+    "deptry>=0.20.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["intertidal"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"     # Target Python 3.10 syntax
+line-length = 120            # Set max line length
+fix = true                   # Allow auto-fix when used without pre-commit
+lint.select = ["ALL"]
+lint.ignore = [
+  "E501",     # Don't enforce line length
+  "SIM105",   # contextlib.suppress
+  "RUF002",   # Ignore en-dash
+  "PLR0913",  # Allow too many arguments
+  "PLR0915",  # Allow too many statements
+  "PLR0912",  # Allow too many branches
+  "PLR2004",  # Allow magic value in comparison
+  "T201",     # Allow print
+  "DTZ005",   # Ignore timezones
+  "TRY002",   # Allow non-custom exceptions
+  "FBT002",   # Allow boolean default positional arguments
+  "FBT001",   # Allow boolean default positional arguments
+  "C901",     # Ignore too complex function
+  "D211",     # Ignore mutually exclusive one-blank-line-before-class rule
+  "D213",     # Ignore mutually exclusive one-blank-line-before-class rule
+  "FIX002",   # Allow TODO
+  "TD",       # Ignore missing info in TODO
+  "ERA001",   # Ignore commented out code (to revert)
+  "ANN",      # Allow missing type annotations (to revert)
+  "COM812",   # Ignored as recommended by ruff
+  "D203",     # Ignored as recommended by ruff
+]
+
+[tool.ruff.format]
+preview = true    # Enable experimental formatting improvements
+docstring-code-format = true # Reformat code in doc strings.
+
+[tool.coverage.report]
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["intertidal"]
+
+[tool.deptry.per_rule_ignores]
+# Project should not contain unused dependencies
+DEP002 = [
+    "pyogrio",             # used to speed up data loading
+    "odc-ui",              # ignore odc.ui not being recognised as `odc-ui`
+]
