@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     build-essential \
     libpq-dev \
+    python3-pip \
     git && \
     rm -rf /var/lib/apt/lists/*
 
