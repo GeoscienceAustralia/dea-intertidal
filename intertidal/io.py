@@ -1,37 +1,36 @@
 import json
 import shutil
-import warnings
-import tempfile
 import subprocess
-import numpy as np
-import xarray as xr
-import matplotlib.pyplot as plt
+import tempfile
+import warnings
+from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import urlparse
-from rasterio.enums import Resampling
-from importlib.metadata import version
-from rasterio.errors import NotGeoreferencedWarning
 
-import datacube
+import matplotlib.pyplot as plt
+import numpy as np
 import odc.geo.xr
+import xarray as xr
+from datacube.utils.geometry import Geometry as Geometry_datacube18
+from datacube.utils.masking import mask_invalid_data
+from dea_tools.coastal import glint_angle
+from eo_tides.stats import tide_stats
+from eodatasets3 import DatasetAssembler, serialise
+from eodatasets3.scripts.tostac import json_fallback
+from eodatasets3.stac import to_stac_item, validate_item
+from eodatasets3.verify import PackageChecksum
+from odc.algo import (
+    enum_to_bool,
+    erase_bad,
+    keep_good_only,
+    mask_cleanup,
+    to_f32,
+)
 from odc.geo.geobox import GeoBox
 from odc.geo.gridspec import GridSpec
 from odc.geo.types import xy_
-from odc.algo import (
-    mask_cleanup,
-    enum_to_bool,
-    keep_good_only,
-    erase_bad,
-    to_f32,
-)
-from eo_tides.stats import tide_stats
-from dea_tools.coastal import glint_angle
-from eodatasets3 import DatasetAssembler, serialise
-from eodatasets3.scripts.tostac import json_fallback
-from eodatasets3.verify import PackageChecksum
-from eodatasets3.stac import to_stac_item, validate_item
-from datacube.utils.masking import mask_invalid_data
-from datacube.utils.geometry import Geometry as Geometry_datacube18
+from rasterio.enums import Resampling
+from rasterio.errors import NotGeoreferencedWarning
 
 from intertidal.utils import configure_logging
 
@@ -41,8 +40,7 @@ warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
 
 
 def _id_to_tuple(id_str):
-    """
-    Converts a tile ID in form 'x123y123' to a ix, iy tuple so it
+    """Converts a tile ID in form 'x123y123' to a ix, iy tuple so it
     can be passed to a GridSpec (e.g. `gs[ix, iy]`)
     """
     try:
@@ -58,8 +56,7 @@ def _id_to_tuple(id_str):
 
 
 def _contiguity_fuser(dst: np.ndarray, src: np.ndarray) -> None:
-    """
-    Ensure contiguity data is properly combined by replacing
+    """Ensure contiguity data is properly combined by replacing
     pixels in `dst` that are either 0 (non-contiguous) or 255
     (nodata) with the corresponding value from `src`, propogating
     1 (valid contiguous data) if it exists.
@@ -76,8 +73,7 @@ def extract_geobox(
     gridspec_origin_x=-4416000,
     gridspec_origin_y=-6912000,
 ):
-    """
-    Handles extraction of a GeoBox pixel grid from either a GridSpec
+    """Handles extraction of a GeoBox pixel grid from either a GridSpec
     tile ID (in the form "x123y123"), or a provided Geometry object.
 
     If a tile ID string is passed to `study_area`, a GeoBox will be
@@ -118,36 +114,30 @@ def extract_geobox(
     geobox : odc.geo.geobox.GeoBox
         A GeoBox defining the pixel grid to use to load data (defining
         the CRS, resolution, shape and extent of the study area).
-    """
 
+    """
     # List of valid input geometry types (from `odc-geo` or `datacube-core`)
     GEOM_TYPES = (odc.geo.geom.Geometry, Geometry_datacube18)
 
     # Either `study_area` or `geom` must be provided
     if study_area is None and geom is None:
         raise ValueError(
-            "Please provide either a study area ID (using `study_area`), "
-            "or a datacube Geometry object (using `geom`)."
+            "Please provide either a study area ID (using `study_area`), or a datacube Geometry object (using `geom`)."
         )
 
     # If custom geom is provided, verify it is a geometry
-    elif geom is not None and not isinstance(geom, GEOM_TYPES):
-        raise ValueError(
-            "Unsupported input type for `geom`; please provide a "
-            "datacube Geometry object."
-        )
+    if geom is not None and not isinstance(geom, GEOM_TYPES):
+        raise ValueError("Unsupported input type for `geom`; please provide a datacube Geometry object.")
 
     # Otherwise, extract GeoBox from geometry
-    elif geom is not None and isinstance(geom, GEOM_TYPES):
+    if geom is not None and isinstance(geom, GEOM_TYPES):
         geobox = GeoBox.from_geopolygon(geom, crs=crs, resolution=resolution)
 
     # If no custom geom provided, load tile from GridSpec tile grid
     elif geom is None:
         # Verify that resolution fits evenly inside tile width
         if tile_width % resolution != 0:
-            raise ValueError(
-                "Ensure that `resolution` divides into `tile_width` evenly."
-            )
+            raise ValueError("Ensure that `resolution` divides into `tile_width` evenly.")
 
         # Calculate tile pixels
         n_pixels = tile_width / resolution
@@ -185,8 +175,7 @@ def load_data(
     dtype="float32",
     **query,
 ):
-    """
-    Loads cloud-masked Sentinel-2 and Landsat satellite data for a given
+    """Loads cloud-masked Sentinel-2 and Landsat satellite data for a given
     study area/geom and time range.
 
     Supports optionally converting to Normalised Difference Water Index
@@ -262,8 +251,8 @@ def load_data(
     dss_s2, dss_ls : lists or None
         Lists of ODC datasets loaded to produce `satellite_ds` (used
         to generate ODC lineage metadata for DEA Intertidal)
-    """
 
+    """
     # Set spectral bands to load
     s2_spectral_bands = [
         "nbart_blue",
@@ -306,9 +295,7 @@ def load_data(
         sunglint_bands = []
 
     # Load study area, defined as a GeoBox pixel grid
-    geobox = extract_geobox(
-        study_area=study_area, geom=geom, resolution=resolution, crs=crs
-    )
+    geobox = extract_geobox(study_area=study_area, geom=geom, resolution=resolution, crs=crs)
 
     # Set up query params
     query_params = {
@@ -350,7 +337,6 @@ def load_data(
 
         # Continue if at least one dataset is found
         if len(dss_s2) > 0:
-
             # Load datasets
             ds_s2 = dc.load(
                 datasets=dss_s2,
@@ -359,24 +345,17 @@ def load_data(
             )
 
             # Create cloud mask, treating nodata and clouds as bad pixels
-            cloud_mask = enum_to_bool(
-                mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
-            )
+            cloud_mask = enum_to_bool(mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"])
 
             # Identify non-contiguous pixels
-            noncontiguous_mask = enum_to_bool(
-                ds_s2.oa_nbart_contiguity, categories=[False]
-            )
+            noncontiguous_mask = enum_to_bool(ds_s2.oa_nbart_contiguity, categories=[False])
 
             # Set cloud mask and non-contiguous pixels to nodata
             combined_mask = cloud_mask | noncontiguous_mask
-            ds_s2 = erase_bad(
-                x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
-            )
+            ds_s2 = erase_bad(x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask)
 
             # Optionally, apply sunglint mask (if not None and if at least angle of 1)
             if (mask_sunglint is not None) and (mask_sunglint >= 1):
-
                 # Calculate glint angle
                 glint_array = glint_angle(
                     solar_azimuth=ds_s2.oa_solar_azimuth,
@@ -397,9 +376,7 @@ def load_data(
             # Convert to NDWI
             if ndwi:
                 # Calculate NDWI
-                ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
-                    ds_s2.nbart_green + ds_s2.nbart_nir_1
-                )
+                ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (ds_s2.nbart_green + ds_s2.nbart_nir_1)
                 data_list.append(ds_s2[["ndwi"]])
             else:
                 data_list.append(ds_s2)
@@ -420,7 +397,6 @@ def load_data(
 
         # Continue if at least one dataset is found
         if len(dss_ls) > 0:
-
             # Load datasets
             ds_ls = dc.load(
                 datasets=dss_ls,
@@ -434,9 +410,7 @@ def load_data(
             # nodata, we make sure that small areas of cloud next to Landsat
             # 7 SLC-off nodata gaps are not accidently removed (at the cost
             # of not being able to clean false positives next to SLC-off gaps)
-            bad_data = enum_to_bool(
-                ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
-            )
+            bad_data = enum_to_bool(ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"])
             bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
 
             # We now dilate ONLY pixels in our cleaned bad data dask that
@@ -449,9 +423,7 @@ def load_data(
             )
 
             # Identify non-contiguous pixels
-            noncontiguous_mask = enum_to_bool(
-                ds_ls.oa_nbart_contiguity, categories=[False]
-            )
+            noncontiguous_mask = enum_to_bool(ds_ls.oa_nbart_contiguity, categories=[False])
 
             # Set cleaned bad pixels and non-contiguous pixels to nodata
             combined_mask = bad_data_mask | noncontiguous_mask
@@ -479,18 +451,14 @@ def load_data(
             # Convert to NDWI
             if ndwi:
                 # Calculate NDWI
-                ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
-                    ds_ls.nbart_green + ds_ls.nbart_nir
-                )
+                ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (ds_ls.nbart_green + ds_ls.nbart_nir)
                 data_list.append(ds_ls[["ndwi"]])
             else:
                 data_list.append(ds_ls)
 
     # Raise error if no satellite data was found
     if len(data_list) == 0:
-        raise Exception(
-            "No satellite data was found at this location; unable to load data"
-        )
+        raise Exception("No satellite data was found at this location; unable to load data")
 
     # Combine into a single ds, sort and drop no longer needed bands
     satellite_ds = xr.concat(data_list, dim="time").sortby("time")
@@ -511,8 +479,7 @@ def load_topobathy_mask(
     min_threshold=-15,
     mask_filters=[("dilation", 25)],
 ):
-    """
-    Loads a topo-bathymetric DEM for the extents of the loaded satellite
+    """Loads a topo-bathymetric DEM for the extents of the loaded satellite
     data. This is used as a coarse mask to constrain the analysis to the
     coastal zone, improving run time and reducing clear false positives.
 
@@ -547,11 +514,10 @@ def load_topobathy_mask(
     topobathy_ds : xarray.DataArray
         An output boolean mask, where True represent pixels to use in the
         following analysis.
+
     """
     # Load from datacube, reprojecting to GeoBox of input satellite data
-    topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
-        "time"
-    )
+    topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
 
     # Mask invalid data
     if mask_invalid:
@@ -575,8 +541,7 @@ def load_aclum_mask(
     resampling="nearest",
     mask_invalid=False,
 ):
-    """
-    Loads an ABARES derived land use classification of Australia
+    """Loads an ABARES derived land use classification of Australia
     for the extents of the loaded satellite data. The 'intensive urban'
     land use class is used as a coarse mask to clean up intertidal
     extents classifications in urban areas.
@@ -605,12 +570,11 @@ def load_aclum_mask(
     reclassified_aclum : xarray.DataArray
         An output boolean mask, where True equals intensive urban and
         False equals all other classes.
+
     """
     try:
         # Load from datacube, reprojecting to GeoBox of input satellite data
-        aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
-            "time"
-        )
+        aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
 
         # Mask invalid data
         if mask_invalid:
@@ -619,41 +583,39 @@ def load_aclum_mask(
         # Manually isolate the 'intensive urban' land use summary class, set
         # all other pixels to False. For class definitions, refer to
         # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
-        reclassified_aclum = aclum_ds[class_band].isin(
-            [
-                500,
-                530,
-                531,
-                532,
-                533,
-                534,
-                535,
-                536,
-                537,
-                538,
-                540,
-                541,
-                550,
-                551,
-                552,
-                553,
-                554,
-                555,
-                561,
-                562,
-                563,
-                564,
-                565,
-                566,
-                567,
-                570,
-                571,
-                572,
-                573,
-                574,
-                575,
-            ]
-        )
+        reclassified_aclum = aclum_ds[class_band].isin([
+            500,
+            530,
+            531,
+            532,
+            533,
+            534,
+            535,
+            536,
+            537,
+            538,
+            540,
+            541,
+            550,
+            551,
+            552,
+            553,
+            554,
+            555,
+            561,
+            562,
+            563,
+            564,
+            565,
+            566,
+            567,
+            570,
+            571,
+            572,
+            573,
+            574,
+            575,
+        ])
         return reclassified_aclum
 
     # Return an array of all False (i.e. no urban) if no data is returned
@@ -662,16 +624,13 @@ def load_aclum_mask(
 
 
 def _is_s3(path):
-    """
-    Determine whether output location is on S3.
-    """
+    """Determine whether output location is on S3."""
     uu = urlparse(path)
     return uu.scheme == "s3"
 
 
 def _write_thumbnail(da, path, max_resolution=320):
-    """
-    Generate and save a thumbnail image from a DEA Intertidal Elevation
+    """Generate and save a thumbnail image from a DEA Intertidal Elevation
     `xarray.DataArray`.
 
     The thumbnail is reprojected to the specified maximum resolution,
@@ -686,6 +645,7 @@ def _write_thumbnail(da, path, max_resolution=320):
         The path where the thumbnail image will be saved.
     max_resolution : int, optional
         The maximum resolution of the thumbnail image, by default 320.
+
     """
     jpeg_data = (
         da.odc.reproject(
@@ -707,8 +667,7 @@ def _write_stac(
     explorer_base_url="https://explorer.dea.ga.gov.au",
     validate=False,
 ):
-    """
-    Generate a STAC (SpatioTemporal Asset Catalog) metadata JSON file
+    """Generate a STAC (SpatioTemporal Asset Catalog) metadata JSON file
     alongside the input ODC YAML metadata file.
 
     Also updates the dataset assembler object with the generated STAC
@@ -732,21 +691,15 @@ def _write_stac(
     -------
     dict
         The generated STAC metadata as a dictionary dictionary.
-    """
 
+    """
     # Get path of input metadata file from assembler object
-    input_metadata_path = (
-        dataset_assembler.names.dataset_path / dataset_assembler.names.metadata_file
-    )
+    input_metadata_path = dataset_assembler.names.dataset_path / dataset_assembler.names.metadata_file
 
     # Get final destination paths of output/published metadata files
     # to use in STAC metadata
-    odc_dataset_metadata_url = (
-        f"{destination_path}{dataset_assembler.names.metadata_file}"
-    )
-    stac_item_destination_url = odc_dataset_metadata_url.replace(
-        "odc-metadata.yaml", "stac-item.json"
-    )
+    odc_dataset_metadata_url = f"{destination_path}{dataset_assembler.names.metadata_file}"
+    stac_item_destination_url = odc_dataset_metadata_url.replace("odc-metadata.yaml", "stac-item.json")
 
     # Generate STAC
     stac = to_stac_item(
@@ -763,9 +716,7 @@ def _write_stac(
         validate_item(stac)
 
     # Write out STAC JSON alongside input metadata file
-    output_stac_path = Path(
-        str(input_metadata_path).replace("odc-metadata.yaml", "stac-item.json")
-    )
+    output_stac_path = Path(str(input_metadata_path).replace("odc-metadata.yaml", "stac-item.json"))
     with output_stac_path.open("w") as f:
         json.dump(stac, f, default=json_fallback)
 
@@ -775,10 +726,7 @@ def _write_stac(
 
     # Update checksum to include new STAC JSON file
     checksummer = PackageChecksum()
-    checksum_file = (
-        dataset_assembler.names.dataset_path
-        / dataset_assembler._accessories["checksum:sha1"].name
-    )
+    checksum_file = dataset_assembler.names.dataset_path / dataset_assembler._accessories["checksum:sha1"].name
     checksummer.read(checksum_file)
     checksummer.add_file(output_stac_path)
     checksummer.write(checksum_file)
@@ -792,8 +740,7 @@ def tidal_metadata(
     threshold_hightide=0.85,
     **tide_stats_kwargs,
 ):
-    """
-    Generate tidal statistics and tide bias plot for a given input tile.
+    """Generate tidal statistics and tide bias plot for a given input tile.
     Tidal statistics are calculated based on the centroid of the tile.
 
     For `product_family=="tidal_composites"`, observations matching the
@@ -817,8 +764,8 @@ def tidal_metadata(
         A dictionary of tidal statistics for the tile.
     fig : matplotlib.figure.Figure
         A matplotlib figure depicting observed and modelled tides.
-    """
 
+    """
     # Run tidal stats based on centre of tile
     metadata_df = tide_stats(
         plain_english=False,
@@ -827,9 +774,7 @@ def tidal_metadata(
     fig = plt.gcf()
 
     # Update to use expected metadata format and rounding
-    metadata_dict = (
-        metadata_df.drop(["mot", "mat", "x", "y"]).add_prefix("intertidal:").to_dict()
-    )
+    metadata_dict = metadata_df.drop(["mot", "mat", "x", "y"]).add_prefix("intertidal:").to_dict()
     metadata_dict = {k: round(v, 3) for k, v in metadata_dict.items()}
 
     # Calculate macro/meso/micro-tidal category
@@ -839,7 +784,9 @@ def tidal_metadata(
         else (
             "mesotidal"
             if 2 <= metadata_dict["intertidal:tr"] <= 4
-            else "macrotidal" if metadata_dict["intertidal:tr"] > 4 else np.nan
+            else "macrotidal"
+            if metadata_dict["intertidal:tr"] > 4
+            else np.nan
         )
     )
 
@@ -867,15 +814,12 @@ def tidal_metadata(
     # For Tidal Composites, manually set low and high
     # tide observations to white
     if product_family == "tidal_composites":
-
         # Extract observed data from plot
         xdata = observed.get_xdata()
         ydata = observed.get_ydata()
 
         # Calculate thresholds and plot subset of points in white
-        min_thresh, max_thresh = np.quantile(
-            ydata, [threshold_lowtide, threshold_hightide]
-        )
+        min_thresh, max_thresh = np.quantile(ydata, [threshold_lowtide, threshold_hightide])
         mask = (ydata <= min_thresh) | (ydata >= max_thresh)
         fig.axes[0].plot(
             xdata[mask],
@@ -916,8 +860,7 @@ def tidal_metadata(
 
 
 def _s2ls_platform_instrument(year):
-    """
-    Indentify relevant Sentinel-2 and Landsat platforms and instruments
+    """Indentify relevant Sentinel-2 and Landsat platforms and instruments
     for a given year of DEA Intertidal analysis. Only applicable from 2015 onward.
     """
     # Platforms and intruments
@@ -942,8 +885,7 @@ def _s2ls_platform_instrument(year):
 
 
 def _s2_platform_instrument(year):
-    """
-    Indentify relevant Sentinel-2 platforms and instruments
+    """Indentify relevant Sentinel-2 platforms and instruments
     for a given year of DEA Tidal Composites analysis. Only applicable from 2015 onward.
     """
     # Platforms and intruments
@@ -969,8 +911,7 @@ def prepare_for_export(
     overwrite=True,
     log=None,
 ):
-    """
-    Prepares DEA Intertidal data for export by correctly setting nodata
+    """Prepares DEA Intertidal data for export by correctly setting nodata
     values and datatypes. Optionally supports exporting data to GeoTIFFs
     on file.
 
@@ -996,6 +937,7 @@ def prepare_for_export(
     -------
     ds : xarray.Dataset
         The input dataset with correctly set nodata attributes and dtypes.
+
     """
 
     def _prepare_band(band, custom_dtypes, float_dtype, output_location, overwrite):
@@ -1013,9 +955,7 @@ def prepare_for_export(
 
         # Export band to file
         if output_location is not None:
-            band.odc.write_cog(
-                fname=f"{output_location}/{band.name}.tif", overwrite=overwrite
-            )
+            band.odc.write_cog(fname=f"{output_location}/{band.name}.tif", overwrite=overwrite)
 
         return band
 
@@ -1036,11 +976,7 @@ def prepare_for_export(
         }
 
     # Apply to each array in the input `ds`
-    return ds.apply(
-        lambda x: _prepare_band(
-            x, custom_dtypes, float_dtype, output_location, overwrite
-        )
-    )
+    return ds.apply(lambda x: _prepare_band(x, custom_dtypes, float_dtype, output_location, overwrite))
 
 
 def export_dataset_metadata(
@@ -1063,8 +999,7 @@ def export_dataset_metadata(
     run_id=None,
     log=None,
 ):
-    """
-    Exports a DEA Intertidal product dataset package including thumbnail
+    """Exports a DEA Intertidal product dataset package including thumbnail
     and processed STAC and ODC metadata for indexing.
 
     Parameters
@@ -1121,6 +1056,7 @@ def export_dataset_metadata(
         prefix log entries.
     log : logging.Logger, optional
         Logger object, by default None.
+
     """
     # Set up logs if no log is passed in
     if log is None:
@@ -1170,15 +1106,13 @@ def export_dataset_metadata(
             dataset_assembler.dataset_version = dataset_version
 
             # Set additional properties
-            dataset_assembler.properties.update(
-                {
-                    "odc:product": odc_product,
-                    "odc:file_format": "GeoTIFF",
-                    "odc:collection_number": 3,
-                    "eo:gsd": ds.odc.geobox.resolution.x,
-                    **additional_metadata,
-                }
-            )
+            dataset_assembler.properties.update({
+                "odc:product": odc_product,
+                "odc:file_format": "GeoTIFF",
+                "odc:collection_number": 3,
+                "eo:gsd": ds.odc.geobox.resolution.x,
+                **additional_metadata,
+            })
 
             # Update to temporal naming convention
             time_convention = f"{year}--P1Y"
@@ -1199,9 +1133,7 @@ def export_dataset_metadata(
             # Add lineage
             s2_set = set(d.id for d in s2_lineage) if s2_lineage else []
             ls_set = set(d.id for d in ls_lineage) if ls_lineage else []
-            ancillary_set = (
-                set(d.id for d in ancillary_lineage) if ancillary_lineage else []
-            )
+            ancillary_set = set(d.id for d in ancillary_lineage) if ancillary_lineage else []
             dataset_assembler.note_source_datasets("s2_ard", *s2_set)
             dataset_assembler.note_source_datasets("ls_ard", *ls_set)
             dataset_assembler.note_source_datasets("ancillary", *ancillary_set)
@@ -1223,10 +1155,7 @@ def export_dataset_metadata(
                 scale_factor=1 if study_area == "testing" else 12,
                 static_stretch=(50, 2000),
             )
-            thumbnail_path = (
-                dataset_assembler.names.dataset_path
-                / dataset_assembler.names.thumbnail_filename()
-            )
+            thumbnail_path = dataset_assembler.names.dataset_path / dataset_assembler.names.thumbnail_filename()
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
@@ -1234,25 +1163,16 @@ def export_dataset_metadata(
 
             # For Intertidal, replace the thumbnail with something nicer
             if product_family == "intertidal":
-                _write_thumbnail(
-                    da=ds["elevation"], path=thumbnail_path, max_resolution=320
-                )
+                _write_thumbnail(da=ds["elevation"], path=thumbnail_path, max_resolution=320)
 
             # Generate final destination path
-            destination_path = (
-                f"{output_location.rstrip('/')}/"
-                f"{dataset_assembler.names.dataset_folder}/"
-            )
+            destination_path = f"{output_location.rstrip('/')}/{dataset_assembler.names.dataset_folder}/"
 
             # Export tide graph figure if provided
             if tide_graph_fig is not None:
-                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace(
-                    "thumbnail.jpg", "tide_graph.png"
-                )
+                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace("thumbnail.jpg", "tide_graph.png")
                 tide_graph_fig.savefig(tide_graph_path, bbox_inches="tight")
-                dataset_assembler.note_accessory_file(
-                    "metadata:tide_graph", tide_graph_path
-                )
+                dataset_assembler.note_accessory_file("metadata:tide_graph", tide_graph_path)
 
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
@@ -1277,23 +1197,15 @@ def export_dataset_metadata(
 
                 if debug:
                     # Copy from tempfile to output location
-                    destination_path_debug = (
-                        f"{'data/processed/'.rstrip('/')}/"
-                        f"{dataset_assembler.names.dataset_folder}"
-                    )
-                    log.info(
-                        f"{run_id}: Writing debug S3 layers to: {destination_path_debug}"
-                    )
+                    destination_path_debug = f"{'data/processed/'.rstrip('/')}/{dataset_assembler.names.dataset_folder}"
+                    log.info(f"{run_id}: Writing debug S3 layers to: {destination_path_debug}")
                     if Path(destination_path_debug).exists():
                         shutil.rmtree(destination_path_debug)
-                    shutil.copytree(
-                        dataset_assembler.names.dataset_path, destination_path_debug
-                    )
+                    shutil.copytree(dataset_assembler.names.dataset_path, destination_path_debug)
                     return dataset_assembler
 
-                else:
-                    log.info(f"{run_id}: Writing to S3: {destination_path}")
-                    subprocess.run(" ".join(s3_command), shell=True, check=True)
+                log.info(f"{run_id}: Writing to S3: {destination_path}")
+                subprocess.run(" ".join(s3_command), shell=True, check=True)
 
             else:
                 # Copy from tempfile to output location

@@ -1,25 +1,22 @@
-import sunriset
 import datetime
-import re
-import pytz
-
-import xarray as xr
-import numpy as np
-import geopandas as gpd
-import pandas as pd
-
 from math import ceil
+
+import numpy as np
+import pandas as pd
+import pytz
+import sunriset
+import xarray as xr
 from eo_tides.eo import _pixel_tides_resample, pixel_tides
+
 from intertidal.utils import configure_logging, round_date_strings
 
 
 def temporal_filters(x, time_range, dem):
-    """
-    Identify and extract temporal-specific dates and times to feed into
+    """Identify and extract temporal-specific dates and times to feed into
     tidal modelling for custom exposure calculations.
 
     Parameters
-    -------
+    ----------
     x : str
         A string identifier to nominate the temporal filter to
         calculate in this workflow. Must be one of: 'dry', 'wet',
@@ -39,8 +36,8 @@ def temporal_filters(x, time_range, dem):
     filtered_time_range : pd.DataTimeIndex
         An updated pd.DataTimeIndex containing a filtered set of
         timesteps.
-    """
 
+    """
     if x == "dry":
         return time_range.drop(
             time_range[
@@ -52,7 +49,7 @@ def temporal_filters(x, time_range, dem):
                 | (time_range.month == 3)
             ]
         )
-    elif x == "wet":
+    if x == "wet":
         return time_range.drop(
             time_range[
                 (time_range.month == 4)  # Dry season: Apr-Sep
@@ -63,7 +60,7 @@ def temporal_filters(x, time_range, dem):
                 | (time_range.month == 9)
             ]
         )
-    elif x == "summer":
+    if x == "summer":
         return time_range.drop(
             time_range[
                 (time_range.month == 3)
@@ -77,7 +74,7 @@ def temporal_filters(x, time_range, dem):
                 | (time_range.month == 11)
             ]
         )
-    elif x == "autumn":
+    if x == "autumn":
         return time_range.drop(
             time_range[
                 (time_range.month == 1)
@@ -91,7 +88,7 @@ def temporal_filters(x, time_range, dem):
                 | (time_range.month == 12)
             ]
         )
-    elif x == "winter":
+    if x == "winter":
         return time_range.drop(
             time_range[
                 (time_range.month == 1)
@@ -105,7 +102,7 @@ def temporal_filters(x, time_range, dem):
                 | (time_range.month == 12)
             ]
         )
-    elif x == "spring":
+    if x == "spring":
         return time_range.drop(
             time_range[
                 (time_range.month == 1)
@@ -119,36 +116,33 @@ def temporal_filters(x, time_range, dem):
                 | (time_range.month == 12)
             ]
         )
-    elif x == "jan":
+    if x == "jan":
         return time_range.drop(time_range[time_range.month != 1])
-    elif x == "feb":
+    if x == "feb":
         return time_range.drop(time_range[time_range.month != 2])
-    elif x == "mar":
+    if x == "mar":
         return time_range.drop(time_range[time_range.month != 3])
-    elif x == "apr":
+    if x == "apr":
         return time_range.drop(time_range[time_range.month != 4])
-    elif x == "may":
+    if x == "may":
         return time_range.drop(time_range[time_range.month != 5])
-    elif x == "jun":
+    if x == "jun":
         return time_range.drop(time_range[time_range.month != 6])
-    elif x == "jul":
+    if x == "jul":
         return time_range.drop(time_range[time_range.month != 7])
-    elif x == "aug":
+    if x == "aug":
         return time_range.drop(time_range[time_range.month != 8])
-    elif x == "sep":
+    if x == "sep":
         return time_range.drop(time_range[time_range.month != 9])
-    elif x == "oct":
+    if x == "oct":
         return time_range.drop(time_range[time_range.month != 10])
-    elif x == "nov":
+    if x == "nov":
         return time_range.drop(time_range[time_range.month != 11])
-    elif x == "dec":
+    if x == "dec":
         return time_range.drop(time_range[time_range.month != 12])
-    elif x in ["daylight", "night"]:
-
+    if x in ["daylight", "night"]:
         # Identify the central coordinate directly from the dem GeoBox
-        tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs(
-            "EPSG:4326"
-        ).coords[0]
+        tidepost_lon_4326, tidepost_lat_4326 = dem.odc.geobox.extent.centroid.to_crs("EPSG:4326").coords[0]
 
         # Calculate the local sunrise and sunset times
         # Place start and end dates in correct format
@@ -176,9 +170,7 @@ def temporal_filters(x, time_range, dem):
         local_tz = 0
 
         # Model sunrise and sunset
-        sun_df = sunriset.to_pandas(
-            startdate, tidepost_lat_4326, tidepost_lon_4326, local_tz, diff
-        )
+        sun_df = sunriset.to_pandas(startdate, tidepost_lat_4326, tidepost_lon_4326, local_tz, diff)
 
         # Set the index as a datetimeindex to match the ModTides ds
         sun_df = sun_df.set_index(pd.DatetimeIndex(sun_df.index))
@@ -189,12 +181,8 @@ def temporal_filters(x, time_range, dem):
 
         # Create new dataframes where daytime and nightime datetimes are
         # recorded, then merged on a new `Sunlight` column
-        daytime = pd.DataFrame(
-            data="Sunrise", index=sun_df["Sunrise dt"], columns=["Sunlight"]
-        )
-        nighttime = pd.DataFrame(
-            data="Sunset", index=sun_df["Sunset dt"], columns=["Sunlight"]
-        )
+        daytime = pd.DataFrame(data="Sunrise", index=sun_df["Sunrise dt"], columns=["Sunlight"])
+        nighttime = pd.DataFrame(data="Sunset", index=sun_df["Sunset dt"], columns=["Sunlight"])
         DayNight = pd.concat([daytime, nighttime], join="outer")
         DayNight.sort_index(inplace=True)
         DayNight.index.rename("Datetime", inplace=True)
@@ -244,8 +232,7 @@ def exposure(
     return_tide_modelling=False,
     **model_tides_kwargs,
 ):
-    """
-    Calculate intertidal exposure, indicating the proportion of time
+    """Calculate intertidal exposure, indicating the proportion of time
     that each pixel was 'exposed' from tidal inundation during the time
     period of interest.
 
@@ -416,12 +403,8 @@ def exposure(
     ]
 
     # Create empty xarray.Datasets to store outputs into
-    exposure_ds = xr.Dataset(
-        coords=dict(y=(["y"], dem.y.values), x=(["x"], dem.x.values))
-    )
-    modelledtides_ds = xr.Dataset(
-        coords=dict(y=(["y"], dem.y.values), x=(["x"], dem.x.values))
-    )
+    exposure_ds = xr.Dataset(coords=dict(y=(["y"], dem.y.values), x=(["x"], dem.x.values)))
+    modelledtides_ds = xr.Dataset(coords=dict(y=(["y"], dem.y.values), x=(["x"], dem.x.values)))
 
     # Create an empty dict to store temporal `time_range` variables into
     timeranges = {}
@@ -442,9 +425,7 @@ def exposure(
     # Return error for incorrect filter-names
     all_filters = temp_filters + ["unfiltered"]
     for x in filters:
-        assert (
-            x in all_filters
-        ), f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'
+        assert x in all_filters, f'Nominated filter "{x}" is not in {all_filters}. Check spelling and retry'
 
     # Run tide model at low resolution
     modelledtides_lowres = pixel_tides(
@@ -462,7 +443,6 @@ def exposure(
     # Calculate quantiles and reproject low resolution tide data to
     # pixel resolution if any filter is "unfiltered"
     if "unfiltered" in filters:
-
         # Convert to quantiles, and make sure CRS is present
         modelledtides_lowres_quantiles = (
             modelledtides_lowres.quantile(q=calculate_quantiles, dim="time")
@@ -502,11 +482,7 @@ def exposure(
         modelledtides_x = modelledtides_1d.sel(time=timeranges[str(x)])
 
         # Calculate quantile values on remaining tide heights
-        modelledtides_x = (
-            modelledtides_x.quantile(q=calculate_quantiles, dim="time")
-            .to_dataset()
-            .tide_m
-        )
+        modelledtides_x = modelledtides_x.quantile(q=calculate_quantiles, dim="time").to_dataset().tide_m
 
         # Add modelledtides_x to output dataset
         modelledtides_ds[str(x)] = modelledtides_x
@@ -534,5 +510,4 @@ def exposure(
 
     if return_tide_modelling:
         return exposure_ds, modelledtides_ds, modelledtides_1d, timeranges
-    else:
-        return exposure_ds, modelledtides_ds
+    return exposure_ds, modelledtides_ds
