@@ -47,4 +47,4 @@ jobs:
       - name: Publish package
         run: uv publish
         env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
