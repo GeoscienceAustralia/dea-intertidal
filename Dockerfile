@@ -26,7 +26,7 @@ ADD . /app
 WORKDIR /app
 
 # Sync project into a new virtual environment based on uv.lock
-RUN uv sync --frozen --extra datacube
+RUN uv sync --locked --extra datacube
 
 # Make uv virtual environment accessible
 ENV PATH="/app/.venv/bin:$PATH"
