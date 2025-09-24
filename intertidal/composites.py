@@ -2,11 +2,9 @@ import os
 import sys
 
 import click
-import datacube
 import numpy as np
 import odc.geo.xr
 import xarray as xr
-from datacube.utils.aws import configure_s3_access
 from dea_tools.dask import create_local_dask_cluster
 from eo_tides.eo import pixel_tides
 from odc.algo import (
@@ -439,6 +437,18 @@ def tidal_composites_cli(
     aws_unsigned,
     overwrite,
 ):
+    # Attempt to import datacube and raise an error if not available
+    try:
+        import datacube
+        from datacube.utils.aws import configure_s3_access
+    except ImportError as e:
+        msg = (
+            "The DEA Tidal Composites CLI is configured for Australian applications, and "
+            "requires `datacube`. Please install DEA Intertidal with the "
+            "`[datacube]` extra, e.g.: `pip install dea-intertidal[datacube]`"
+        )
+        raise ImportError(msg) from e
+
     # Create sample filename to test if data exists on file system
     filename = f"{output_dir}ga_s2_tidal_composites_cyear_3/{output_version.replace('.', '-')}/{study_area[:4]}/{study_area[4:]}/{label_date}--P1Y/ga_s2_tidal_composites_cyear_3_{study_area}_{label_date}--P1Y_final.stac-item.json"
 

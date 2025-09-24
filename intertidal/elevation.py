@@ -3,12 +3,10 @@ from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 
 import click
-import datacube
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import xarray as xr
-from datacube.utils.aws import configure_s3_access
 from dea_tools.dask import create_local_dask_cluster
 from eo_tides.eo import pixel_tides
 from odc.algo import xr_quantile
@@ -1125,6 +1123,18 @@ def intertidal_cli(
     exposure_offsets,
     aws_unsigned,
 ):
+    # Attempt to import datacube and raise an error if not available
+    try:
+        import datacube
+        from datacube.utils.aws import configure_s3_access
+    except ImportError as e:
+        msg = (
+            "The DEA Intertidal CLI is configured for Australian applications, and "
+            "requires `datacube`. Please install DEA Intertidal with the "
+            "`[datacube]` extra, e.g.: `pip install dea-intertidal[datacube]`"
+        )
+        raise ImportError(msg) from e
+
     # Create a unique run ID for analysis based on input params and use
     # for logs
     input_params = locals()
