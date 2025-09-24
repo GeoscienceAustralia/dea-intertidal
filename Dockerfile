@@ -27,11 +27,13 @@ ENV PATH="/root/.local/bin/:$PATH"
 ADD . /app
 
 # Sync the project into a new environment, asserting the lockfile is up to date
+ENV UV_SYSTEM_PYTHON=true
+
 WORKDIR /app
 RUN uv sync --locked --extra datacube
 
 # Place executables in the environment at the front of the path
-ENV PATH="/app/.venv/bin:$PATH"
+# ENV PATH="/app/.venv/bin:$PATH"
 
 # Verify installation
 RUN uv pip check && \
