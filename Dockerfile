@@ -4,19 +4,19 @@
 # - GDAL 3.7.3, released 2023/10/30
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.7.3
 
-# The installer requires curl (and certificates) to download the release archive
+# The installer requires curl (and certificates) to download uv
+# build-essential and libpq-dev are needed for psycopg2,
+# and git is needed for hatchling version control
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \  # required to download uv
-    ca-certificates \  # required to download uv
-    build-essential \  # required to build psycopg2
-    libpq-dev \  # required to build psycopg2
-    git && \  # required for hatchling versioning
+    curl \
+    ca-certificates \
+    build-essential \
+    libpq-dev \
+    git && \
     rm -rf /var/lib/apt/lists/*
 
-# Download uv installer
+# Download, run and remove uv installer
 ADD https://astral.sh/uv/0.8.22/install.sh /uv-installer.sh
-
-# Run the installer then remove it
 RUN sh /uv-installer.sh && rm /uv-installer.sh
 
 # Ensure the installed binary is on the `PATH`
