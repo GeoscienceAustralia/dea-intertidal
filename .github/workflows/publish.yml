@@ -7,6 +7,7 @@ on:
       - 'pyproject.toml'
       - 'intertidal/**'
       - '.github/workflows/publish.yml'
+      - 'README.md'
   release:
     types: [published]
   workflow_dispatch:
@@ -33,10 +34,6 @@ jobs:
         with:
           version: "0.7.5"
           enable-cache: "true"
-
-      # Setup Python environment with uv
-      - name: Setup Python environment and install dea-tools
-        run: uv sync
 
       # Package will be built using version automatically
       # generated from Git by `hatchling-vcs`
