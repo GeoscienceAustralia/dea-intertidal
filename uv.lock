@@ -605,6 +605,15 @@ wheels = [
 ]
 
 [[package]]
+name = "colorcet"
+version = "3.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/c3/ae78e10b7139d6b7ce080d2e81d822715763336aa4229720f49cb3b3e15b/colorcet-3.1.0.tar.gz", hash = "sha256:2921b3cd81a2288aaf2d63dbc0ce3c26dcd882e8c389cc505d6886bf7aa9a4eb", size = 2183107, upload-time = "2024-02-29T19:15:42.976Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/c6/9963d588cc3d75d766c819e0377a168ef83cf3316a92769971527a1ad1de/colorcet-3.1.0-py3-none-any.whl", hash = "sha256:2a7d59cc8d0f7938eeedd08aad3152b5319b4ba3bcb7a612398cc17a384cb296", size = 260286, upload-time = "2024-02-29T19:15:40.494Z" },
+]
+
+[[package]]
 name = "comm"
 version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1044,14 +1053,40 @@ s3 = [
 ]
 
 [[package]]
+name = "datashader"
+version = "0.18.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorcet" },
+    { name = "multipledispatch" },
+    { name = "numba" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "packaging" },
+    { name = "pandas" },
+    { name = "param" },
+    { name = "pyct" },
+    { name = "requests" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "toolz" },
+    { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "xarray", version = "2025.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3f/5d/3f8db3f4fa141c577eb8953323670d91e6c18bd135bf2346fb02ae0b1768/datashader-0.18.2.tar.gz", hash = "sha256:53ef0bc35b9ba1034bdf290a2e28babf0fa2b075a3e5a822c79dcde12183d1ff", size = 18195212, upload-time = "2025-08-05T10:04:37.793Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/0e/b11ad5fd77e3dd0baad9cac3184315be7654ae401e3b0b0c324503f23d96/datashader-0.18.2-py3-none-any.whl", hash = "sha256:2aa90e867a46b1e75248f32a47c5b14bb5dc869524152f88c0af8369d47359e7", size = 18330272, upload-time = "2025-08-05T10:04:35.288Z" },
+]
+
+[[package]]
 name = "dea-intertidal"
 source = { editable = "." }
 dependencies = [
     { name = "bottleneck" },
     { name = "click" },
-    { name = "dask" },
     { name = "dea-tools" },
     { name = "eo-tides" },
+    { name = "folium" },
     { name = "geopandas" },
     { name = "matplotlib" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1060,15 +1095,10 @@ dependencies = [
     { name = "odc-geo" },
     { name = "pandas" },
     { name = "pyogrio" },
-    { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pystac" },
     { name = "pytz" },
     { name = "rasterio" },
-    { name = "rioxarray" },
     { name = "s3fs" },
     { name = "scikit-image" },
-    { name = "scikit-learn" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "seaborn" },
@@ -1076,6 +1106,7 @@ dependencies = [
     { name = "tqdm" },
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "xarray-spatial" },
 ]
 
 [package.optional-dependencies]
@@ -1083,9 +1114,6 @@ datacube = [
     { name = "datacube", extra = ["performance", "postgres", "s3"] },
     { name = "eodatasets3" },
     { name = "odc-ui" },
-]
-hdstats = [
-    { name = "hdstats" },
 ]
 
 [package.dev-dependencies]
@@ -1105,13 +1133,12 @@ dev = [
 requires-dist = [
     { name = "bottleneck", specifier = ">=1.4.2" },
     { name = "click", specifier = ">=8.1.7" },
-    { name = "dask", specifier = ">=2024.3.1" },
     { name = "datacube", extras = ["performance", "postgres", "s3"], marker = "extra == 'datacube'", specifier = ">=1.8.19" },
     { name = "dea-tools", specifier = ">=0.4.0" },
     { name = "eo-tides", specifier = ">=0.8.3" },
     { name = "eodatasets3", marker = "extra == 'datacube'", specifier = ">=0.30.9" },
+    { name = "folium", specifier = ">=0.16.0" },
     { name = "geopandas", specifier = ">=0.14.4" },
-    { name = "hdstats", marker = "extra == 'hdstats'", specifier = ">=0.1.8.post1" },
     { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "odc-algo", specifier = ">=1.1.1" },
@@ -1119,21 +1146,18 @@ requires-dist = [
     { name = "odc-ui", marker = "extra == 'datacube'", specifier = ">=0.2.1" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pyogrio", specifier = ">=0.10.0" },
-    { name = "pyproj", specifier = ">=3.7.0" },
-    { name = "pystac", specifier = ">=1.11" },
     { name = "pytz", specifier = ">=2024.1" },
     { name = "rasterio", specifier = ">=1.4.1" },
-    { name = "rioxarray", specifier = ">=0.17.0" },
     { name = "s3fs", specifier = ">=2024.9.0" },
     { name = "scikit-image", specifier = ">=0.24.0" },
-    { name = "scikit-learn", specifier = ">=1.5.2" },
     { name = "scipy", specifier = ">=1.14.1" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "sunriset", specifier = ">=1.0" },
     { name = "tqdm", specifier = ">=4.66.5" },
     { name = "xarray", specifier = ">=2024.9.0" },
+    { name = "xarray-spatial", specifier = ">=0.4.0" },
 ]
-provides-extras = ["datacube", "hdstats"]
+provides-extras = ["datacube"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1779,18 +1803,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/ec/86f59025306dcc6deee5fda54d980d077075b8d9889aac80f158bd585f1b/h5py-3.14.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d90e6445ab7c146d7f7981b11895d70bc1dd91278a4f9f9028bc0c95e4a53f13", size = 4921632, upload-time = "2025-06-06T14:05:43.464Z" },
     { url = "https://files.pythonhosted.org/packages/3f/6d/0084ed0b78d4fd3e7530c32491f2884140d9b06365dac8a08de726421d4a/h5py-3.14.0-cp313-cp313-win_amd64.whl", hash = "sha256:ae18e3de237a7a830adb76aaa68ad438d85fe6e19e0d99944a3ce46b772c69b3", size = 2852929, upload-time = "2025-06-06T14:05:47.659Z" },
 ]
-
-[[package]]
-name = "hdstats"
-version = "0.2.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scipy", version = "1.16.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/80/53/ad1077e5210c09b30d1ac1bb8f3320d5217cec512e11f39e74cd87ee28b5/hdstats-0.2.1.tar.gz", hash = "sha256:42c1525a9a06c032046c97be01b532a404d327d3e5128afa0f26e4b478d4193f", size = 543139, upload-time = "2021-03-01T05:21:28.584Z" }
 
 [[package]]
 name = "idna"
@@ -3307,6 +3319,15 @@ wheels = [
 ]
 
 [[package]]
+name = "param"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/9c/69a576ffb9da36072ffc1f7ef7afaad88366d30dcb327caeb92c8b6cc4ee/param-2.2.1.tar.gz", hash = "sha256:ba1f7cec6455ea8ad96f641f4082759bf1057dcbe629aa79d956b25973252422", size = 176980, upload-time = "2025-06-11T15:10:26.683Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/57/2b46b199482bbaaade2f978164577cf7c2fdc2782a7caf29fabd5265a84f/param-2.2.1-py3-none-any.whl", hash = "sha256:e3a4ca7f3d7610615129a55dbde2e90eb67d11cef70936487b0a59717dba0bdc", size = 119047, upload-time = "2025-06-11T15:10:25.136Z" },
+]
+
+[[package]]
 name = "parso"
 version = "0.8.5"
 source = { registry = "https://pypi.org/simple" }
@@ -3685,6 +3706,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ba/e9/01f1a64245b89f039897cb0130016d79f77d52669aae6ee7b159a6c4c018/pyasn1-0.6.1.tar.gz", hash = "sha256:6f580d2bdd84365380830acf45550f2511469f673cb4a5ae3857a3170128b034", size = 145322, upload-time = "2024-09-10T22:41:42.55Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/f1/d6a797abb14f6283c0ddff96bbdd46937f64122b8c925cab503dd37f8214/pyasn1-0.6.1-py3-none-any.whl", hash = "sha256:0d632f46f2ba09143da3a8afe9e33fb6f92fa2320ab7e886e2d0f7672af84629", size = 83135, upload-time = "2024-09-11T16:00:36.122Z" },
+]
+
+[[package]]
+name = "pyct"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "param" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2e/3b/b5b9d4215bc98df9186a5dfb9f2b4ce6db0b33b1728f63143f1431542e20/pyct-0.5.0.tar.gz", hash = "sha256:dd9f4ac5cbd8e37c352c04036062d3c5f67efec76d404761ef16b0cbf26aa6a0", size = 15837, upload-time = "2023-01-30T11:11:02.365Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/e7/c7c1e9e1b6b23ca1db7af3c6826d57d8da883021f751edcc9c82143b127a/pyct-0.5.0-py2.py3-none-any.whl", hash = "sha256:a4038a8885059ab8cac6f946ea30e0b5e6bdbe0b92b6723f06737035f9d65e8c", size = 15750, upload-time = "2023-01-30T11:11:01.088Z" },
 ]
 
 [[package]]
@@ -5330,6 +5363,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4e/0b/bbb76e05c8e2099baf90e259c29cafe6a525524b1d1da8bfbc39577c043e/xarray-2025.9.0.tar.gz", hash = "sha256:7dd6816fe0062c49c5e9370dd483843bc13e5ed80a47a9ff10baff2b51e070fb", size = 3040318, upload-time = "2025-09-04T04:20:26.296Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8d/f0/73c24457c941b8b08f7d090853e40f4b2cdde88b5da721f3f28e98df77c9/xarray-2025.9.0-py3-none-any.whl", hash = "sha256:79f0e25fb39571f612526ee998ee5404d8725a1db3951aabffdb287388885df0", size = 1349595, upload-time = "2025-09-04T04:20:24.36Z" },
+]
+
+[[package]]
+name = "xarray-spatial"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "datashader" },
+    { name = "numba" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "xarray", version = "2025.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3d/95/986aa38c585abe6cec85fca260c6c2902a415f99d937bf0cc362af71e6fa/xarray_spatial-0.4.0.tar.gz", hash = "sha256:cc2da7630acc49b1fefbeb3f4509c15d6eea93d12938ee8f617395a70a6a2da2", size = 70252318, upload-time = "2024-04-26T16:55:05.938Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/72/8cc5d33d86260e030cd703a5b5021656d1c49066cad710825f0b23428ef6/xarray_spatial-0.4.0-py3-none-any.whl", hash = "sha256:6c207c90142f3fbba142e67bfd7f69767246aba6146aca9e130581b35799c9df", size = 2015343, upload-time = "2024-04-26T16:54:58.047Z" },
 ]
 
 [[package]]
