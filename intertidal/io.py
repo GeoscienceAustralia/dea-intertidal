@@ -118,9 +118,10 @@ def extract_geobox(
     # If `datacube` is not installed, only support `odc-geo` geometries
     try:
         from datacube.utils.geometry import Geometry as Geometry_datacube18
+
         GEOM_TYPES = (odc.geo.geom.Geometry, Geometry_datacube18)
     except ImportError:
-        GEOM_TYPES = (odc.geo.geom.Geometry)
+        GEOM_TYPES = odc.geo.geom.Geometry
 
     # Either `study_area` or `geom` must be provided
     if study_area is None and geom is None:
@@ -256,7 +257,6 @@ def load_data(
         to generate ODC lineage metadata for DEA Intertidal)
 
     """
-
     # Attempt to import datacube and raise an error if not available
     try:
         from datacube.utils.masking import mask_invalid_data
@@ -532,6 +532,18 @@ def load_topobathy_mask(
         following analysis.
 
     """
+    # Attempt to import datacube and raise an error if not available
+    try:
+        from datacube.utils.masking import mask_invalid_data
+    except ImportError as e:
+        msg = (
+            "The `load_topobathy_mask` function requires `datacube` to be installed. "
+            "Please consider loading data with `odc-stac` instead, or install "
+            "DEA Intertidal with the `[datacube]` extra, e.g.: `pip install "
+            "dea-intertidal[datacube]`"
+        )
+        raise ImportError(msg) from e
+
     # Load from datacube, reprojecting to GeoBox of input satellite data
     topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
 
@@ -588,6 +600,18 @@ def load_aclum_mask(
         False equals all other classes.
 
     """
+    # Attempt to import datacube and raise an error if not available
+    try:
+        from datacube.utils.masking import mask_invalid_data
+    except ImportError as e:
+        msg = (
+            "The `load_aclum_mask` function requires `datacube` to be installed. "
+            "Please consider loading data with `odc-stac` instead, or install "
+            "DEA Intertidal with the `[datacube]` extra, e.g.: `pip install "
+            "dea-intertidal[datacube]`"
+        )
+        raise ImportError(msg) from e
+
     try:
         # Load from datacube, reprojecting to GeoBox of input satellite data
         aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
