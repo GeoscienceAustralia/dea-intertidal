@@ -1134,7 +1134,7 @@ requires-dist = [
     { name = "bottleneck", specifier = ">=1.4.2" },
     { name = "click", specifier = ">=8.1.7" },
     { name = "datacube", extras = ["performance", "postgres", "s3"], marker = "extra == 'datacube'", specifier = ">=1.8.19" },
-    { name = "dea-tools", specifier = "==0.4.6" },
+    { name = "dea-tools", specifier = ">=0.4.6" },
     { name = "eo-tides", specifier = ">=0.8.3" },
     { name = "eodatasets3", marker = "extra == 'datacube'", specifier = ">=0.30.9" },
     { name = "folium", specifier = ">=0.16.0" },
