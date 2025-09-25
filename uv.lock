@@ -1134,7 +1134,7 @@ requires-dist = [
     { name = "bottleneck", specifier = ">=1.4.2" },
     { name = "click", specifier = ">=8.1.7" },
     { name = "datacube", extras = ["performance", "postgres", "s3"], marker = "extra == 'datacube'", specifier = ">=1.8.19" },
-    { name = "dea-tools", specifier = "==0.4.6.dev3" },
+    { name = "dea-tools", specifier = ">=0.4.6" },
     { name = "eo-tides", specifier = ">=0.8.3" },
     { name = "eodatasets3", marker = "extra == 'datacube'", specifier = ">=0.30.9" },
     { name = "folium", specifier = ">=0.16.0" },
@@ -1174,7 +1174,7 @@ dev = [
 
 [[package]]
 name = "dea-tools"
-version = "0.4.6.dev3"
+version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1222,9 +1222,9 @@ dependencies = [
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2b/35/0b345201a1eb3f5536aa12386a070daaa7d865d24ff66d837c5e8187397b/dea_tools-0.4.6.dev3.tar.gz", hash = "sha256:ebee5a0150f8e3ab6cb34ce70e0e77b4602781e60486fd5811dec6ad8beafb43", size = 154830, upload-time = "2025-09-24T04:35:52.322Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/c3/d437f696b01676f7961affa8d217b010e0dda567896ea824434b0415c61b/dea_tools-0.4.6.tar.gz", hash = "sha256:5ec6d7ed3cc23a41d7522da38142995d1402e38f5cc214a93a1886410b0fac8e", size = 154798, upload-time = "2025-09-25T00:39:17.181Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/08/51/bc25454271e26a406fb3e94a5b59d2e6f52342d9ed60a7fba741b1482554/dea_tools-0.4.6.dev3-py3-none-any.whl", hash = "sha256:389a31123a9f0d174148835c729dd58abe59002b72f65ca48fd7c342bccbcba5", size = 175489, upload-time = "2025-09-24T04:35:50.825Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/e5/19863d98201dc7edebd4aa9fb416fbf11e6016fd3c329513a2ab181be3df/dea_tools-0.4.6-py3-none-any.whl", hash = "sha256:e7805ffd280973ff0c0ca63ef2e90cbbf4e7c81669cd2be1faa88ca9b1fb0cd0", size = 175429, upload-time = "2025-09-25T00:39:15.679Z" },
 ]
 
 [[package]]
