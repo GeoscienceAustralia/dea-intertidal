@@ -47,18 +47,18 @@ from intertidal.elevation import elevation
 
 ## 🚀 Getting started
 
-We recommend running the [**Getting started with DEA Intertidal**](../notebooks/Intertidal_elevation.ipynb) Jupyter Notebook for an example of how to run a simple DEA Intertidal analysis.
+We recommend running the [**Getting started with DEA Intertidal**](notebooks/Getting_started_with_DEA_Intertidal.ipynb) Jupyter Notebook for an example of how to run a simple DEA Intertidal analysis.
 
 This notebook loads data from Microsoft Planetary Computer using using Spatio-Temporal Asset Catalogue (STAC) metadata, and is suitable for any coastal location globally.
 
 ## 📁 Repository structure
 
 The DEA Intertidal Github repository contains the following important sections:
-* `intertidal`: The DEA Intertidal Python package, containing modules required for loading data, tide modelling, intertidal elevation, and exposure calculations
-* `notebooks`: Jupyter Notebooks providing workflows for generating key DEA Intertidal outputs
-* `data`: Contains required `raw` input data files and output `interim` and `processed` outputs
-* `metadata`: Open Data Cube (ODC) metadata required for indexing DEA Intertidal into an ODC datacube
-* `tests`: Unit and integration tests, including automatically generated validation test results
+* [`intertidal`](intertidal/): The DEA Intertidal Python package, containing modules required for loading data, tide modelling, intertidal elevation, and exposure calculations
+* [`notebooks`](notebooks): Jupyter Notebooks providing workflows for generating key DEA Intertidal outputs
+* [`data`](data): Contains required `raw` input data files and output `interim` and `processed` outputs
+* [`metadata`](metadata): Open Data Cube (ODC) metadata required for indexing DEA Intertidal into an ODC datacube
+* [`tests`](tests): Unit and integration tests, including automatically generated validation test results
 
 ## 🛠️ Contact
 For assistance with any of the Python code or Jupyter Notebooks in this repository, please post a [Github issue](https://github.com/GeoscienceAustralia/dea-intertidal/issues). For questions or more information about DEA Intertidal, email earth.observation@ga.gov.au.
