@@ -1,7 +1,7 @@
 [project]
 name = "dea-intertidal"
 dynamic = ["version"]
-description = "Generating intertidal elevation, extents and exposure from satellite Earth Observation data"
+description = "Remote sensing tools for high-resolution mapping of the intertidal zone"
 authors = [
     { name = "Robbi Bishop-Taylor" },
     { name = "Claire Phillips" },
@@ -39,8 +39,9 @@ requires-python = ">=3.10,<4.0"
 dependencies = [
     "Bottleneck>=1.4.2",
     "click>=8.1.7",
+    "cmocean>=4.0.0",
     "dea-tools>=0.4.6",
-    "eo-tides>=0.8.3",
+    "eo-tides>=0.9.0",
     "folium>=0.16.0",
     "geopandas>=0.14.4",
     "matplotlib>=3.9.2",
