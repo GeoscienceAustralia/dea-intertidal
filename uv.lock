@@ -605,6 +605,21 @@ wheels = [
 ]
 
 [[package]]
+name = "cmocean"
+version = "4.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/93/6ce32a2749968071b5239c96c54a229f9cb666d1c2d2cead7246ef28282c/cmocean-4.0.3.tar.gz", hash = "sha256:37868399fb5f41b4eac596e69803f9bfaea49946514dfb2e7f48886854250d7c", size = 7145175, upload-time = "2024-04-06T01:05:26.398Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/86/7b/97754548e9da3d41d7334e375b2cd712e9406a3f48823a5f0a166f42d63d/cmocean-4.0.3-py3-none-any.whl", hash = "sha256:f2fc1d5e349db122ee0c9eac80bba969aa92dd2806548fce58dc8bef962f309e", size = 421873, upload-time = "2024-04-06T01:05:24.069Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1093,6 +1108,7 @@ source = { editable = "." }
 dependencies = [
     { name = "bottleneck" },
     { name = "click" },
+    { name = "cmocean" },
     { name = "dea-tools" },
     { name = "eo-tides" },
     { name = "folium" },
@@ -1143,9 +1159,10 @@ dev = [
 requires-dist = [
     { name = "bottleneck", specifier = ">=1.4.2" },
     { name = "click", specifier = ">=8.1.7" },
+    { name = "cmocean", specifier = ">=4.0.0" },
     { name = "datacube", extras = ["performance", "postgres", "s3"], marker = "extra == 'datacube'", specifier = ">=1.8.19" },
     { name = "dea-tools", specifier = ">=0.4.6" },
-    { name = "eo-tides", specifier = ">=0.8.3" },
+    { name = "eo-tides", specifier = ">=0.9.0" },
     { name = "eodatasets3", marker = "extra == 'datacube'", specifier = ">=0.30.9" },
     { name = "folium", specifier = ">=0.16.0" },
     { name = "geopandas", specifier = ">=0.14.4" },
@@ -1344,7 +1361,7 @@ wheels = [
 
 [[package]]
 name = "eo-tides"
-version = "0.8.3"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama" },
@@ -1369,9 +1386,9 @@ dependencies = [
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/18/6e/6a3e860abe64bf363ed803726aa6ae7aaa227d46b6a0d8fd676ee7a2d47d/eo_tides-0.8.3.tar.gz", hash = "sha256:c65480d6498649661ecae8216723e8d37bd22fc609822cb640632f4eb5dec6db", size = 28603085, upload-time = "2025-09-16T07:56:43.193Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/2c/1b630e6da50d16b1fe92d4f2fcc947a92edbe9d698b5c75fd7fc9766dd5f/eo_tides-0.9.0.tar.gz", hash = "sha256:d1d1f55db5424c2ef774bc9e359ed874ce70a9513521d3d39c137aae2357ab01", size = 28689626, upload-time = "2025-10-01T07:13:21.252Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/e2/139aa6d52bdcb63e2a62f10614188b4328d69040b9107a57f930589b04b6/eo_tides-0.8.3-py3-none-any.whl", hash = "sha256:961b98d594361ca3148476fce967d44b44719efc967b67ebf8a8a9f0dcac60ff", size = 49347, upload-time = "2025-09-16T07:56:40.843Z" },
+    { url = "https://files.pythonhosted.org/packages/95/22/cf769399921c59e9eb54953f3944f88f62f96ece319e9af89271232fcf6e/eo_tides-0.9.0-py3-none-any.whl", hash = "sha256:05be4ab61124f9f15cdd0e398d84dd214e658ba3f5e453de10afa45b0fb164e8", size = 56295, upload-time = "2025-10-01T07:13:18.57Z" },
 ]
 
 [[package]]

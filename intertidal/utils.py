@@ -18,6 +18,9 @@ def configure_logging(name: str = "DEA Intertidal") -> logging.Logger:
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
 
+        # Prevent double logs in Jupyter Notebooks
+        logger.propagate = False
+
     return logger
 
 
