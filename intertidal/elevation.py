@@ -808,7 +808,8 @@ def elevation(
         determine workers.
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
-        supported by the `eo-tides` Python package. Options include:
+        supported by the `eo-tides` Python package; ignored if `tide_data`
+        is provided. Options include:
         - "EOT20" (default)
         - "TPXO10-atlas-v2-nc"
         - "FES2022"
@@ -821,6 +822,7 @@ def elevation(
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
         directory structure, refer to `eo-tides.utils.list_models`.
+        Ignored if `tide_data` is provided.
     run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
