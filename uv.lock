@@ -1161,8 +1161,8 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7" },
     { name = "cmocean", specifier = ">=4.0.0" },
     { name = "datacube", extras = ["performance", "postgres", "s3"], marker = "extra == 'datacube'", specifier = ">=1.8.19" },
-    { name = "dea-tools", specifier = ">=0.4.6" },
-    { name = "eo-tides", specifier = ">=0.9.0" },
+    { name = "dea-tools", specifier = ">=0.4.7" },
+    { name = "eo-tides", specifier = ">=0.9.2" },
     { name = "eodatasets3", marker = "extra == 'datacube'", specifier = ">=0.30.9" },
     { name = "folium", specifier = ">=0.16.0" },
     { name = "geopandas", specifier = ">=0.14.4" },
@@ -1202,7 +1202,7 @@ dev = [
 
 [[package]]
 name = "dea-tools"
-version = "0.4.6"
+version = "0.4.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1250,9 +1250,9 @@ dependencies = [
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/21/c3/d437f696b01676f7961affa8d217b010e0dda567896ea824434b0415c61b/dea_tools-0.4.6.tar.gz", hash = "sha256:5ec6d7ed3cc23a41d7522da38142995d1402e38f5cc214a93a1886410b0fac8e", size = 154798, upload-time = "2025-09-25T00:39:17.181Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/ee/99ee8a7ee596d5618174344be82955e2230eda1ff59bf14b4ef8e9f9af42/dea_tools-0.4.7.tar.gz", hash = "sha256:4648cdef67074da00fecd2d42ad4cba58c956284540fd27f1bbb550519a802a8", size = 155641, upload-time = "2025-10-07T22:44:52.538Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4e/e5/19863d98201dc7edebd4aa9fb416fbf11e6016fd3c329513a2ab181be3df/dea_tools-0.4.6-py3-none-any.whl", hash = "sha256:e7805ffd280973ff0c0ca63ef2e90cbbf4e7c81669cd2be1faa88ca9b1fb0cd0", size = 175429, upload-time = "2025-09-25T00:39:15.679Z" },
+    { url = "https://files.pythonhosted.org/packages/be/91/87f8f29f3c61e5013f5a5d5441fd26ece6bfd81b8ac86da83ba7369c897b/dea_tools-0.4.7-py3-none-any.whl", hash = "sha256:04475593040f7f9b872f7c9b864443177452e4a1fd5d51575195a37c712734ee", size = 176174, upload-time = "2025-10-07T22:44:51.138Z" },
 ]
 
 [[package]]
@@ -1361,7 +1361,7 @@ wheels = [
 
 [[package]]
 name = "eo-tides"
-version = "0.9.0"
+version = "0.9.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama" },
@@ -1371,11 +1371,14 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "odc-geo" },
+    { name = "odc-stac", extra = ["botocore"] },
     { name = "pandas" },
+    { name = "planetary-computer" },
     { name = "psutil" },
     { name = "pyogrio" },
     { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pystac-client" },
     { name = "pytmd" },
     { name = "scikit-learn" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1386,9 +1389,9 @@ dependencies = [
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/2c/1b630e6da50d16b1fe92d4f2fcc947a92edbe9d698b5c75fd7fc9766dd5f/eo_tides-0.9.0.tar.gz", hash = "sha256:d1d1f55db5424c2ef774bc9e359ed874ce70a9513521d3d39c137aae2357ab01", size = 28689626, upload-time = "2025-10-01T07:13:21.252Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/20/e5/bd72a806fb9b7f0f23f2601666e9e025dfcf0bfc9d147673d5ab8604ce05/eo_tides-0.9.2.tar.gz", hash = "sha256:d556a1a69011e815b435bb9f6b5e2db767e62483c12d4025000865c1d3048399", size = 28777726, upload-time = "2025-10-07T05:47:36.638Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/22/cf769399921c59e9eb54953f3944f88f62f96ece319e9af89271232fcf6e/eo_tides-0.9.0-py3-none-any.whl", hash = "sha256:05be4ab61124f9f15cdd0e398d84dd214e658ba3f5e453de10afa45b0fb164e8", size = 56295, upload-time = "2025-10-01T07:13:18.57Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/e7/3f425465982d8e253cacedaef4dd6284af630ad827f259150c7f69605491/eo_tides-0.9.2-py3-none-any.whl", hash = "sha256:e2e28f8039707fc8ed458db1a3977079e083acbc39fd23f7b340a83f31dc1788", size = 56415, upload-time = "2025-10-07T05:47:33.527Z" },
 ]
 
 [[package]]
