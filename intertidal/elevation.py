@@ -761,7 +761,7 @@ def elevation(
     log=None,
     **model_tides_kwargs,
 ):
-    """Generate DEA Intertidal Elevation outputs using satellite imagery and tidal modeling.
+    """Generate DEA Intertidal Elevation outputs using satellite imagery and tide data.
 
     Parameters
     ----------
@@ -769,9 +769,10 @@ def elevation(
         A satellite data time series containing an "ndwi" water index
         variable.
     tide_data : array, optional
-        An optional array of tide heights matching the timesteps in
-        `satellite_ds`. If this is provided, these tides will be used
-        instead of tide modelled values.
+        An optional array of tide heights or sea level measurements
+        matching the timesteps in `satellite_ds`. If this is provided,
+        these values will be used instead of modelling tides for each
+        satellite observation timestep.
     valid_mask : xr.DataArray, optional
         A boolean mask used to optionally constrain the analysis area,
         with the same spatial dimensions as `satellite_ds`. For example,
