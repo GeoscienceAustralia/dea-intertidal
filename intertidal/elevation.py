@@ -5,6 +5,7 @@ from itertools import repeat
 import click
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import xarray as xr
 from dea_tools.dask import create_local_dask_cluster
@@ -744,6 +745,7 @@ def clean_edge_pixels(ds):
 
 def elevation(
     satellite_ds,
+    tide_data=None,
     valid_mask=None,
     ndwi_thresh=0.1,
     min_freq=0.01,
@@ -759,14 +761,18 @@ def elevation(
     log=None,
     **model_tides_kwargs,
 ):
-    """Generates DEA Intertidal Elevation outputs using satellite imagery
-    and tidal modeling.
+    """Generate DEA Intertidal Elevation outputs using satellite imagery and tide data.
 
     Parameters
     ----------
     satellite_ds : xarray.Dataset
         A satellite data time series containing an "ndwi" water index
         variable.
+    tide_data : array, optional
+        An optional array of tide heights or sea level measurements
+        matching the timesteps in `satellite_ds`. If this is provided,
+        these values will be used instead of modelling tides for each
+        satellite observation timestep.
     valid_mask : xr.DataArray, optional
         A boolean mask used to optionally constrain the analysis area,
         with the same spatial dimensions as `satellite_ds`. For example,
@@ -803,7 +809,8 @@ def elevation(
         determine workers.
     tide_model : str, optional
         The tide model or a list of models used to model tides, as
-        supported by the `eo-tides` Python package. Options include:
+        supported by the `eo-tides` Python package; ignored if `tide_data`
+        is provided. Options include:
         - "EOT20" (default)
         - "TPXO10-atlas-v2-nc"
         - "FES2022"
@@ -816,6 +823,7 @@ def elevation(
         The directory containing tide model data files. Defaults to
         "/var/share/tide_models"; for more information about the
         directory structure, refer to `eo-tides.utils.list_models`.
+        Ignored if `tide_data` is provided.
     run_id : string, optional
         An optional string giving the name of the analysis; used to
         prefix log entries.
@@ -852,22 +860,49 @@ def elevation(
     # Use run ID name for logs if it exists
     run_id = "Processing" if run_id is None else run_id
 
-    # Model tides into every pixel in the three-dimensional satellite
-    # dataset (x by y by time). If `model` is "ensemble" this will model
-    # tides by combining the best local tide models.
-    log.info(f"{run_id}: Modelling tide heights for each pixel")
-    tide_m = pixel_tides(
-        data=satellite_ds,
-        model=tide_model,
-        directory=tide_model_dir,
-        **model_tides_kwargs,
-    )
+    # If tide heights are provided, use these directly after validating
+    # they have the current number of timesteps
+    if tide_data is not None:
+        log.info(f"{run_id}: Using provided tide heights")
+        # Convert to xarray if required
+        if isinstance(tide_data, pd.Series):
+            tide_data = tide_data.rename_axis("time").to_xarray()
+        elif isinstance(tide_data, xr.DataArray):
+            assert "time" in tide_data.dims, "Provided tide data must include a 'time' dimension."
+        else:
+            raise ValueError("Tide data must be provided in `pd.Series` or `xr.DataArray` format.")
 
-    # Set tide array pixels to nodata if the satellite data array pixels
-    # contain nodata. This ensures that we ignore any tide observations
-    # where we don't have matching satellite imagery
-    log.info(f"{run_id}: Masking nodata and adding tide heights to satellite data array")
-    satellite_ds["tide_m"] = tide_m.where(~satellite_ds.to_array().isel(variable=0).isnull().drop_vars("variable"))
+        # Verify that data includes the expected number of timesteps
+        if len(tide_data.time) != len(satellite_ds.time):
+            err_msg = (
+                "`tide_data` has a different number of timesteps "
+                f"({len(tide_data.time)}) than `satellite_ds` "
+                f"({len(satellite_ds.time)}). Ensure `tide_data` includes only a "
+                "single measurement for each satellite observation in `satellite_ds`."
+            )
+            raise ValueError(err_msg)
+
+        # Add to dataset
+        satellite_ds["tide_m"] = tide_data
+        tide_m = tide_data
+
+    # Otherwise, model tides into every pixel in the 3D (i.e. `x` by `y`
+    # by `time`) satellite dataset . If `model` is "ensemble" this will
+    # model tides by combining the best local tide models.
+    else:
+        log.info(f"{run_id}: Modelling tide heights for each pixel")
+        tide_m = pixel_tides(
+            data=satellite_ds,
+            model=tide_model,
+            directory=tide_model_dir,
+            **model_tides_kwargs,
+        )
+
+        # Set tide array pixels to nodata if the satellite data array pixels
+        # contain nodata. This ensures that we ignore any tide observations
+        # where we don't have matching satellite imagery
+        log.info(f"{run_id}: Masking nodata and adding tide heights to satellite data array")
+        satellite_ds["tide_m"] = tide_m.where(~satellite_ds.to_array().isel(variable=0).isnull().drop_vars("variable"))
 
     # Flatten array from 3D (time, y, x) to 2D (time, z) and drop pixels
     # with no correlation with tide. This greatly improves processing
