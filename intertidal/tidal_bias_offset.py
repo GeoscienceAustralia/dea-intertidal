@@ -1,12 +1,5 @@
-import xarray as xr
-import numpy as np
-
-from dea_tools.spatial import subpixel_contours, points_on_line
-
-
 def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
-    """
-    Calculate the pixel-based sensor-observed spread and high/low
+    """Calculate the pixel-based sensor-observed spread and high/low
     offsets in tide heights compared to the full modelled tide range.
     Optionally, also return the highest and lowest astronomical and
     sensor-observed tides for each pixel.
@@ -44,8 +37,8 @@ def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
         sensor-observed lowest tide from the minimum modelled tide.
         * `offset_hightide`: The high tide measures the offset of the
         sensor-observed highest tide from the maximum modelled tide.
-    """
 
+    """
     # Set the maximum and minimum values per pixel for the observed and
     # modelled datasets
     max_obs = tide_m.max(dim="time")
@@ -65,7 +58,7 @@ def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
     # heights as a percentage of the modelled highest and lowest tides.
     offset_hightide = (abs(max_mod - max_obs)) / mod_range * 100
     offset_lowtide = (abs(min_mod - min_obs)) / mod_range * 100
-    
+
     # Add the lowest and highest astronomical tides
     if lat_hat:
         lat = min_mod
@@ -79,10 +72,7 @@ def bias_offset(tide_m, tide_cq, lat_hat=True, lot_hot=None):
     if lat_hat:
         if lot_hot:
             return lat, hat, lot, hot, spread, offset_lowtide, offset_hightide
-        else:
-            return lat, hat, spread, offset_lowtide, offset_hightide
-    elif lot_hot:
+        return lat, hat, spread, offset_lowtide, offset_hightide
+    if lot_hot:
         return lot, hot, spread, offset_lowtide, offset_hightide
-    else:
-        return spread, offset_lowtide, offset_hightide
-
+    return spread, offset_lowtide, offset_hightide

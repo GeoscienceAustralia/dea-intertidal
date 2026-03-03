@@ -11,11 +11,8 @@ def map_raster(
     display_map=True,
     return_map=False,
 ):
-    """
-    Plot raster data over an interactive map.
-    """
+    """Plot raster data over an interactive map."""
     import folium
-    import odc.geo.xr
 
     # Turn dataset and visualisation params into list if not already
     ds = [ds] if not isinstance(ds, list) else ds
@@ -70,7 +67,12 @@ def map_raster(
 
 
 def preprocess_validation(
-    validation_ds, modelled_ds, uncertainty_ds, lat, hat, clean_slope=True
+    validation_ds,
+    modelled_ds,
+    uncertainty_ds,
+    lat,
+    hat,
+    clean_slope=True,
 ):
     # Remove zero slope areas
     if clean_slope:
@@ -81,18 +83,14 @@ def preprocess_validation(
         # remove any pixels partially obscured by ocean after
         # reprojecting to 10 m resolution pixels.
         validation_slope = xrspatial.slope(agg=validation_ds)
-        validation_flat = mask_cleanup(
-            validation_slope == 0, mask_filters=[("dilation", 1)]
-        )
+        validation_flat = mask_cleanup(validation_slope == 0, mask_filters=[("dilation", 1)])
         validation_ds = validation_ds.where(~validation_flat)
 
     # Identify valid intertidal pixels for comparison
     intertidal = (validation_ds >= lat) & (validation_ds <= hat)
 
     # Analyse only intertidal pixels that contain valid data in both
-    valid_data = (
-        intertidal.values & modelled_ds.notnull().values & validation_ds.notnull().values
-    )
+    valid_data = intertidal.values & modelled_ds.notnull().values & validation_ds.notnull().values
 
     # Export 1D modelled and validation data for valid data area
     validation_z = validation_ds.values[valid_data]

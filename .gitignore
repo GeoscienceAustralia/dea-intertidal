@@ -8,12 +8,14 @@
 !*.sh
 !*.yaml
 !*.yml
+!*.toml
+!*.lock
 !*.in
 !*.txt
-!*.png
-!*.gif
-!**.github/workflows
+!**.github/workflows/
 !*.gitignore
 !*.dockerignore
 !*Dockerfile
 !tests/*.jpg
+
+build

@@ -4,36 +4,32 @@
 # - GDAL 3.7.3, released 2023/10/30
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.7.3
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    LC_ALL=C.UTF-8 \
-    LANG=C.UTF-8
+# curl and certificates are required to download uv,
+# build-essential, libpq-dev and python3-dev are needed for psycopg2,
+# git is needed for hatchling version control
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    build-essential \
+    libpq-dev \
+    python3-dev \
+    git && \
+    rm -rf /var/lib/apt/lists/*
 
-# Apt installation
-RUN apt-get update && \
-    apt-get install -y \
-      build-essential \
-      git \
-      python3-pip \
-      libpq-dev \
-    && apt-get autoclean && \
-    apt-get autoremove && \
-    rm -rf /var/lib/{apt,dpkg,cache,log}
+# Download, run and remove uv installer, and ensure it is on path
+ADD https://astral.sh/uv/0.8.22/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+ENV PATH="/root/.local/bin/:$PATH"
 
-# Set up working directory
+# Copy project files into image, and set as working directory
+ADD . /app
 WORKDIR /app
 
-# Copy requirements file first
-COPY requirements.in /app/requirements.in
+# Sync project into a new virtual environment based on uv.lock
+RUN uv sync --locked --extra datacube
 
-# Install uv and requirements
-RUN pip install uv && \
-    uv pip compile /app/requirements.in -o /app/requirements.txt --emit-find-links && \
-    uv pip install -r /app/requirements.txt --system
+# Make uv virtual environment accessible
+ENV PATH="/app/.venv/bin:$PATH"
 
-# Now copy the rest of the files
-COPY . /app
-
-# Install DEA Intertidal and verify installation
-RUN uv pip install . --system && \
-    uv pip check && \
-    dea-intertidal --help
+# Verify installation
+RUN uv pip check && dea-intertidal --help

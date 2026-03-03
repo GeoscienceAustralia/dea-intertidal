@@ -169,25 +169,26 @@ measurements:
     aliases:
       - high_band12
 
-  - name: low_count_clear
-    dtype: int16
-    units: "count"
-    nodata: -999
-
-  - name: high_count_clear
-    dtype: int16
-    units: "count"
-    nodata: -999
-
-  - name: low_threshold
+  - name: qa_low_threshold
     dtype: float32
     units: "metres above MSL"
     nodata: .nan
+    aliases:
+      - low_threshold
     
-  - name: high_threshold
+  - name: qa_high_threshold
     dtype: float32
     units: "metres above MSL"
     nodata: .nan
+    aliases:
+      - high_threshold
+
+  - name: qa_count_clear
+    dtype: int16
+    units: "count"
+    nodata: -999
+    aliases:
+      - count_clear
 
 load:
   crs: "EPSG:3577"
