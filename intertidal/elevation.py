@@ -1226,9 +1226,9 @@ def intertidal_cli(
         )
 
         # Also load ancillary dataset IDs to use in metadata
-        # (both layers are continental continental products with only
+        # (the layers are continental products with only
         # a single dataset, so no need for a spatial/temporal query)
-        dss_ancillary = dc.find_datasets(product=["ga_ausbathytopo250m_2023", "abares_clum_2020"])
+        dss_ancillary = dc.find_datasets(product=["ga_ausbathytopo250m_2023", "abares_clum_2020", "ga_srtm_dem1sv1_0"])
 
         # Calculate elevation
         log.info(f"{run_id}: Calculating Intertidal Elevation")
