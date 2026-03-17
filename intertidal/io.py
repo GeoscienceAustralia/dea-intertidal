@@ -182,7 +182,7 @@ def load_data(
     mask_sunglint=None,
     include_coastal_aerosol=False,
     dask_chunks=None,
-    s2a_filter=True,
+    s2a_filter=False,
     dtype="float32",
     log=None,
     run_id="",
@@ -249,7 +249,7 @@ def load_data(
                         which will use '{"x": 3200, "y": 3200}'.
                     s2a_filter : bool, optional
                         Whether to exclude data from the Sentinel-2a after 1 Jan 2025.
-                        Defaults to True.
+                        Defaults to False.
                     dtype : str, optional
                         Desired data type for output data. Valid values are "int16"
                         (default) and "float32". If `ndwi=True`, then "float32" will be

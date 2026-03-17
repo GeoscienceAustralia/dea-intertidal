@@ -1176,9 +1176,9 @@ def elevation(
 @click.option(
     "--s2a_filter/--no-s2a_filter",
     is_flag=True,
-    default=True,
+    default=False,
     help="Whether to exclude data from the Sentinel-2a after 1 Jan 2025."
-    "True; can be set to False by passing `--no-s2a_filter`.",
+    "False; can be set to True by passing `--s2a_filter`.",
 )
 @click.option(
     "--aws_unsigned/--no-aws_unsigned",
