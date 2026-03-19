@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import warnings
+from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import urlparse
@@ -39,8 +40,9 @@ warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
 
 def _id_to_tuple(id_str):
     """Converts a tile ID in form 'x123y123' to a ix, iy tuple so it
-    can be passed to a GridSpec (e.g. `gs[ix, iy]`)
+    can be passed to a GridSpec (e.g. `gs[ix, iy]`).
     """
+
     try:
         ix, iy = id_str.replace("x", "").split("y")
         return int(ix), int(iy)
@@ -131,7 +133,9 @@ def extract_geobox(
 
     # If custom geom is provided, verify it is a geometry
     if geom is not None and not isinstance(geom, geom_types):
-        raise ValueError("Unsupported input type for `geom`; please provide a datacube Geometry object.")
+        raise ValueError(
+            "Unsupported input type for `geom`; please provide a datacube Geometry object."
+        )
 
     # Otherwise, extract GeoBox from geometry
     if geom is not None and isinstance(geom, geom_types):
@@ -141,7 +145,9 @@ def extract_geobox(
     elif geom is None:
         # Verify that resolution fits evenly inside tile width
         if tile_width % resolution != 0:
-            raise ValueError("Ensure that `resolution` divides into `tile_width` evenly.")
+            raise ValueError(
+                "Ensure that `resolution` divides into `tile_width` evenly."
+            )
 
         # Calculate tile pixels
         n_pixels = tile_width / resolution
@@ -176,85 +182,96 @@ def load_data(
     mask_sunglint=None,
     include_coastal_aerosol=False,
     dask_chunks=None,
+    s2a_filter=False,
     dtype="float32",
+    log=None,
+    run_id="",
     **query,
 ):
     """Loads cloud-masked Sentinel-2 and Landsat satellite data for a given
-    study area/geom and time range.
+                    study area/geom and time range.
 
-    Supports optionally converting to Normalised Difference Water Index
-    and masking sunglinted pixels.
+                    Supports optionally converting to Normalised Difference Water Index
+                    and masking sunglinted pixels.
 
-    Parameters
-    ----------
-    dc : datacube.Datacube()
-        A datacube instance to load data from.
-    study_area : str, optional
-        Tile ID string to process. This should be the ID of a GridSpec
-        analysis tile in the format "x123y123". If `geom` is provided,
-        this will have no effect.
-    geom : Geometry, optional
-        A datacube Geometry object defining a custom spatial extent of
-        interest. If `geom` is provided, this will overrule any study
-        area ID passed to `study_area` and will be returned as-is.
-    time_range : tuple, optional
-        A tuple containing the start and end date for the time range of
-        interest, in the format (start_date, end_date). The default is
-        ("2019", "2021").
-    resolution : int or float, optional
-        The spatial resolution (in metres) to load data at. The default
-        is 10.
-    crs : str, optional
-        The coordinate reference system (CRS) to project data into. The
-        default is Australian Albers "EPSG:3577".
-    include_s2 : bool, optional
-        Whether to load Sentinel-2 data.
-    include_ls : bool, optional
-        Whether to load Landsat data.
-    filter_gqa : bool, optional
-        Whether or not to filter Sentinel-2 data using the GQA filter.
-        Defaults to True.
-    max_cloudcover : float, optional
-        The maximum cloud cover metadata value used to load data.
-        Defaults to 90 (i.e. 90% cloud cover).
-    skip_broken_datasets : bool, optional
-        Whether to skip broken datasets during load. This can avoid
-        temporary file access issues on S3, however introduces
-        randomness into the analysis (two identical runs may produce
-        different results due to different data failing to load).
-    ndwi : bool, optional
-        Whether to convert spectral bands to Normalised Difference Water
-        Index values before returning them. Note that this must be set
-        to True if both `include_s2` and `include_ls` are True.
-    mask_sunglint : int, optional
-        Whether to mask out pixels that are likely to be
-        affected by sunglint using glint angles. Low glint angles
-        (e.g. < 20) often correspond with sunglint. Defaults to None;
-        set to e.g. "20" to mask out all pixels with a glint angle of
-        less than 20.
-    include_coastal_aerosol : bool, optional
-        Whether to load data from the Sentinel-2 coastal aerosol band.
-        Defaults to False.
-    dask_chunks : dict, optional
-        Optional custom Dask chunks to load data with. Defaults to None,
-        which will use '{"x": 3200, "y": 3200}'.
-    dtype : str, optional
-        Desired data type for output data. Valid values are "int16"
-        (default) and "float32". If `ndwi=True`, then "float32" will be
-        used regardless of what is set here (as nodata values must be
-        set to 'NaN' before calculating NDWI).
-    **query :
-        Optional datacube.load keyword argument parameters used to
-        query data.
+                    Parameters
+                    ----------
+                    dc : datacube.Datacube()
+                        A datacube instance to load data from.
+                    study_area : str, optional
+                        Tile ID string to process. This should be the ID of a GridSpec
+                        analysis tile in the format "x123y123". If `geom` is provided,
+                        this will have no effect.
+                    geom : Geometry, optional
+                        A datacube Geometry object defining a custom spatial extent of
+                        interest. If `geom` is provided, this will overrule any study
+                        area ID passed to `study_area` and will be returned as-is.
+                    time_range : tuple, optional
+                        A tuple containing the start and end date for the time range of
+                        interest, in the format (start_date, end_date). The default is
+                        ("2019", "2021").
+                    resolution : int or float, optional
+                        The spatial resolution (in metres) to load data at. The default
+                        is 10.
+                    crs : str, optional
+                        The coordinate reference system (CRS) to project data into. The
+                        default is Australian Albers "EPSG:3577".
+                    include_s2 : bool, optional
+                        Whether to load Sentinel-2 data.
+                    include_ls : bool, optional
+                        Whether to load Landsat data.
+                    filter_gqa : bool, optional
+                        Whether or not to filter Sentinel-2 data using the GQA filter.
+                        Defaults to True.
+                    max_cloudcover : float, optional
+                        The maximum cloud cover metadata value used to load data.
+                        Defaults to 90 (i.e. 90% cloud cover).
+                    skip_broken_datasets : bool, optional
+                        Whether to skip broken datasets during load. This can avoid
+                        temporary file access issues on S3, however introduces
+                        randomness into the analysis (two identical runs may produce
+                        different results due to different data failing to load).
+                    ndwi : bool, optional
+                        Whether to convert spectral bands to Normalised Difference Water
+                        Index values before returning them. Note that this must be set
+                        to True if both `include_s2` and `include_ls` are True.
+                    mask_sunglint : int, optional
+                        Whether to mask out pixels that are likely to be
+                        affected by sunglint using glint angles. Low glint angles
+                        (e.g. < 20) often correspond with sunglint. Defaults to None;
+                        set to e.g. "20" to mask out all pixels with a glint angle of
+                        less than 20.
+                    include_coastal_aerosol : bool, optional
+                        Whether to load data from the Sentinel-2 coastal aerosol band.
+                        Defaults to False.
+                    dask_chunks : dict, optional
+                        Optional custom Dask chunks to load data with. Defaults to None,
+                        which will use '{"x": 3200, "y": 3200}'.
+                    s2a_filter : bool, optional
+                        Whether to exclude data from the Sentinel-2a after 1 Jan 2025.
+                        Defaults to False.
+                    dtype : str, optional
+                        Desired data type for output data. Valid values are "int16"
+                        (default) and "float32". If `ndwi=True`, then "float32" will be
+                        used regardless of what is set here (as nodata values must be
+                        set to 'NaN' before calculating NDWI).
+                    log : logging.Logger, optional
+                        Logger object, by default None. added to print out how many post
+                        1 Jan 2025 s2a datasets have been filtered out.
+                    run_id : str, optional
+        run id, by default ''. added log statements.
+                    **query :
+                        Optional datacube.load keyword argument parameters used to
+                        query data.
 
-    Returns
-    -------
-    satellite_ds : xarray.Dataset
-        An xarray dataset containing the loaded Landsat or Sentinel-2
-        data.
-    dss_s2, dss_ls : lists or None
-        Lists of ODC datasets loaded to produce `satellite_ds` (used
-        to generate ODC lineage metadata for DEA Intertidal)
+                    Returns
+                    -------
+                    satellite_ds : xarray.Dataset
+                        An xarray dataset containing the loaded Landsat or Sentinel-2
+                        data.
+                    dss_s2, dss_ls : lists or None
+                        Lists of ODC datasets loaded to produce `satellite_ds` (used
+                        to generate ODC lineage metadata for DEA Intertidal)
 
     """
     # Attempt to import datacube and raise an error if not available
@@ -311,7 +328,9 @@ def load_data(
         sunglint_bands = []
 
     # Load study area, defined as a GeoBox pixel grid
-    geobox = extract_geobox(study_area=study_area, geom=geom, resolution=resolution, crs=crs)
+    geobox = extract_geobox(
+        study_area=study_area, geom=geom, resolution=resolution, crs=crs
+    )
 
     # Set up query params
     query_params = {
@@ -353,6 +372,22 @@ def load_data(
 
         # Continue if at least one dataset is found
         if len(dss_s2) > 0:
+            # if s2a_filter filter out S2A after 2025
+            if s2a_filter:
+                all_ds_count = len(dss_s2)
+                S2A_CUTOFF = datetime(2025, 1, 1, tzinfo=timezone.utc)
+                dss_s2 = [
+                    d
+                    for d in dss_s2
+                    if not (
+                        d.product.name == "ga_s2am_ard_3" and d.time.begin >= S2A_CUTOFF
+                    )
+                ]
+                filt_ds_cnt = all_ds_count - len(dss_s2)
+                if log:
+                    log.info(
+                        f"{run_id}: {filt_ds_cnt} s2a datasets (post 1-1-2025) have been excluded"
+                    )
             # Load datasets
             ds_s2 = dc.load(
                 datasets=dss_s2,
@@ -361,14 +396,20 @@ def load_data(
             )
 
             # Create cloud mask, treating nodata and clouds as bad pixels
-            cloud_mask = enum_to_bool(mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"])
+            cloud_mask = enum_to_bool(
+                mask=ds_s2.oa_s2cloudless_mask, categories=["nodata", "cloud"]
+            )
 
             # Identify non-contiguous pixels
-            noncontiguous_mask = enum_to_bool(ds_s2.oa_nbart_contiguity, categories=[False])
+            noncontiguous_mask = enum_to_bool(
+                ds_s2.oa_nbart_contiguity, categories=[False]
+            )
 
             # Set cloud mask and non-contiguous pixels to nodata
             combined_mask = cloud_mask | noncontiguous_mask
-            ds_s2 = erase_bad(x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask)
+            ds_s2 = erase_bad(
+                x=ds_s2[s2_spectral_bands + sunglint_bands], where=combined_mask
+            )
 
             # Optionally, apply sunglint mask (if not None and if at least angle of 1)
             if (mask_sunglint is not None) and (mask_sunglint >= 1):
@@ -392,7 +433,9 @@ def load_data(
             # Convert to NDWI
             if ndwi:
                 # Calculate NDWI
-                ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (ds_s2.nbart_green + ds_s2.nbart_nir_1)
+                ds_s2["ndwi"] = (ds_s2.nbart_green - ds_s2.nbart_nir_1) / (
+                    ds_s2.nbart_green + ds_s2.nbart_nir_1
+                )
                 data_list.append(ds_s2[["ndwi"]])
             else:
                 data_list.append(ds_s2)
@@ -426,7 +469,9 @@ def load_data(
             # nodata, we make sure that small areas of cloud next to Landsat
             # 7 SLC-off nodata gaps are not accidently removed (at the cost
             # of not being able to clean false positives next to SLC-off gaps)
-            bad_data = enum_to_bool(ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"])
+            bad_data = enum_to_bool(
+                ds_ls.oa_fmask, categories=["nodata", "cloud", "shadow"]
+            )
             bad_data_cleaned = mask_cleanup(bad_data, mask_filters=[("opening", 5)])
 
             # We now dilate ONLY pixels in our cleaned bad data dask that
@@ -439,7 +484,9 @@ def load_data(
             )
 
             # Identify non-contiguous pixels
-            noncontiguous_mask = enum_to_bool(ds_ls.oa_nbart_contiguity, categories=[False])
+            noncontiguous_mask = enum_to_bool(
+                ds_ls.oa_nbart_contiguity, categories=[False]
+            )
 
             # Set cleaned bad pixels and non-contiguous pixels to nodata
             combined_mask = bad_data_mask | noncontiguous_mask
@@ -467,14 +514,18 @@ def load_data(
             # Convert to NDWI
             if ndwi:
                 # Calculate NDWI
-                ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (ds_ls.nbart_green + ds_ls.nbart_nir)
+                ds_ls["ndwi"] = (ds_ls.nbart_green - ds_ls.nbart_nir) / (
+                    ds_ls.nbart_green + ds_ls.nbart_nir
+                )
                 data_list.append(ds_ls[["ndwi"]])
             else:
                 data_list.append(ds_ls)
 
     # Raise error if no satellite data was found
     if len(data_list) == 0:
-        raise Exception("No satellite data was found at this location; unable to load data")
+        raise Exception(
+            "No satellite data was found at this location; unable to load data"
+        )
 
     # Combine into a single ds, sort and drop no longer needed bands
     satellite_ds = xr.concat(data_list, dim="time").sortby("time")
@@ -545,7 +596,9 @@ def load_topobathy_mask(
         raise ImportError(msg) from e
 
     # Load from datacube, reprojecting to GeoBox of input satellite data
-    topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
+    topobathy_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
+        "time"
+    )
 
     # Mask invalid data
     if mask_invalid:
@@ -614,7 +667,9 @@ def load_aclum_mask(
 
     try:
         # Load from datacube, reprojecting to GeoBox of input satellite data
-        aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze("time")
+        aclum_ds = dc.load(product=product, like=geobox, resampling=resampling).squeeze(
+            "time"
+        )
 
         # Mask invalid data
         if mask_invalid:
@@ -623,39 +678,41 @@ def load_aclum_mask(
         # Manually isolate the 'intensive urban' land use summary class, set
         # all other pixels to False. For class definitions, refer to
         # gdata1/data/land_use/ABARES_CLUM/geotiff_clum_50m1220m/Land use, 18-class summary.qml)
-        reclassified_aclum = aclum_ds[class_band].isin([
-            500,
-            530,
-            531,
-            532,
-            533,
-            534,
-            535,
-            536,
-            537,
-            538,
-            540,
-            541,
-            550,
-            551,
-            552,
-            553,
-            554,
-            555,
-            561,
-            562,
-            563,
-            564,
-            565,
-            566,
-            567,
-            570,
-            571,
-            572,
-            573,
-            574,
-            575,
-        ])
+        reclassified_aclum = aclum_ds[class_band].isin(
+            [
+                500,
+                530,
+                531,
+                532,
+                533,
+                534,
+                535,
+                536,
+                537,
+                538,
+                540,
+                541,
+                550,
+                551,
+                552,
+                553,
+                554,
+                555,
+                561,
+                562,
+                563,
+                564,
+                565,
+                566,
+                567,
+                570,
+                571,
+                572,
+                573,
+                574,
+                575,
+            ]
+        )
         return reclassified_aclum
 
     # Return an array of all False (i.e. no urban) if no data is returned
@@ -734,12 +791,18 @@ def _write_stac(
 
     """
     # Get path of input metadata file from assembler object
-    input_metadata_path = dataset_assembler.names.dataset_path / dataset_assembler.names.metadata_file
+    input_metadata_path = (
+        dataset_assembler.names.dataset_path / dataset_assembler.names.metadata_file
+    )
 
     # Get final destination paths of output/published metadata files
     # to use in STAC metadata
-    odc_dataset_metadata_url = f"{destination_path}{dataset_assembler.names.metadata_file}"
-    stac_item_destination_url = odc_dataset_metadata_url.replace("odc-metadata.yaml", "stac-item.json")
+    odc_dataset_metadata_url = (
+        f"{destination_path}{dataset_assembler.names.metadata_file}"
+    )
+    stac_item_destination_url = odc_dataset_metadata_url.replace(
+        "odc-metadata.yaml", "stac-item.json"
+    )
 
     # Generate STAC
     stac = to_stac_item(
@@ -756,7 +819,9 @@ def _write_stac(
         validate_item(stac)
 
     # Write out STAC JSON alongside input metadata file
-    output_stac_path = Path(str(input_metadata_path).replace("odc-metadata.yaml", "stac-item.json"))
+    output_stac_path = Path(
+        str(input_metadata_path).replace("odc-metadata.yaml", "stac-item.json")
+    )
     with output_stac_path.open("w") as f:
         json.dump(stac, f, default=json_fallback)
 
@@ -766,7 +831,10 @@ def _write_stac(
 
     # Update checksum to include new STAC JSON file
     checksummer = PackageChecksum()
-    checksum_file = dataset_assembler.names.dataset_path / dataset_assembler._accessories["checksum:sha1"].name
+    checksum_file = (
+        dataset_assembler.names.dataset_path
+        / dataset_assembler._accessories["checksum:sha1"].name
+    )
     checksummer.read(checksum_file)
     checksummer.add_file(output_stac_path)
     checksummer.write(checksum_file)
@@ -814,7 +882,9 @@ def tidal_metadata(
     fig = plt.gcf()
 
     # Update to use expected metadata format and rounding
-    metadata_dict = metadata_df.drop(["mot", "mat", "x", "y"]).add_prefix("intertidal:").to_dict()
+    metadata_dict = (
+        metadata_df.drop(["mot", "mat", "x", "y"]).add_prefix("intertidal:").to_dict()
+    )
     metadata_dict = {k: round(v, 3) for k, v in metadata_dict.items()}
 
     # Calculate macro/meso/micro-tidal category
@@ -824,9 +894,7 @@ def tidal_metadata(
         else (
             "mesotidal"
             if 2 <= metadata_dict["intertidal:tr"] <= 4
-            else "macrotidal"
-            if metadata_dict["intertidal:tr"] > 4
-            else np.nan
+            else "macrotidal" if metadata_dict["intertidal:tr"] > 4 else np.nan
         )
     )
 
@@ -859,7 +927,9 @@ def tidal_metadata(
         ydata = observed.get_ydata()
 
         # Calculate thresholds and plot subset of points in white
-        min_thresh, max_thresh = np.quantile(ydata, [threshold_lowtide, threshold_hightide])
+        min_thresh, max_thresh = np.quantile(
+            ydata, [threshold_lowtide, threshold_hightide]
+        )
         mask = (ydata <= min_thresh) | (ydata >= max_thresh)
         fig.axes[0].plot(
             xdata[mask],
@@ -995,7 +1065,9 @@ def prepare_for_export(
 
         # Export band to file
         if output_location is not None:
-            band.odc.write_cog(fname=f"{output_location}/{band.name}.tif", overwrite=overwrite)
+            band.odc.write_cog(
+                fname=f"{output_location}/{band.name}.tif", overwrite=overwrite
+            )
 
         return band
 
@@ -1016,7 +1088,11 @@ def prepare_for_export(
         }
 
     # Apply to each array in the input `ds`
-    return ds.apply(lambda x: _prepare_band(x, custom_dtypes, float_dtype, output_location, overwrite))
+    return ds.apply(
+        lambda x: _prepare_band(
+            x, custom_dtypes, float_dtype, output_location, overwrite
+        )
+    )
 
 
 def export_dataset_metadata(
@@ -1146,13 +1222,15 @@ def export_dataset_metadata(
             dataset_assembler.dataset_version = dataset_version
 
             # Set additional properties
-            dataset_assembler.properties.update({
-                "odc:product": odc_product,
-                "odc:file_format": "GeoTIFF",
-                "odc:collection_number": 3,
-                "eo:gsd": ds.odc.geobox.resolution.x,
-                **additional_metadata,
-            })
+            dataset_assembler.properties.update(
+                {
+                    "odc:product": odc_product,
+                    "odc:file_format": "GeoTIFF",
+                    "odc:collection_number": 3,
+                    "eo:gsd": ds.odc.geobox.resolution.x,
+                    **additional_metadata,
+                }
+            )
 
             # Update to temporal naming convention
             time_convention = f"{year}--P1Y"
@@ -1173,7 +1251,9 @@ def export_dataset_metadata(
             # Add lineage
             s2_set = set(d.id for d in s2_lineage) if s2_lineage else []
             ls_set = set(d.id for d in ls_lineage) if ls_lineage else []
-            ancillary_set = set(d.id for d in ancillary_lineage) if ancillary_lineage else []
+            ancillary_set = (
+                set(d.id for d in ancillary_lineage) if ancillary_lineage else []
+            )
             dataset_assembler.note_source_datasets("s2_ard", *s2_set)
             dataset_assembler.note_source_datasets("ls_ard", *ls_set)
             dataset_assembler.note_source_datasets("ancillary", *ancillary_set)
@@ -1195,7 +1275,10 @@ def export_dataset_metadata(
                 scale_factor=1 if study_area == "testing" else 12,
                 static_stretch=(50, 2000),
             )
-            thumbnail_path = dataset_assembler.names.dataset_path / dataset_assembler.names.thumbnail_filename()
+            thumbnail_path = (
+                dataset_assembler.names.dataset_path
+                / dataset_assembler.names.thumbnail_filename()
+            )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
@@ -1203,16 +1286,22 @@ def export_dataset_metadata(
 
             # For Intertidal, replace the thumbnail with something nicer
             if product_family == "intertidal":
-                _write_thumbnail(da=ds["elevation"], path=thumbnail_path, max_resolution=320)
+                _write_thumbnail(
+                    da=ds["elevation"], path=thumbnail_path, max_resolution=320
+                )
 
             # Generate final destination path
             destination_path = f"{output_location.rstrip('/')}/{dataset_assembler.names.dataset_folder}/"
 
             # Export tide graph figure if provided
             if tide_graph_fig is not None:
-                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace("thumbnail.jpg", "tide_graph.png")
+                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace(
+                    "thumbnail.jpg", "tide_graph.png"
+                )
                 tide_graph_fig.savefig(tide_graph_path, bbox_inches="tight")
-                dataset_assembler.note_accessory_file("metadata:tide_graph", tide_graph_path)
+                dataset_assembler.note_accessory_file(
+                    "metadata:tide_graph", tide_graph_path
+                )
 
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
@@ -1238,10 +1327,14 @@ def export_dataset_metadata(
                 if debug:
                     # Copy from tempfile to output location
                     destination_path_debug = f"{'data/processed/'.rstrip('/')}/{dataset_assembler.names.dataset_folder}"
-                    log.info(f"{run_id}: Writing debug S3 layers to: {destination_path_debug}")
+                    log.info(
+                        f"{run_id}: Writing debug S3 layers to: {destination_path_debug}"
+                    )
                     if Path(destination_path_debug).exists():
                         shutil.rmtree(destination_path_debug)
-                    shutil.copytree(dataset_assembler.names.dataset_path, destination_path_debug)
+                    shutil.copytree(
+                        dataset_assembler.names.dataset_path, destination_path_debug
+                    )
                     return dataset_assembler
 
                 log.info(f"{run_id}: Writing to S3: {destination_path}")

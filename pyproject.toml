@@ -41,7 +41,7 @@ dependencies = [
     "click>=8.1.7",
     "cmocean>=4.0.0",
     "dea-tools>=0.4.7",
-    "eo-tides>=0.10.2",
+    "eo-tides>=0.10.4",
     "folium>=0.16.0",
     "geopandas>=0.14.4",
     "matplotlib>=3.9.2",
@@ -73,7 +73,7 @@ dea-mosaics = "intertidal.mosaics:make_mosaic_cli"
 
 [project.optional-dependencies]
 datacube = [
-    "datacube[s3,performance,postgres]>=1.8.19",
+    "datacube[s3,performance,postgres]>=1.9.10",
     "eodatasets3>=0.30.9",
     "odc-ui>=0.2.1",
 ]

@@ -25,7 +25,9 @@ from intertidal.utils import configure_logging
 # Function to rename the bands
 def rename_bands(ds, old_string, new_string):
     # Create a new dataset with renamed bands
-    ds_renamed = ds.rename({band: band.replace(old_string, new_string) for band in ds.data_vars})
+    ds_renamed = ds.rename(
+        {band: band.replace(old_string, new_string) for band in ds.data_vars}
+    )
     return ds_renamed
 
 
@@ -201,7 +203,9 @@ def tidal_composites(
     tides_highres = tides_highres.where(nodata_array)
 
     # Calculate low and high tide thresholds from masked tide data
-    log.info(f"{run_id}: Calculating low and high tide thresholds with minimum {min_obs} observations")
+    log.info(
+        f"{run_id}: Calculating low and high tide thresholds with minimum {min_obs} observations"
+    )
     low_threshold, high_threshold = tidal_thresholds(
         tides_highres=tides_highres,
         threshold_lowtide=threshold_lowtide,
@@ -221,9 +225,13 @@ def tidal_composites(
     ds_high = satellite_ds.sel(time=high_keep)
 
     # Load low and high subsets of data into memory
-    log.info(f"{run_id}: Loading {len(ds_low.time)} low tide satellite images into memory")
+    log.info(
+        f"{run_id}: Loading {len(ds_low.time)} low tide satellite images into memory"
+    )
     ds_low.load()
-    log.info(f"{run_id}: Loading {len(ds_high.time)} high tide satellite images into memory")
+    log.info(
+        f"{run_id}: Loading {len(ds_high.time)} high tide satellite images into memory"
+    )
     ds_high.load()
 
     # Use `keep_good_only` to set any pixels outside of the tide masks to nodata
@@ -250,7 +258,9 @@ def tidal_composites(
     # Calculate clear count (both low and high tide clear counts
     # are identical, so we can just use one)
     log.info(f"{run_id}: Calculating clear counts")
-    ds_lowtide["qa_count_clear"] = (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
+    ds_lowtide["qa_count_clear"] = (
+        (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
+    )
 
     # Add low and high tide thresholds to the output datasets
     ds_lowtide["qa_low_threshold"] = low_threshold
@@ -402,6 +412,13 @@ def tidal_composites(
     "directory structure, refer to `eo-tides.utils.list_models`.",
 )
 @click.option(
+    "--s2a_filter/--no-s2a_filter",
+    is_flag=True,
+    default=False,
+    help="Whether to exclude data from the Sentinel-2a after 1 Jan 2025."
+    "False; can be set to True by passing `--s2a_filter`.",
+)
+@click.option(
     "--aws_unsigned/--no-aws_unsigned",
     type=bool,
     default=True,
@@ -434,6 +451,7 @@ def tidal_composites_cli(
     max_iters,
     tide_model,
     tide_model_dir,
+    s2a_filter,
     aws_unsigned,
     overwrite,
 ):
@@ -480,7 +498,9 @@ def tidal_composites_cli(
             # Use a custom polygon if in testing mode
             if study_area == "testing":
                 log.info(f"{run_id}: Running in testing mode using custom study area")
-                geom = BoundingBox(467510, -1665790, 468260, -1664840, crs="EPSG:3577").polygon
+                geom = BoundingBox(
+                    467510, -1665790, 468260, -1664840, crs="EPSG:3577"
+                ).polygon
             else:
                 geom = None
 
@@ -505,12 +525,19 @@ def tidal_composites_cli(
                 dataset_maturity="final",
                 dtype="int16",
                 dataset_predicate=filter_granules,
+                s2a_filter=s2a_filter,
+                log=log,
+                run_id=run_id,
             )
-            log.info(f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps")
+            log.info(
+                f"{run_id}: Found {len(satellite_ds.time)} satellite data timesteps"
+            )
 
             # Fail early if not enough observations
             if len(satellite_ds.time) < 50:
-                raise Exception("Insufficient satellite data available to process composites; skipping.")
+                raise Exception(
+                    "Insufficient satellite data available to process composites; skipping."
+                )
 
             # Calculate high and low tide geomedian composites
             log.info(f"{run_id}: Running DEA Tidal Composites workflow")
@@ -536,7 +563,9 @@ def tidal_composites_cli(
             ds_tidalcomposites = xr.merge([ds_lowtide, ds_hightide])
 
             # Ensure spatial information is still attached
-            ds_tidalcomposites = odc.geo.xr.assign_crs(ds_tidalcomposites, satellite_ds.odc.crs)
+            ds_tidalcomposites = odc.geo.xr.assign_crs(
+                ds_tidalcomposites, satellite_ds.odc.crs
+            )
 
             custom_dtypes = {
                 "low_coastal_aerosol": (np.int16, -999),
