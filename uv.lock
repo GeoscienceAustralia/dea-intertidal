@@ -1319,7 +1319,7 @@ requires-dist = [
     { name = "cmocean", specifier = ">=4.0.0" },
     { name = "datacube", extras = ["performance", "postgres", "s3"], marker = "extra == 'datacube'", specifier = ">=1.9.10" },
     { name = "dea-tools", specifier = ">=0.4.7" },
-    { name = "eo-tides", specifier = ">=0.10.0" },
+    { name = "eo-tides", specifier = ">=0.10.4" },
     { name = "eodatasets3", marker = "extra == 'datacube'", specifier = ">=0.30.9" },
     { name = "folium", specifier = ">=0.16.0" },
     { name = "geopandas", specifier = ">=0.14.4" },
