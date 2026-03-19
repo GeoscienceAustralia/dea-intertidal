@@ -73,7 +73,7 @@ dea-mosaics = "intertidal.mosaics:make_mosaic_cli"
 
 [project.optional-dependencies]
 datacube = [
-    "datacube[s3,performance,postgres]>=1.8.19",
+    "datacube[s3,performance,postgres]>=1.9.10",
     "eodatasets3>=0.30.9",
     "odc-ui>=0.2.1",
 ]
