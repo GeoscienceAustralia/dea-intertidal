@@ -1059,9 +1059,12 @@ def prepare_for_export(
             band = band.fillna(int_nodata).astype(int_dtype)
             band.attrs["nodata"] = int_nodata
 
-        # Export other bands as float32 data types
+        # Export other bands as float32 data types, ensuring
+        # that nodata is explicitly set to np.nan in the outputs
+        # due to a missing nodata issue observed in 2026 annual runs
         else:
             band = band.astype(float_dtype)
+            band.attrs["nodata"] = np.nan
 
         # Export band to file
         if output_location is not None:
