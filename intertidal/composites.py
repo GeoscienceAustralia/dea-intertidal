@@ -198,6 +198,9 @@ def tidal_composites(
     log.info(f"{run_id}: Loading red band to identify nodata pixels")
     nodata = satellite_ds.nbart_red.nodata
     nodata_array = (satellite_ds.nbart_red != nodata).compute()
+    
+    # Calculate the total clear pixel count for each pixel
+    qa_count_clear_total = nodata_array.sum(dim="time").astype("int16")
 
     # Mask tides to make nodata match satellite data array
     tides_highres = tides_highres.where(nodata_array)
@@ -262,6 +265,9 @@ def tidal_composites(
         (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
     )
 
+    # Add the total count clear (Only add once)
+    ds_lowtide["qa_count_clear_total"] = qa_count_clear_total
+    
     # Add low and high tide thresholds to the output datasets
     ds_lowtide["qa_low_threshold"] = low_threshold
     ds_hightide["qa_high_threshold"] = high_threshold
@@ -484,8 +490,12 @@ def tidal_composites_cli(
     # Record params in logs
     log.info(f"{run_id}: Using parameters {input_params}")
 
-    # Configure S3
+    # Configure S3, adding additional GDAL env vars to reduce
+    # timeout issues when accessing data on S3
+    # TODO: pass these directly into `configure_s3_access`
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
+    os.environ["GDAL_HTTP_TIMEOUT"] = "300"    # default is 30s
+    os.environ["GDAL_HTTP_RETRY_DELAY"] = "5"  # seconds between retries
 
     if process_tile:
         try:
@@ -593,6 +603,7 @@ def tidal_composites_cli(
                 "qa_low_threshold": (np.float32, np.nan),
                 "qa_high_threshold": (np.float32, np.nan),
                 "qa_count_clear": (np.int16, -999),
+                "qa_count_clear_total": (np.int16, -999),
             }
 
             # Sets correct dtypes and nodata
