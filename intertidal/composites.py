@@ -198,6 +198,9 @@ def tidal_composites(
     log.info(f"{run_id}: Loading red band to identify nodata pixels")
     nodata = satellite_ds.nbart_red.nodata
     nodata_array = (satellite_ds.nbart_red != nodata).compute()
+    
+    #calculate the total clear pixel count for each pixel
+    qa_total_count_clear = nodata_array.copy().sum(dim="time").astype("int16")
 
     # Mask tides to make nodata match satellite data array
     tides_highres = tides_highres.where(nodata_array)
@@ -262,6 +265,9 @@ def tidal_composites(
         (ds_low_masked.nbart_red != nodata).sum(dim="time").astype("int16")
     )
 
+    # Add the total count clear (Only add once)
+    ds_lowtide["qa_total_count_clear"] = qa_total_count_clear
+    
     # Add low and high tide thresholds to the output datasets
     ds_lowtide["qa_low_threshold"] = low_threshold
     ds_hightide["qa_high_threshold"] = high_threshold
@@ -484,6 +490,11 @@ def tidal_composites_cli(
     # Record params in logs
     log.info(f"{run_id}: Using parameters {input_params}")
 
+    # This is to help when scenes need to be moved from s3 cold storage
+    os.environ["GDAL_HTTP_TIMEOUT"] = "300"          # default is 30s
+    os.environ["GDAL_HTTP_MAX_RETRY"] = "10"          # default is 0
+    os.environ["GDAL_HTTP_RETRY_DELAY"] = "5"         # seconds between retries
+
     # Configure S3
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
 
@@ -593,6 +604,7 @@ def tidal_composites_cli(
                 "qa_low_threshold": (np.float32, np.nan),
                 "qa_high_threshold": (np.float32, np.nan),
                 "qa_count_clear": (np.int16, -999),
+                "qa_total_count_clear": (np.int16, -999),
             }
 
             # Sets correct dtypes and nodata
