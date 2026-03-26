@@ -200,7 +200,7 @@ def tidal_composites(
     nodata_array = (satellite_ds.nbart_red != nodata).compute()
     
     # Calculate the total clear pixel count for each pixel
-    qa_total_count_clear = nodata_array.sum(dim="time").astype("int16")
+    qa_count_clear_total = nodata_array.sum(dim="time").astype("int16")
 
     # Mask tides to make nodata match satellite data array
     tides_highres = tides_highres.where(nodata_array)
@@ -490,13 +490,12 @@ def tidal_composites_cli(
     # Record params in logs
     log.info(f"{run_id}: Using parameters {input_params}")
 
-    # This is to help reduce timeout issues when accessing data on S3
-    os.environ["GDAL_HTTP_TIMEOUT"] = "300"          # default is 30s
-    os.environ["GDAL_HTTP_MAX_RETRY"] = "10"          # default is 0
-    os.environ["GDAL_HTTP_RETRY_DELAY"] = "5"         # seconds between retries
-
-    # Configure S3
+    # Configure S3, adding additional GDAL env vars to reduce
+    # timeout issues when accessing data on S3
+    # TODO: pass these directly into `configure_s3_access`
     configure_s3_access(cloud_defaults=True, aws_unsigned=aws_unsigned)
+    os.environ["GDAL_HTTP_TIMEOUT"] = "300"    # default is 30s
+    os.environ["GDAL_HTTP_RETRY_DELAY"] = "5"  # seconds between retries
 
     if process_tile:
         try:
