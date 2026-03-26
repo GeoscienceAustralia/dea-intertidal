@@ -266,7 +266,7 @@ def tidal_composites(
     )
 
     # Add the total count clear (Only add once)
-    ds_lowtide["qa_total_count_clear"] = qa_total_count_clear
+    ds_lowtide["qa_count_clear_total"] = qa_count_clear_total
     
     # Add low and high tide thresholds to the output datasets
     ds_lowtide["qa_low_threshold"] = low_threshold
