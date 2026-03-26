@@ -490,7 +490,7 @@ def tidal_composites_cli(
     # Record params in logs
     log.info(f"{run_id}: Using parameters {input_params}")
 
-    # This is to help when scenes need to be moved from s3 cold storage
+    # This is to help reduce timeout issues when accessing data on S3
     os.environ["GDAL_HTTP_TIMEOUT"] = "300"          # default is 30s
     os.environ["GDAL_HTTP_MAX_RETRY"] = "10"          # default is 0
     os.environ["GDAL_HTTP_RETRY_DELAY"] = "5"         # seconds between retries
