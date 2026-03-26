@@ -200,7 +200,7 @@ def tidal_composites(
     nodata_array = (satellite_ds.nbart_red != nodata).compute()
     
     # Calculate the total clear pixel count for each pixel
-    qa_total_count_clear = nodata_array.copy().sum(dim="time").astype("int16")
+    qa_total_count_clear = nodata_array.sum(dim="time").astype("int16")
 
     # Mask tides to make nodata match satellite data array
     tides_highres = tides_highres.where(nodata_array)
