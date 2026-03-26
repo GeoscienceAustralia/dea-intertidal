@@ -604,7 +604,7 @@ def tidal_composites_cli(
                 "qa_low_threshold": (np.float32, np.nan),
                 "qa_high_threshold": (np.float32, np.nan),
                 "qa_count_clear": (np.int16, -999),
-                "qa_total_count_clear": (np.int16, -999),
+                "qa_count_clear_total": (np.int16, -999),
             }
 
             # Sets correct dtypes and nodata
