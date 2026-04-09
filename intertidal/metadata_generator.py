@@ -6,16 +6,34 @@ Generate ODC YAML and STAC JSON metadata for DEA coastal ecosystem products.
 
 import json
 import pathlib
-from typing import Dict, List, Optional, Tuple
+import shutil
+import subprocess
+import sys
+import tempfile
+import traceback
+from collections import defaultdict
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
-import xarray as xr
-import rioxarray
-from shapely.geometry import box
-from eodatasets3 import DatasetPrepare, GridSpec
+import click
 import eodatasets3.stac as eo3stac
+import requests
+import rioxarray
+import s3fs
+import xarray as xr
+import yaml
+from eodatasets3 import DatasetPrepare, GridSpec, serialise
 from eodatasets3.validate import validate_dataset
-from intertidal.io import _write_thumbnail, _s2ls_platform_instrument, _s2_platform_instrument
+from matplotlib.colors import ListedColormap
+from shapely.geometry import box
+
+from intertidal.io import (
+    _is_s3,
+    _s2_platform_instrument,
+    _s2ls_platform_instrument,
+    _write_thumbnail,
+)
 
 
 def _write_thumbnail_cem(da: xr.DataArray, path: str, max_resolution: int = 320):
@@ -37,7 +55,6 @@ def _write_thumbnail_cem(da: xr.DataArray, path: str, max_resolution: int = 320)
     max_resolution : int, optional
         The maximum resolution of the thumbnail image, by default 320.
     """
-    from matplotlib.colors import ListedColormap
 
     # Define custom colormap for coastal ecosystems based on QGIS style
     # Values from: cem_manual_edits_3577_v1.qml
@@ -88,59 +105,6 @@ def _write_thumbnail_cem(da: xr.DataArray, path: str, max_resolution: int = 320)
 
     with open(path, "wb") as f:
         f.write(jpeg_data)
-
-
-def _write_rgb_thumbnail(
-    da: xr.DataArray,
-    path: str,
-    max_resolution: int = 320,
-    percentile_stretch: tuple = (2, 98),
-    compress_quality: int = 85,
-):
-    """
-    Write an RGB thumbnail from a 3-band DataArray.
-
-    Args:
-        da: DataArray with 3 bands (RGB)
-        path: Output path for thumbnail
-        max_resolution: Maximum resolution for thumbnail
-        percentile_stretch: Percentile values for stretch (default: 2%, 98%)
-        compress_quality: JPEG quality (default: 85)
-    """
-    import numpy as np
-    from PIL import Image
-
-    # Get RGB data as numpy array
-    rgb_data = da.values  # Shape: (3, height, width)
-
-    # Apply percentile stretch to each band
-    stretched = np.zeros_like(rgb_data, dtype=np.uint8)
-    for i in range(3):
-        band_data = rgb_data[i]
-        # Calculate percentiles (ignoring NaN)
-        valid_data = band_data[~np.isnan(band_data)]
-        if len(valid_data) > 0:
-            vmin, vmax = np.percentile(valid_data, percentile_stretch)
-            # Stretch to 0-255
-            band_stretched = np.clip((band_data - vmin) / (vmax - vmin) * 255, 0, 255)
-            stretched[i] = band_stretched.astype(np.uint8)
-
-    # Transpose to (height, width, 3) for PIL
-    img_data = np.transpose(stretched, (1, 2, 0))
-
-    # Create PIL Image
-    img = Image.fromarray(img_data, mode="RGB")
-
-    # Resize if needed
-    height, width = img_data.shape[:2]
-    if max(height, width) > max_resolution:
-        scale = max_resolution / max(height, width)
-        new_width = int(width * scale)
-        new_height = int(height * scale)
-        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-    # Save as JPEG
-    img.save(path, "JPEG", quality=compress_quality)
 
 
 @dataclass
@@ -262,6 +226,7 @@ def load_tif_datasets(
 
         # Load with rioxarray
         da = rioxarray.open_rasterio(s3_path, chunks="auto")
+        da = rioxarray.open_rasterio(s3_path, chunks={})
 
         # Create a clean variable name from the filename
         var_name = ending.replace(".tif", "").replace("-", "_")
@@ -340,9 +305,6 @@ def extract_lineage_from_tiles(
     Returns:
         Dictionary with lineage categories and their source datasets
     """
-    import s3fs
-    from collections import defaultdict
-
     # Use tile_naming_conventions if provided, otherwise use naming_conventions
     tile_naming = (
         tile_naming_conventions if tile_naming_conventions else naming_conventions
@@ -403,7 +365,7 @@ def extract_lineage_from_tiles(
     }
 
     if verbose:
-        print(f"\n=== Lineage Summary ===")
+        print("\n=== Lineage Summary ===")
         print(f"Total tiles processed: {len(all_files)}")
         for key, values in compiled_lineage_dict.items():
             print(f"  {key}: {len(values)} unique UUIDs")
@@ -541,7 +503,7 @@ def generate_metadata(
     # Generate thumbnails using COG overviews for speed
     if config.product_family == "intertidal":
         if verbose:
-            print(f"Generating thumbnail from elevation overview...")
+            print("Generating thumbnail from elevation overview...")
         # Read a lower resolution overview of the COG
         tif_filename = f"{config.s3_folder}{config.title}_elevation.tif"
         overview_level = 6
@@ -553,11 +515,16 @@ def generate_metadata(
 
         # Write thumbnail to output directory
         thumbnail_path = output_dir / config.thumbnail_filename
-        _write_thumbnail(da=cog_array, path=str(thumbnail_path), max_resolution=320)
+        _write_thumbnail(da=cog_array,
+            path=str(thumbnail_path),
+            max_resolution=320,
+            vmin=-2.5,
+            vmax=1.5,
+        )
 
     elif config.product_family == "coastalecosystems":
         if verbose:
-            print(f"Generating thumbnail from classification overview...")
+            print("Generating thumbnail from classification overview...")
         # Read a lower resolution overview of the classification COG
         tif_filename = f"{config.s3_folder}{config.title}_classification.tif"
         overview_level = 6
@@ -573,7 +540,7 @@ def generate_metadata(
 
     elif config.product_family == "tidal_composites":
         if verbose:
-            print(f"Generating RGB thumbnail from low-tide bands...")
+            print("Generating RGB thumbnail from low-tide bands...")
 
         # Read RGB bands from overview
         rgb_arrays = []
@@ -581,25 +548,24 @@ def generate_metadata(
             tif_filename = f"{config.s3_folder}{config.title}_{band}.tif"
             overview_level = 6
             cog_array = rioxarray.open_rasterio(
-                tif_filename, overview_level=overview_level
+                tif_filename,
+                overview_level=overview_level,
+                mask_and_scale=True,
+                default_name=band,
             )
-
-            # Squeeze out band dimension if present
-            if "band" in cog_array.dims and len(cog_array.band) == 1:
-                cog_array = cog_array.squeeze("band", drop=True)
-
             rgb_arrays.append(cog_array)
 
         # Stack RGB bands
-        import xarray as xr
-
-        rgb_stacked = xr.concat(rgb_arrays, dim="band")
-        rgb_stacked = rgb_stacked.assign_coords(band=["red", "green", "blue"])
+        rgb_stacked = xr.merge(rgb_arrays).squeeze("band", drop=True)
 
         # Write RGB thumbnail
         thumbnail_path = output_dir / config.thumbnail_filename
-        _write_rgb_thumbnail(
-            da=rgb_stacked, path=str(thumbnail_path), max_resolution=320
+        _write_thumbnail(
+            da=rgb_stacked,
+            path=str(thumbnail_path),
+            max_resolution=320,
+            vmin=0,
+            vmax=2000,
         )
 
     with DatasetPrepare(
@@ -683,8 +649,6 @@ def generate_metadata(
             print(f"Generating STAC metadata: {stac_path}")
 
         # Load the dataset from the written YAML file
-        from eodatasets3 import serialise
-
         dataset_doc = serialise.from_path(metadata_path)
 
         # Generate STAC JSON
@@ -701,7 +665,7 @@ def generate_metadata(
             json.dump(stac_item, f, indent=4)
 
     if verbose:
-        print(f"\nGenerated metadata:")
+        print("\nGenerated metadata:")
         print(f"  ODC YAML: {metadata_path}")
         if generate_stac:
             print(f"  STAC JSON: {stac_path}")
@@ -729,8 +693,6 @@ def validate_metadata_file(metadata_file: pathlib.Path, verbose: bool = True) ->
         with open(metadata_file, "r") as f:
             metadata_dict = json.load(f)
     elif metadata_file.suffix in [".yaml", ".yml"]:
-        import yaml
-
         with open(metadata_file, "r") as f:
             metadata_dict = yaml.safe_load(f)
     else:
@@ -790,8 +752,6 @@ def validate_metadata_file(metadata_file: pathlib.Path, verbose: bool = True) ->
 # ============================================================================
 # Command-Line Interface
 # ============================================================================
-
-import click
 
 
 @click.group()
@@ -912,8 +872,6 @@ def generate(
             --version 1-0-0 \\
             --product-family coastalecosystems
     """
-    import sys
-
     # Auto-detect product_family from product name if not specified
     if product_family is None:
         if "intertidal" in product.lower():
@@ -954,7 +912,7 @@ def generate(
     )
 
     if verbose:
-        click.echo(f"Configuration:")
+        click.echo("Configuration:")
         click.echo(f"  Year: {config.year}")
         click.echo(f"  Product: {config.product_name}")
         click.echo(f"  Title: {config.title}")
@@ -1009,12 +967,10 @@ def generate(
         except Exception as e:
             click.echo(f"Error extracting lineage from tiles: {e}", err=True)
             if verbose:
-                import traceback
-
                 traceback.print_exc()
             sys.exit(1)
     else:
-        click.echo(f"Error: No lineage source specified", err=True)
+        click.echo("Error: No lineage source specified", err=True)
         click.echo("\nOptions:", err=True)
         click.echo(
             "  1. Use --extract-lineage-from-tiles (default, already enabled)", err=True
@@ -1041,17 +997,6 @@ def generate(
         sys.exit(1)
 
     # Generate metadata
-    import tempfile
-    import shutil
-    import subprocess
-    from urllib.parse import urlparse
-
-    # Helper function to check if path is S3
-    def _is_s3(path):
-        """Determine whether output location is on S3."""
-        uu = urlparse(path)
-        return uu.scheme == "s3"
-
     # Always use temporary directory, then sync to output-dir
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = pathlib.Path(temp_dir)
@@ -1069,7 +1014,7 @@ def generate(
                 verbose=verbose,
             )
 
-            click.echo(f"✅ Successfully generated metadata:")
+            click.echo("✅ Successfully generated metadata:")
             click.echo(f"   ODC YAML: {odc_path}")
             if stac_path:
                 click.echo(f"   STAC JSON: {stac_path}")
@@ -1077,8 +1022,6 @@ def generate(
         except Exception as e:
             click.echo(f"Error generating metadata: {e}", err=True)
             if verbose:
-                import traceback
-
                 traceback.print_exc()
             sys.exit(1)
 
@@ -1166,11 +1109,6 @@ def validate(metadata_files, verbose: bool):
         mosaic-metadata validate metadata/*.yaml metadata/*.json
         mosaic-metadata validate https://example.com/metadata.yaml
     """
-    import sys
-    import tempfile
-    import requests
-    from urllib.parse import urlparse
-
     if not metadata_files:
         click.echo("Error: No metadata files specified", err=True)
         sys.exit(1)
@@ -1291,18 +1229,18 @@ def show_paths(
     click.echo("Product Configuration:")
     click.echo("=" * 80)
     click.echo(f"Title: {config.title}")
-    click.echo(f"\nS3 Paths:")
+    click.echo("\nS3 Paths:")
     click.echo(f"  Folder: {config.s3_folder}")
     click.echo(f"  STAC JSON: {config.s3_stac_path}")
     click.echo(f"  ODC YAML: {config.s3_odc_path}")
     click.echo(f"  Thumbnail: {config.s3_thumbnail_path}")
-    click.echo(f"\nLocal Paths:")
+    click.echo("\nLocal Paths:")
     click.echo(f"  STAC JSON: {config.local_stac_path}")
     click.echo(f"  ODC YAML: {config.local_odc_path}")
-    click.echo(f"\nAccessory Files:")
+    click.echo("\nAccessory Files:")
     click.echo(f"  Processor Info: {config.metadata_processor_filename}")
     click.echo(f"  Tile Lineage: {config.tile_lineage_filename}")
-    click.echo(f"\nExplorer:")
+    click.echo("\nExplorer:")
     click.echo(f"  Base URL: {config.explorer_base_url}")
 
 
