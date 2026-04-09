@@ -662,6 +662,48 @@ def generate_metadata(
         with open(stac_path, "w") as f:
             json.dump(stac_item, f, indent=4)
 
+    # Write proc-info.yaml
+    proc_info_path = output_dir / f'{config.title}.proc-info.yaml'
+
+    import yaml
+    import importlib.metadata
+
+    # Get package versions
+    def get_version(package_name):
+        try:
+            return importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            return "unknown"
+    if config.product_family == 'coastalecosystems':
+        proc_info = {
+            'software_versions': [
+                {
+                    'name': 'eodatasets3',
+                    'url': 'https://github.com/opendatacube/eo-datasets',
+                    'version': get_version('eodatasets3')
+                }
+            ]
+        }
+    else:
+        proc_info = {
+            'software_versions': [
+                {
+                    'name': 'eo-tides',
+                    'url': 'https://github.com/GeoscienceAustralia/eo-tides',
+                    'version': get_version('eo-tides')
+                },
+                {
+                    'name': 'eodatasets3',
+                    'url': 'https://github.com/opendatacube/eo-datasets',
+                    'version': get_version('eodatasets3')
+                }
+            ]
+        }
+
+    with open(proc_info_path, 'w') as f:
+        yaml.dump(proc_info, f, default_flow_style=False, sort_keys=False)
+
+ 
     if verbose:
         print("\nGenerated metadata:")
         print(f"  ODC YAML: {metadata_path}")
@@ -1079,14 +1121,23 @@ def generate(
             # Copy to local destination
             click.echo(f"\nCopying to local destination: {final_destination}")
             output_path = pathlib.Path(final_destination)
-
+            
             # Create parent directories if needed
             output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            if output_path.exists():
-                shutil.rmtree(output_path)
-
-            shutil.copytree(temp_path, output_path)
+            
+            # Create destination directory if it doesn't exist
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            # Copy files from temp to destination (overwrite existing)
+            for item in temp_path.iterdir():
+                dest_item = output_path / item.name
+                if item.is_file():
+                    shutil.copy2(item, dest_item)
+                elif item.is_dir():
+                    if dest_item.exists():
+                        shutil.rmtree(dest_item)
+                    shutil.copytree(item, dest_item)
+            
             click.echo(f"✅ Successfully copied to: {final_destination}")
 
 
