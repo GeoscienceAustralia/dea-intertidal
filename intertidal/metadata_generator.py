@@ -119,7 +119,6 @@ class ProductConfig:
     freq: str = "P1Y"
     product_maturity: str = "stable"
     dataset_maturity: str = "final"
-    dataset_version: str = "1.0.0"
     nodata_value: int = 255
     dev: bool = True
     naming_conventions: str = "dea_c3"  # 'dea' or 'dea_c3'
@@ -601,7 +600,7 @@ def generate_metadata(
         # Product maturity and versioning
         p.product_maturity = config.product_maturity
         p.maturity = config.dataset_maturity
-        p.dataset_version = config.dataset_version
+        p.dataset_version = config.version.replace("-", ".")
         p.processed_now()
 
         # Accessory files
@@ -788,9 +787,6 @@ def cli():
     "--dataset-maturity", default="final", help="Dataset maturity (default: final)"
 )
 @click.option(
-    "--dataset-version", default="1.0.0", help="Dataset version (default: 1.0.0)"
-)
-@click.option(
     "--nodata-value", default=255, type=int, help="NoData value (default: 255)"
 )
 @click.option(
@@ -844,7 +840,6 @@ def generate(
     freq: str,
     product_maturity: str,
     dataset_maturity: str,
-    dataset_version: str,
     nodata_value: int,
     naming_conventions: str,
     dev: bool,
@@ -905,7 +900,6 @@ def generate(
         freq=freq,
         product_maturity=product_maturity,
         dataset_maturity=dataset_maturity,
-        dataset_version=dataset_version,
         nodata_value=nodata_value,
         naming_conventions=naming_conventions,
         dev=dev,

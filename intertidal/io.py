@@ -1020,17 +1020,11 @@ def _s2ls_platform_instrument(year):
     if year <= 2020:
         platform = "landsat-7,landsat-8,sentinel-2a,sentinel-2b"
         instrument = "ETM_OLI_TIRS_MSI"
-    elif year in (2021, 2022):
+    elif year in (2021, 2022, 2023):
         platform = "landsat-7,landsat-8,landsat-9,sentinel-2a,sentinel-2b"
         instrument = "ETM_OLI_TIRS_MSI"
-    elif year in (2023, 2024):
-        platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b"
-        instrument = "OLI_TIRS_MSI"
-    elif year == 2025:
+    else:  # for 2024 and beyond
         platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b,sentinel-2c"
-        instrument = "OLI_TIRS_MSI"
-    else:
-        platform = "landsat-8,landsat-9,sentinel-2b,sentinel-2c"
         instrument = "OLI_TIRS_MSI"
 
     return platform, instrument
@@ -1043,14 +1037,11 @@ def _s2_platform_instrument(year):
     """
     # Platforms and intruments
     year = int(year)
-    if year <= 2024:
+    if year <= 2023:
         platform = "sentinel-2a,sentinel-2b"
         instrument = "MSI"
-    elif year == 2025:
+    else:  # for 2024 and beyond
         platform = "sentinel-2a,sentinel-2b,sentinel-2c"
-        instrument = "MSI"
-    else:
-        platform = "sentinel-2b,sentinel-2c"
         instrument = "MSI"
 
     return platform, instrument
