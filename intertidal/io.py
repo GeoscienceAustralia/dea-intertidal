@@ -970,8 +970,9 @@ def tidal_metadata(
 
 
 def _s2ls_platform_instrument(year):
-    """Indentify relevant Sentinel-2 and Landsat platforms and instruments
-    for a given year of DEA Intertidal analysis. Only applicable from 2015 onward.
+    """
+    Identify relevant Sentinel-2 and Landsat platforms and instruments
+    for a given year. Only applicable from 2015 onward.
     """
     # Platforms and intruments
     year = int(year)
@@ -995,8 +996,9 @@ def _s2ls_platform_instrument(year):
 
 
 def _s2_platform_instrument(year):
-    """Indentify relevant Sentinel-2 platforms and instruments
-    for a given year of DEA Tidal Composites analysis. Only applicable from 2015 onward.
+    """
+    Identify relevant Sentinel-2 platforms and instruments
+    for a given year. Only applicable from 2015 onward.
     """
     # Platforms and intruments
     year = int(year)
