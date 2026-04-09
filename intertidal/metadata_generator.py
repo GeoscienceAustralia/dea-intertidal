@@ -224,7 +224,6 @@ def load_tif_datasets(
             print(f"Loading {ending}...")
 
         # Load with rioxarray
-        da = rioxarray.open_rasterio(s3_path, chunks="auto")
         da = rioxarray.open_rasterio(s3_path, chunks={})
 
         # Create a clean variable name from the filename
