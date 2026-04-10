@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+import importlib.metadata
+
 import click
 import eodatasets3.stac as eo3stac
 import eodatasets3.validate
@@ -315,8 +317,7 @@ def extract_lineage_from_tiles(
     if tile_naming == "dea_c3":
         # dea_c3: includes version in path
         pattern = (
-            # f"{s3_bucket}/{product}/{version}/x*/y*/{year}--{freq}/*.stac-item.json"
-            f"{s3_bucket}/{product}/{version}/x138/y*/{year}--{freq}/*.stac-item.json"
+            f"{s3_bucket}/{product}/{version}/x*/y*/{year}--{freq}/*.stac-item.json"
         )
     else:
         # dea: no version in path
@@ -667,6 +668,85 @@ def generate_metadata(
         with open(stac_path, "w") as f:
             json.dump(stac_item, f, indent=4)
 
+    # Write proc-info.yaml
+    proc_info_path = output_dir / f'{config.title}.proc-info.yaml'
+
+    # Get package versions
+    def get_version(package_name):
+        try:
+            return importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            return "unknown"
+    if config.product_family == 'coastalecosystems':
+        proc_info = {
+            'software_versions': [
+                {
+                    'name': 'eodatasets3',
+                    'url': 'https://github.com/opendatacube/eo-datasets',
+                    'version': get_version('eodatasets3')
+                },
+                {
+                    'name': 'datacube',
+                    'url': 'https://github.com/opendatacube/datacube-core',
+                    'version': get_version('datacube')
+                },
+                {
+                    'name': 'rioxarray',
+                    'url': 'https://github.com/corteva/rioxarray',
+                    'version': get_version('rioxarray')
+                },
+                {
+                    'name': 'xarray',
+                    'url': 'https://github.com/pydata/xarray',
+                    'version': get_version('xarray')
+                },
+                {
+                    'name': 'odc-geo',
+                    'url': 'https://github.com/opendatacube/odc-geo',
+                    'version': get_version('odc-geo')
+                }
+            ]
+        }
+    else:
+        proc_info = {
+            'software_versions': [
+                {
+                    'name': 'eo-tides',
+                    'url': 'https://github.com/GeoscienceAustralia/eo-tides',
+                    'version': get_version('eo-tides')
+                },
+                {
+                    'name': 'eodatasets3',
+                    'url': 'https://github.com/opendatacube/eo-datasets',
+                    'version': get_version('eodatasets3')
+                },
+                {
+                    'name': 'datacube',
+                    'url': 'https://github.com/opendatacube/datacube-core',
+                    'version': get_version('datacube')
+                },
+                {
+                    'name': 'rioxarray',
+                    'url': 'https://github.com/corteva/rioxarray',
+                    'version': get_version('rioxarray')
+                },
+                {
+                    'name': 'xarray',
+                    'url': 'https://github.com/pydata/xarray',
+                    'version': get_version('xarray')
+                },
+                {
+                    'name': 'odc-geo',
+                    'url': 'https://github.com/opendatacube/odc-geo',
+                    'version': get_version('odc-geo')
+                }
+            ]
+        }
+
+    with open(proc_info_path, 'w') as f:
+        yaml.dump(proc_info, f, default_flow_style=False, sort_keys=False)
+
+ 
     if verbose:
         print("\nGenerated metadata:")
         print(f"  ODC YAML: {metadata_path}")
@@ -1028,14 +1108,23 @@ def generate(
             # Copy to local destination
             click.echo(f"\nCopying to local destination: {final_destination}")
             output_path = pathlib.Path(final_destination)
-
+            
             # Create parent directories if needed
             output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            if output_path.exists():
-                shutil.rmtree(output_path)
-
-            shutil.copytree(temp_path, output_path)
+            
+            # Create destination directory if it doesn't exist
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            # Copy files from temp to destination (overwrite existing)
+            for item in temp_path.iterdir():
+                dest_item = output_path / item.name
+                if item.is_file():
+                    shutil.copy2(item, dest_item)
+                elif item.is_dir():
+                    if dest_item.exists():
+                        shutil.rmtree(dest_item)
+                    shutil.copytree(item, dest_item)
+            
             click.echo(f"✅ Successfully copied to: {final_destination}")
 
 
