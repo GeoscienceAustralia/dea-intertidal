@@ -189,89 +189,89 @@ def load_data(
     **query,
 ):
     """Loads cloud-masked Sentinel-2 and Landsat satellite data for a given
-                    study area/geom and time range.
+    study area/geom and time range.
 
-                    Supports optionally converting to Normalised Difference Water Index
-                    and masking sunglinted pixels.
+    Supports optionally converting to Normalised Difference Water Index
+    and masking sunglinted pixels.
 
-                    Parameters
-                    ----------
-                    dc : datacube.Datacube()
-                        A datacube instance to load data from.
-                    study_area : str, optional
-                        Tile ID string to process. This should be the ID of a GridSpec
-                        analysis tile in the format "x123y123". If `geom` is provided,
-                        this will have no effect.
-                    geom : Geometry, optional
-                        A datacube Geometry object defining a custom spatial extent of
-                        interest. If `geom` is provided, this will overrule any study
-                        area ID passed to `study_area` and will be returned as-is.
-                    time_range : tuple, optional
-                        A tuple containing the start and end date for the time range of
-                        interest, in the format (start_date, end_date). The default is
-                        ("2019", "2021").
-                    resolution : int or float, optional
-                        The spatial resolution (in metres) to load data at. The default
-                        is 10.
-                    crs : str, optional
-                        The coordinate reference system (CRS) to project data into. The
-                        default is Australian Albers "EPSG:3577".
-                    include_s2 : bool, optional
-                        Whether to load Sentinel-2 data.
-                    include_ls : bool, optional
-                        Whether to load Landsat data.
-                    filter_gqa : bool, optional
-                        Whether or not to filter Sentinel-2 data using the GQA filter.
-                        Defaults to True.
-                    max_cloudcover : float, optional
-                        The maximum cloud cover metadata value used to load data.
-                        Defaults to 90 (i.e. 90% cloud cover).
-                    skip_broken_datasets : bool, optional
-                        Whether to skip broken datasets during load. This can avoid
-                        temporary file access issues on S3, however introduces
-                        randomness into the analysis (two identical runs may produce
-                        different results due to different data failing to load).
-                    ndwi : bool, optional
-                        Whether to convert spectral bands to Normalised Difference Water
-                        Index values before returning them. Note that this must be set
-                        to True if both `include_s2` and `include_ls` are True.
-                    mask_sunglint : int, optional
-                        Whether to mask out pixels that are likely to be
-                        affected by sunglint using glint angles. Low glint angles
-                        (e.g. < 20) often correspond with sunglint. Defaults to None;
-                        set to e.g. "20" to mask out all pixels with a glint angle of
-                        less than 20.
-                    include_coastal_aerosol : bool, optional
-                        Whether to load data from the Sentinel-2 coastal aerosol band.
-                        Defaults to False.
-                    dask_chunks : dict, optional
-                        Optional custom Dask chunks to load data with. Defaults to None,
-                        which will use '{"x": 3200, "y": 3200}'.
-                    s2a_filter : bool, optional
-                        Whether to exclude data from the Sentinel-2a after 1 Jan 2025.
-                        Defaults to False.
-                    dtype : str, optional
-                        Desired data type for output data. Valid values are "int16"
-                        (default) and "float32". If `ndwi=True`, then "float32" will be
-                        used regardless of what is set here (as nodata values must be
-                        set to 'NaN' before calculating NDWI).
-                    log : logging.Logger, optional
-                        Logger object, by default None. added to print out how many post
-                        1 Jan 2025 s2a datasets have been filtered out.
-                    run_id : str, optional
+    Parameters
+    ----------
+    dc : datacube.Datacube()
+        A datacube instance to load data from.
+    study_area : str, optional
+        Tile ID string to process. This should be the ID of a GridSpec
+        analysis tile in the format "x123y123". If `geom` is provided,
+        this will have no effect.
+    geom : Geometry, optional
+        A datacube Geometry object defining a custom spatial extent of
+        interest. If `geom` is provided, this will overrule any study
+        area ID passed to `study_area` and will be returned as-is.
+    time_range : tuple, optional
+        A tuple containing the start and end date for the time range of
+        interest, in the format (start_date, end_date). The default is
+        ("2019", "2021").
+    resolution : int or float, optional
+        The spatial resolution (in metres) to load data at. The default
+        is 10.
+    crs : str, optional
+        The coordinate reference system (CRS) to project data into. The
+        default is Australian Albers "EPSG:3577".
+    include_s2 : bool, optional
+        Whether to load Sentinel-2 data.
+    include_ls : bool, optional
+        Whether to load Landsat data.
+    filter_gqa : bool, optional
+        Whether or not to filter Sentinel-2 data using the GQA filter.
+        Defaults to True.
+    max_cloudcover : float, optional
+        The maximum cloud cover metadata value used to load data.
+        Defaults to 90 (i.e. 90% cloud cover).
+    skip_broken_datasets : bool, optional
+        Whether to skip broken datasets during load. This can avoid
+        temporary file access issues on S3, however introduces
+        randomness into the analysis (two identical runs may produce
+        different results due to different data failing to load).
+    ndwi : bool, optional
+        Whether to convert spectral bands to Normalised Difference Water
+        Index values before returning them. Note that this must be set
+        to True if both `include_s2` and `include_ls` are True.
+    mask_sunglint : int, optional
+        Whether to mask out pixels that are likely to be
+        affected by sunglint using glint angles. Low glint angles
+        (e.g. < 20) often correspond with sunglint. Defaults to None;
+        set to e.g. "20" to mask out all pixels with a glint angle of
+        less than 20.
+    include_coastal_aerosol : bool, optional
+        Whether to load data from the Sentinel-2 coastal aerosol band.
+        Defaults to False.
+    dask_chunks : dict, optional
+        Optional custom Dask chunks to load data with. Defaults to None,
+        which will use '{"x": 3200, "y": 3200}'.
+    s2a_filter : bool, optional
+        Whether to exclude data from the Sentinel-2a after 1 Jan 2025.
+        Defaults to False.
+    dtype : str, optional
+        Desired data type for output data. Valid values are "int16"
+        (default) and "float32". If `ndwi=True`, then "float32" will be
+        used regardless of what is set here (as nodata values must be
+        set to 'NaN' before calculating NDWI).
+    log : logging.Logger, optional
+        Logger object, by default None. added to print out how many post
+        1 Jan 2025 s2a datasets have been filtered out.
+    run_id : str, optional
         run id, by default ''. added log statements.
-                    **query :
-                        Optional datacube.load keyword argument parameters used to
-                        query data.
+    **query :
+        Optional datacube.load keyword argument parameters used to
+        query data.
 
-                    Returns
-                    -------
-                    satellite_ds : xarray.Dataset
-                        An xarray dataset containing the loaded Landsat or Sentinel-2
-                        data.
-                    dss_s2, dss_ls : lists or None
-                        Lists of ODC datasets loaded to produce `satellite_ds` (used
-                        to generate ODC lineage metadata for DEA Intertidal)
+    Returns
+    -------
+    satellite_ds : xarray.Dataset
+        An xarray dataset containing the loaded Landsat or Sentinel-2
+        data.
+    dss_s2, dss_ls : lists or None
+        Lists of ODC datasets loaded to produce `satellite_ds` (used
+        to generate ODC lineage metadata for DEA Intertidal)
 
     """
     # Attempt to import datacube and raise an error if not available
@@ -726,33 +726,74 @@ def _is_s3(path):
     return uu.scheme == "s3"
 
 
-def _write_thumbnail(da, path, max_resolution=320):
-    """Generate and save a thumbnail image from a DEA Intertidal Elevation
-    `xarray.DataArray`.
+def _write_thumbnail(
+    da,
+    path,
+    max_resolution=320,
+    vmin=None,
+    vmax=None,
+    cmap="viridis",
+    resampling="average",
+):
+    """Generate and save a thumbnail image from an `xarray.DataArray` or
+    `xarray.Dataset` input.
 
     The thumbnail is reprojected to the specified maximum resolution,
-    colorized using the 'viridis' colormap, and compressed as a JPEG
-    with the specified quality.
+    either colorized or converted to RGBA, and compressed as a JPEG
+    with the specified quality and exported to file.
 
     Parameters
     ----------
-    da : xarray.DataArray
-        The input DataArray containg DEA Intertidal Elevation data.
+    da : xarray.DataArray or xarray.Dataset
+        The input DataArray or Dataset to be converted to a thumbnail.
     path : str
-        The path where the thumbnail image will be saved.
+        The file path where the thumbnail image will be saved.
     max_resolution : int, optional
         The maximum resolution of the thumbnail image, by default 320.
-
+    vmin : float, optional
+        Minimum value for color scaling. If None, calculates the 2nd percentile.
+    vmax : float, optional
+        Maximum value for color scaling. If None, calculates the 98th percentile.
+    cmap : str, optional
+        Colormap to use if `da` is a DataArray, by default "viridis".
+    resampling : str, optional
+        Resampling method to use during reprojection, by default "average".
     """
-    jpeg_data = (
-        da.odc.reproject(
-            how=da.odc.geobox.zoom_to(max_resolution),
-            resampling="min",
-        )
-        .pipe(lambda x: x.where(np.isfinite(x)))
-        .odc.colorize(vmin=-2.5, vmax=1.5, cmap="viridis")
-        .odc.compress("jpeg", 85, transparent=[255, 255, 255])
+    # Reproject to low resolution
+    da_reprojected = da.odc.reproject(
+        how=da.odc.geobox.zoom_to(max_resolution),
+        resampling=resampling,
     )
+
+    # Export colourised single band thumbnail if input is a DataArray
+    if isinstance(da_reprojected, xr.DataArray):
+        # Get vmin and vmax values; calculate if they do not exist
+        vmin = vmin if vmin is not None else da_reprojected.quantile(0.02).item()
+        vmax = vmax if vmax is not None else da_reprojected.quantile(0.98).item()
+
+        jpeg_data = (
+            da_reprojected.pipe(lambda x: x.where(np.isfinite(x)))
+            .odc.colorize(vmin=vmin, vmax=vmax, cmap=cmap)
+            .odc.compress("jpeg", 85, transparent=[255, 255, 255])
+        )
+
+    # Export RGB thumbnail if input is a Dataset
+    elif isinstance(da_reprojected, xr.Dataset):
+        # Get vmin and vmax values; calculate if they do not exist
+        vmin = (
+            vmin
+            if vmin is not None
+            else da_reprojected.to_array().quantile(0.02).item()
+        )
+        vmax = (
+            vmax
+            if vmax is not None
+            else da_reprojected.to_array().quantile(0.98).item()
+        )
+
+        jpeg_data = da_reprojected.odc.to_rgba(vmin=vmin, vmax=vmax).odc.compress(
+            "jpeg", 85, transparent=[255, 255, 255]
+        )
 
     with open(path, "wb") as f:
         f.write(jpeg_data)
@@ -970,44 +1011,37 @@ def tidal_metadata(
 
 
 def _s2ls_platform_instrument(year):
-    """Indentify relevant Sentinel-2 and Landsat platforms and instruments
-    for a given year of DEA Intertidal analysis. Only applicable from 2015 onward.
+    """
+    Identify relevant Sentinel-2 and Landsat platforms and instruments
+    for a given year. Only applicable from 2015 onward.
     """
     # Platforms and intruments
     year = int(year)
     if year <= 2020:
         platform = "landsat-7,landsat-8,sentinel-2a,sentinel-2b"
         instrument = "ETM_OLI_TIRS_MSI"
-    elif year in (2021, 2022):
+    elif year in (2021, 2022, 2023):
         platform = "landsat-7,landsat-8,landsat-9,sentinel-2a,sentinel-2b"
         instrument = "ETM_OLI_TIRS_MSI"
-    elif year in (2023, 2024):
-        platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b"
-        instrument = "OLI_TIRS_MSI"
-    elif year == 2025:
+    else:  # for 2024 and beyond
         platform = "landsat-8,landsat-9,sentinel-2a,sentinel-2b,sentinel-2c"
-        instrument = "OLI_TIRS_MSI"
-    else:
-        platform = "landsat-8,landsat-9,sentinel-2b,sentinel-2c"
         instrument = "OLI_TIRS_MSI"
 
     return platform, instrument
 
 
 def _s2_platform_instrument(year):
-    """Indentify relevant Sentinel-2 platforms and instruments
-    for a given year of DEA Tidal Composites analysis. Only applicable from 2015 onward.
+    """
+    Identify relevant Sentinel-2 platforms and instruments
+    for a given year. Only applicable from 2015 onward.
     """
     # Platforms and intruments
     year = int(year)
-    if year <= 2024:
+    if year <= 2023:
         platform = "sentinel-2a,sentinel-2b"
         instrument = "MSI"
-    elif year == 2025:
+    else:  # for 2024 and beyond
         platform = "sentinel-2a,sentinel-2b,sentinel-2c"
-        instrument = "MSI"
-    else:
-        platform = "sentinel-2b,sentinel-2c"
         instrument = "MSI"
 
     return platform, instrument
@@ -1290,7 +1324,11 @@ def export_dataset_metadata(
             # For Intertidal, replace the thumbnail with something nicer
             if product_family == "intertidal":
                 _write_thumbnail(
-                    da=ds["elevation"], path=thumbnail_path, max_resolution=320
+                    da=ds["elevation"],
+                    path=thumbnail_path,
+                    max_resolution=320,
+                    vmin=-2.5,
+                    vmax=1.5,
                 )
 
             # Generate final destination path

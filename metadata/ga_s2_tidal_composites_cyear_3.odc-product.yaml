@@ -1,6 +1,6 @@
 ---
 name: ga_s2_tidal_composites_cyear_3
-metadata_type: eo3_intertidal
+metadata_type: eo3
 description: Geoscience Australia Sentinel-2 Tidal Composites Calendar Year Collection 3
 
 license: CC-BY-4.0

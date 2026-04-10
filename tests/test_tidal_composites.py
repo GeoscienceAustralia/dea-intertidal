@@ -47,7 +47,7 @@ def test_validate_composites_metadata():
         eodatasets3.validate.run,
         [
             "metadata/ga_s2_tidal_composites_cyear_3.odc-product.yaml",
-            "metadata/eo3_intertidal.odc-type.yaml",
+            # "metadata/eo3_intertidal.odc-type.yaml",
             "data/processed/ga_s2_tidal_composites_cyear_3/0-0-1/tes/ting/2021--P1Y/ga_s2_tidal_composites_cyear_3_testing_2021--P1Y_final.odc-metadata.yaml",
             "--thorough",
         ],
