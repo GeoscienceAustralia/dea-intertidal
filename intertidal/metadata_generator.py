@@ -18,13 +18,13 @@ from urllib.parse import urlparse
 
 import click
 import eodatasets3.stac as eo3stac
+import eodatasets3.validate
 import requests
 import rioxarray
 import s3fs
 import xarray as xr
 import yaml
 from eodatasets3 import DatasetPrepare, GridSpec, serialise
-from eodatasets3.validate import validate_dataset
 from matplotlib.colors import ListedColormap
 from shapely.geometry import box
 
@@ -115,7 +115,7 @@ class ProductConfig:
     version: str
     product_name: str
     product_family: str
-    study_area: str = "AU"
+    study_area: str = "continental_mosaics"
     freq: str = "P1Y"
     product_maturity: str = "stable"
     dataset_maturity: str = "final"
@@ -128,7 +128,10 @@ class ProductConfig:
         # For dea_c3, don't include dataset_maturity in filenames
         if self.naming_conventions == "dea_c3":
             # Use 'mosaic' as the base identifier for continental mosaics
-            if "continental" in self.study_area.lower() or self.study_area == "AU":
+            if (
+                "continental_mosaics" in self.study_area.lower()
+                or self.study_area == "AU"
+            ):
                 # Continental mosaic: ga_s2ls_intertidal_cyear_3_mosaic_2024--P1Y
                 self.title = f"{self.product_name}_mosaic_{self.year}--{self.freq}"
                 self.s3_folder_base = f"{self.version}/continental_mosaics"
@@ -312,7 +315,8 @@ def extract_lineage_from_tiles(
     if tile_naming == "dea_c3":
         # dea_c3: includes version in path
         pattern = (
-            f"{s3_bucket}/{product}/{version}/x*/y*/{year}--{freq}/*.stac-item.json"
+            # f"{s3_bucket}/{product}/{version}/x*/y*/{year}--{freq}/*.stac-item.json"
+            f"{s3_bucket}/{product}/{version}/x138/y*/{year}--{freq}/*.stac-item.json"
         )
     else:
         # dea: no version in path
@@ -513,7 +517,8 @@ def generate_metadata(
 
         # Write thumbnail to output directory
         thumbnail_path = output_dir / config.thumbnail_filename
-        _write_thumbnail(da=cog_array,
+        _write_thumbnail(
+            da=cog_array,
             path=str(thumbnail_path),
             max_resolution=320,
             vmin=-2.5,
@@ -671,80 +676,30 @@ def generate_metadata(
     return metadata_path, stac_path
 
 
-def validate_metadata_file(metadata_file: pathlib.Path, verbose: bool = True) -> List:
+def validate_metadata_file(
+    metadata_file: pathlib.Path, product_definition: pathlib.Path = None
+):
     """
-    Validate an EO3 metadata file (STAC JSON or ODC YAML).
+    Validate an EO3 metadata file (ODC YAML). If product definitions are available
+    for the product, test against these too.
 
     Args:
         metadata_file: Path to metadata file
         verbose: Print validation results
-
-    Returns:
-        List of validation messages
     """
-    if verbose:
-        print(f"Validating: {metadata_file.name}")
-        print("=" * 80)
 
-    # Load as dictionary
-    if metadata_file.suffix == ".json":
-        with open(metadata_file, "r") as f:
-            metadata_dict = json.load(f)
-    elif metadata_file.suffix in [".yaml", ".yml"]:
-        with open(metadata_file, "r") as f:
-            metadata_dict = yaml.safe_load(f)
+    # Test against product definiton if it is available
+    if product_definition is not None:
+        args = [str(product_definition), str(metadata_file)]
     else:
-        raise ValueError(f"Unsupported file format: {metadata_file.suffix}")
+        args = [str(metadata_file)]
 
-    # Validate
-    validation_messages = list(validate_dataset(metadata_dict))
-
-    # Filter out false positive for STAC files
-    is_stac = metadata_file.suffix == ".json"
-    if is_stac:
-        # STAC items don't have $schema - that's expected, not an error
-        validation_messages = [
-            msg
-            for msg in validation_messages
-            if not (msg.code == "no_schema" and msg.level.name == "error")
-        ]
-
-    if verbose:
-        # Categorize messages by level
-        errors = []
-        warnings = []
-        info = []
-
-        for msg in validation_messages:
-            if msg.level.name == "error":
-                errors.append((msg.code, msg.reason))
-            elif msg.level.name == "warning":
-                warnings.append((msg.code, msg.reason))
-            else:
-                info.append((msg.code, msg.reason))
-
-        # Print results
-        if errors:
-            print(f"\n❌ ERRORS ({len(errors)}):")
-            for code, reason in errors:
-                print(f"  {code}: {reason}")
-
-        if warnings:
-            print(f"\n⚠️  WARNINGS ({len(warnings)}):")
-            for code, reason in warnings:
-                print(f"  {code}: {reason}")
-
-        if info:
-            print(f"\n💡 INFO ({len(info)}):")
-            for code, reason in info:
-                print(f"  {code}: {reason}")
-
-        if not validation_messages:
-            print("\n✅ All validation checks passed!")
-
-        print("\n")
-
-    return validation_messages
+    try:
+        eodatasets3.validate.run(args)
+    except SystemExit as e:
+        # e.code will be 0 if validation passed, or non-zero if it failed
+        if e.code != 0:
+            print(f"Validation failed with exit code: {e.code}")
 
 
 # ============================================================================
@@ -777,7 +732,11 @@ def cli():
     default=None,
     help="Product family (auto-detected from product name if not specified: intertidal, tidal_composites, or coastalecosystems)",
 )
-@click.option("--study-area", default="AU", help="Study area code (default: AU)")
+@click.option(
+    "--study-area",
+    default="continental_mosaics",
+    help="Study area code (default: continental_mosaics)",
+)
 @click.option("--freq", default="P1Y", help="Frequency code (default: P1Y)")
 @click.option(
     "--product-maturity", default="stable", help="Product maturity (default: stable)"
@@ -1018,29 +977,19 @@ def generate(
                 traceback.print_exc()
             sys.exit(1)
 
-        # Validate if requested
+        # Validate eo3 YAML metadata if requested
         if validate:
+
+            # Get product definition by product family
+            if config.product_family == "intertidal":
+                product_def = "metadata/ga_s2ls_intertidal_cyear_3.odc-product.yaml"
+            elif config.product_family == "tidal_composites":
+                product_def = "metadata/ga_s2_tidal_composites_cyear_3.odc-product.yaml"
+            elif config.product_family == "coastalecosystems":
+                product_def = None
+
             click.echo("\nValidating metadata...")
-
-            # Validate ODC metadata
-            try:
-                validation_msgs = validate_metadata_file(odc_path, verbose=True)
-                has_errors = any(msg.level.name == "error" for msg in validation_msgs)
-
-                if has_errors:
-                    click.echo("❌ ODC metadata validation failed", err=True)
-                    sys.exit(1)
-            except Exception as e:
-                click.echo(f"Error validating ODC metadata: {e}", err=True)
-                sys.exit(1)
-
-            # Validate STAC metadata if generated
-            if stac_path and stac_path.exists():
-                try:
-                    validation_msgs = validate_metadata_file(stac_path, verbose=True)
-                except Exception as e:
-                    click.echo(f"Error validating STAC metadata: {e}", err=True)
-                    sys.exit(1)
+            validate_metadata_file(odc_path, product_def)
 
         # Sync from temp directory to output-dir
         # Construct final destination path based on whether output_dir is S3 or local
@@ -1099,74 +1048,62 @@ def validate(metadata_files, verbose: bool):
 
     Example:
 
-        mosaic-metadata validate metadata/*.yaml metadata/*.json
+        mosaic-metadata validate metadata/*.yaml
         mosaic-metadata validate https://example.com/metadata.yaml
     """
     if not metadata_files:
         click.echo("Error: No metadata files specified", err=True)
         sys.exit(1)
 
-    all_valid = True
-
     for metadata_file in metadata_files:
-        try:
-            # Check if it's a URL
-            parsed = urlparse(metadata_file)
-            if parsed.scheme in ("http", "https"):
-                # Download to temporary file
-                if verbose:
-                    click.echo(f"Downloading {metadata_file}...")
 
-                response = requests.get(metadata_file)
-                response.raise_for_status()
+        # Get product definition by product family
+        if "intertidal" in metadata_file:
+            product_def = "metadata/ga_s2ls_intertidal_cyear_3.odc-product.yaml"
+        elif "tidal_composites" in metadata_file:
+            product_def = "metadata/ga_s2_tidal_composites_cyear_3.odc-product.yaml"
+        elif "coastalecosystems" in metadata_file:
+            product_def = None
 
-                # Determine file extension from URL
-                if metadata_file.endswith(".json"):
-                    suffix = ".json"
-                elif metadata_file.endswith(".yaml") or metadata_file.endswith(".yml"):
-                    suffix = ".yaml"
-                else:
-                    suffix = ""
+        # Check if it's a URL
+        parsed = urlparse(metadata_file)
+        if parsed.scheme in ("http", "https"):
+            # Download to temporary file
+            if verbose:
+                click.echo(f"Downloading {metadata_file}...")
 
-                # Write to temp file
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=suffix, delete=False
-                ) as f:
-                    f.write(response.text)
-                    temp_path = pathlib.Path(f.name)
+            response = requests.get(metadata_file)
+            response.raise_for_status()
 
-                try:
-                    validation_msgs = validate_metadata_file(temp_path, verbose=verbose)
-                    has_errors = any(
-                        msg.level.name == "error" for msg in validation_msgs
-                    )
-
-                    if has_errors:
-                        all_valid = False
-                finally:
-                    # Clean up temp file
-                    temp_path.unlink()
+            # Determine file extension from URL
+            if metadata_file.endswith(".yaml") or metadata_file.endswith(".yml"):
+                suffix = ".odc-metadata.yaml"
             else:
-                # Local file
-                file_path = pathlib.Path(metadata_file)
-                if not file_path.exists():
-                    click.echo(f"Error: File does not exist: {metadata_file}", err=True)
-                    all_valid = False
-                    continue
+                suffix = ""
 
-                validation_msgs = validate_metadata_file(file_path, verbose=verbose)
-                has_errors = any(msg.level.name == "error" for msg in validation_msgs)
+            # Write to temp file so it can be read by eodatasets.validate
+            # TODO: work out how to give this a better name
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=suffix, delete=False
+            ) as f:
+                f.write(response.text)
+                temp_path = pathlib.Path(f.name)
 
-                if has_errors:
-                    all_valid = False
-        except Exception as e:
-            click.echo(f"Error validating {metadata_file}: {e}", err=True)
-            all_valid = False
+            try:
+                validate_metadata_file(temp_path, product_def)
 
-    if not all_valid:
-        sys.exit(1)
-    else:
-        click.echo("\n✅ All files validated successfully!")
+            finally:
+                # Clean up temp file
+                temp_path.unlink()
+        else:
+            # Local file
+            file_path = pathlib.Path(metadata_file)
+            if not file_path.exists():
+                click.echo(f"Error: File does not exist: {metadata_file}", err=True)
+                all_valid = False
+                continue
+
+            validate_metadata_file(file_path, product_def)
 
 
 @cli.command()
