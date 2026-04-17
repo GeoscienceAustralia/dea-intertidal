@@ -29,6 +29,7 @@ import yaml
 from eodatasets3 import DatasetPrepare, GridSpec, serialise
 from matplotlib.colors import ListedColormap
 from shapely.geometry import box
+from shapely.geometry.base import BaseGeometry
 
 from intertidal.io import (
     _is_s3,
@@ -376,6 +377,113 @@ def extract_lineage_from_tiles(
     return compiled_lineage_dict
 
 
+def extract_merged_geometry_from_tiles(
+    s3_bucket: str,
+    product: str,
+    version: str,
+    year: str,
+    freq: str = "P1Y",
+    naming_conventions: str = "dea_c3",
+    tile_naming_conventions: str = None,
+    verbose: bool = False,
+):
+    """
+    Extract geometries from tile STAC files in S3 and merge into a MultiPolygon.
+
+    Args:
+        s3_bucket: S3 bucket path (e.g., 'dea-public-data-dev/derivative')
+        product: Product name (e.g., 'ga_s2ls_intertidal_cyear_3')
+        version: Version string (e.g., '2-1-0')
+        year: Year string (e.g., '2024')
+        freq: Frequency code (default: 'P1Y')
+        naming_conventions: Mosaic naming convention 'dea' or 'dea_c3' (default: 'dea_c3')
+        tile_naming_conventions: Tile naming convention (if different from mosaic).
+        verbose: Print progress
+
+    Returns:
+        Shapely geometry (Polygon or MultiPolygon)
+    """
+    import s3fs
+    import json
+    from shapely.geometry import shape, MultiPolygon
+    from shapely.ops import unary_union
+
+    # Use tile_naming_conventions if provided, otherwise use naming_conventions
+    tile_naming = (
+        tile_naming_conventions if tile_naming_conventions else naming_conventions
+    )
+
+    # Build pattern based on TILE naming convention
+    if tile_naming == "dea_c3":
+        # dea_c3: includes version in path
+        pattern = (
+            f"{s3_bucket}/{product}/{version}/x*/y*/{year}--{freq}/*.stac-item.json"
+        )
+    else:
+        # dea: no version in path
+        pattern = f"{s3_bucket}/{product}/x*/y*/{year}--{freq}/*.stac-item.json"
+
+    if verbose:
+        print(f"Searching for STAC files: {pattern}")
+        print(f"Mosaic naming convention: {naming_conventions}")
+        print(f"Tile naming convention: {tile_naming}")
+
+    fs = s3fs.S3FileSystem(anon=True)
+    all_files = fs.glob(pattern)
+
+    if verbose:
+        print(f"Found {len(all_files)} STAC files for {product}\n")
+
+    # Collect all geometries
+    geometries = []
+
+    if verbose:
+        print("Processing STAC metadata files...")
+
+    for i, file_path in enumerate(all_files, 1):
+        try:
+            # Read STAC metadata file from S3
+            with fs.open(f"s3://{file_path}", "r") as f:
+                stac_metadata = json.load(f)
+
+            # Extract geometry
+            geom_dict = stac_metadata.get("geometry")
+            if geom_dict:
+                geom = shape(geom_dict)
+                geometries.append(geom)
+
+            if verbose and i % 100 == 0:
+                print(f"  Processed {i}/{len(all_files)} files...")
+
+        except Exception as e:
+            if verbose:
+                print(f"  Error processing {file_path}: {e}")
+            continue
+
+    if verbose:
+        print(f"\n=== Geometry Summary ===")
+        print(f"Total tiles processed: {len(all_files)}")
+        print(f"Geometries extracted: {len(geometries)}")
+
+    # Merge all geometries using unary_union
+    if geometries:
+        if verbose:
+            print("Merging geometries...")
+
+        merged_geometry = unary_union(geometries)
+
+        if verbose:
+            print(f"Merged geometry type: {merged_geometry.geom_type}")
+            if hasattr(merged_geometry, "__len__"):
+                print(f"Number of polygons: {len(merged_geometry.geoms)}")
+
+        return merged_geometry
+    else:
+        if verbose:
+            print("No geometries found")
+        return None
+
+
 def get_product_bands(product_family: str) -> Dict[str, str]:
     """
     Get band definitions for a product family.
@@ -450,6 +558,7 @@ def generate_metadata(
     config: ProductConfig,
     data_vars: Dict[str, xr.Dataset],
     lineage_dict: Dict[str, List[str]],
+    extent_geometry: BaseGeometry,
     output_dir: pathlib.Path,
     generate_stac: bool = True,
     verbose: bool = False,
@@ -461,6 +570,7 @@ def generate_metadata(
         config: Product configuration
         data_vars: Dictionary of loaded datasets
         lineage_dict: Lineage information
+        extent_geometry: Geometry for the metadata
         output_dir: Directory for output metadata files
         generate_stac: Whether to generate STAC metadata
         verbose: Print detailed information
@@ -476,19 +586,6 @@ def generate_metadata(
 
     # Get bands for this product
     bands = get_product_bands(config.product_family)
-
-    # Get reference dataset for bounds (use first available band)
-    ref_band = next(iter(data_vars.keys()))
-    ref_ds = data_vars[ref_band]
-    bounds = ref_ds.rio.bounds()
-    extent_geometry = box(*bounds)
-
-    # Calculate max segment length for ~10 points per edge
-    minx, miny, maxx, maxy = bounds
-    width = abs(maxx - minx)
-    height = abs(maxy - miny)
-    max_segment_length = min(width / 10, height / 10)
-    extent_geometry = extent_geometry.segmentize(max_segment_length)
 
     # Determine platform and instrument
     year_int = int(config.year)
@@ -669,7 +766,7 @@ def generate_metadata(
             json.dump(stac_item, f, indent=4)
 
     # Write proc-info.yaml
-    proc_info_path = output_dir / f'{config.title}.proc-info.yaml'
+    proc_info_path = output_dir / f"{config.title}.proc-info.yaml"
 
     # Get package versions
     def get_version(package_name):
@@ -677,76 +774,76 @@ def generate_metadata(
             return importlib.metadata.version(package_name)
         except importlib.metadata.PackageNotFoundError:
             return "unknown"
-    if config.product_family == 'coastalecosystems':
+
+    if config.product_family == "coastalecosystems":
         proc_info = {
-            'software_versions': [
+            "software_versions": [
                 {
-                    'name': 'eodatasets3',
-                    'url': 'https://github.com/opendatacube/eo-datasets',
-                    'version': get_version('eodatasets3')
+                    "name": "eodatasets3",
+                    "url": "https://github.com/opendatacube/eo-datasets",
+                    "version": get_version("eodatasets3"),
                 },
                 {
-                    'name': 'datacube',
-                    'url': 'https://github.com/opendatacube/datacube-core',
-                    'version': get_version('datacube')
+                    "name": "datacube",
+                    "url": "https://github.com/opendatacube/datacube-core",
+                    "version": get_version("datacube"),
                 },
                 {
-                    'name': 'rioxarray',
-                    'url': 'https://github.com/corteva/rioxarray',
-                    'version': get_version('rioxarray')
+                    "name": "rioxarray",
+                    "url": "https://github.com/corteva/rioxarray",
+                    "version": get_version("rioxarray"),
                 },
                 {
-                    'name': 'xarray',
-                    'url': 'https://github.com/pydata/xarray',
-                    'version': get_version('xarray')
+                    "name": "xarray",
+                    "url": "https://github.com/pydata/xarray",
+                    "version": get_version("xarray"),
                 },
                 {
-                    'name': 'odc-geo',
-                    'url': 'https://github.com/opendatacube/odc-geo',
-                    'version': get_version('odc-geo')
-                }
+                    "name": "odc-geo",
+                    "url": "https://github.com/opendatacube/odc-geo",
+                    "version": get_version("odc-geo"),
+                },
             ]
         }
     else:
         proc_info = {
-            'software_versions': [
+            "software_versions": [
                 {
-                    'name': 'eo-tides',
-                    'url': 'https://github.com/GeoscienceAustralia/eo-tides',
-                    'version': get_version('eo-tides')
+                    "name": "eo-tides",
+                    "url": "https://github.com/GeoscienceAustralia/eo-tides",
+                    "version": get_version("eo-tides"),
                 },
                 {
-                    'name': 'eodatasets3',
-                    'url': 'https://github.com/opendatacube/eo-datasets',
-                    'version': get_version('eodatasets3')
+                    "name": "eodatasets3",
+                    "url": "https://github.com/opendatacube/eo-datasets",
+                    "version": get_version("eodatasets3"),
                 },
                 {
-                    'name': 'datacube',
-                    'url': 'https://github.com/opendatacube/datacube-core',
-                    'version': get_version('datacube')
+                    "name": "datacube",
+                    "url": "https://github.com/opendatacube/datacube-core",
+                    "version": get_version("datacube"),
                 },
                 {
-                    'name': 'rioxarray',
-                    'url': 'https://github.com/corteva/rioxarray',
-                    'version': get_version('rioxarray')
+                    "name": "rioxarray",
+                    "url": "https://github.com/corteva/rioxarray",
+                    "version": get_version("rioxarray"),
                 },
                 {
-                    'name': 'xarray',
-                    'url': 'https://github.com/pydata/xarray',
-                    'version': get_version('xarray')
+                    "name": "xarray",
+                    "url": "https://github.com/pydata/xarray",
+                    "version": get_version("xarray"),
                 },
                 {
-                    'name': 'odc-geo',
-                    'url': 'https://github.com/opendatacube/odc-geo',
-                    'version': get_version('odc-geo')
-                }
+                    "name": "odc-geo",
+                    "url": "https://github.com/opendatacube/odc-geo",
+                    "version": get_version("odc-geo"),
+                },
             ]
         }
 
-    with open(proc_info_path, 'w') as f:
+    with open(proc_info_path, "w") as f:
         yaml.dump(proc_info, f, default_flow_style=False, sort_keys=False)
 
- 
     if verbose:
         print("\nGenerated metadata:")
         print(f"  ODC YAML: {metadata_path}")
@@ -868,6 +965,11 @@ def cli():
     default=True,
     help="Validate generated metadata (default: True)",
 )
+@click.option(
+    "--multipolygon/--no-multipolygon",
+    default=False,
+    help="Extract and merge geometries from tile STAC files in S3 to use the merged multipolygon for the geomerty in the metadata for the mosaiced cog (default: False)",
+)
 @click.option("--verbose", is_flag=True, help="Verbose output")
 def generate(
     year: str,
@@ -886,6 +988,7 @@ def generate(
     extract_from_tiles: bool,
     tile_dir: str,
     output_dir: str,
+    multipolygon: bool,
     validate: bool,
     verbose: bool,
 ):
@@ -1028,6 +1131,50 @@ def generate(
         click.echo(f"Error loading TIF files: {e}", err=True)
         sys.exit(1)
 
+    # Get reference dataset for bounds (use first available band)
+    ref_band = next(iter(data_vars.keys()))
+    ref_ds = data_vars[ref_band]
+    bounds = ref_ds.rio.bounds()
+
+    if multipolygon:
+        try:
+            # All coastal products have tiles with dea_c3 naming (with version in path)
+            coastal_products = ["tidal_composites", "intertidal", "coastalecosystems"]
+            tile_naming = (
+                "dea_c3" if product_family in coastal_products else naming_conventions
+            )
+
+            extent_geometry = extract_merged_geometry_from_tiles(
+                s3_bucket=tile_dir,
+                product=product,
+                version=version,
+                year=year,
+                freq=freq,
+                naming_conventions=naming_conventions,
+                tile_naming_conventions=tile_naming,
+                verbose=verbose,
+            )
+        except Exception as e:
+            if verbose:
+                print(f"Error extracting and merging geometries from tile STAC: {e}")
+                traceback.print_exc()
+            # Fall back to bounding box
+            extent_geometry = box(*bounds)
+            minx, miny, maxx, maxy = bounds
+            width = abs(maxx - minx)
+            height = abs(maxy - miny)
+            max_segment_length = min(width / 10, height / 10)
+            extent_geometry = extent_geometry.segmentize(max_segment_length)
+
+    else:
+        extent_geometry = box(*bounds)
+        # Calculate max segment length for ~10 points per edge
+        minx, miny, maxx, maxy = bounds
+        width = abs(maxx - minx)
+        height = abs(maxy - miny)
+        max_segment_length = min(width / 10, height / 10)
+        extent_geometry = extent_geometry.segmentize(max_segment_length)
+
     # Generate metadata
     # Always use temporary directory, then sync to output-dir
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -1041,6 +1188,7 @@ def generate(
                 config=config,
                 data_vars=data_vars,
                 lineage_dict=lineage_dict,
+                extent_geometry=extent_geometry,
                 output_dir=temp_path,
                 generate_stac=True,
                 verbose=verbose,
@@ -1108,13 +1256,13 @@ def generate(
             # Copy to local destination
             click.echo(f"\nCopying to local destination: {final_destination}")
             output_path = pathlib.Path(final_destination)
-            
+
             # Create parent directories if needed
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Create destination directory if it doesn't exist
             output_path.mkdir(parents=True, exist_ok=True)
-            
+
             # Copy files from temp to destination (overwrite existing)
             for item in temp_path.iterdir():
                 dest_item = output_path / item.name
@@ -1124,7 +1272,7 @@ def generate(
                     if dest_item.exists():
                         shutil.rmtree(dest_item)
                     shutil.copytree(item, dest_item)
-            
+
             click.echo(f"✅ Successfully copied to: {final_destination}")
 
 
