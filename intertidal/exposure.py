@@ -774,120 +774,23 @@ def spatial_filters(
     mod_timesteps = pd.Timedelta((29.5 / 2), "d") / pd.Timedelta(freq_time, freq_unit)
     # Calculate the 'order' window for spring tide calculation
     order = int(mod_timesteps / 2)
-    # print(f'order: {order}')
-
-    # ---- SHARED PEAK DETECTION ----
-    # Find all high tide maxima from full timeseries
-    tide_maxima_idx = argrelmax(modelledtides_1d.values)[0]
-    tide_maxima = modelledtides_1d.isel(time=tide_maxima_idx).to_dataset()
 
     # Spring highs: largest maxima in the high tide envelope
     modelledtides_1d_peaks = argrelmax(modelledtides_1d.values, order=order)[0]
     springpeaks = modelledtides_1d.isel(time=modelledtides_1d_peaks).to_dataset()
     time_range_springhigh = pd.to_datetime(springpeaks.time)
 
-    # Neap highs: smallest maxima in the high tide envelope
-    # order_nh = int(ceil((len(tide_maxima.time) / (len(modelledtides_1d_peaks)) / 2)))
-    # print(f'order_nh: {order_nh}')
-    # neap_peak_idx = argrelmin(tide_maxima.tide_height.values, order=order_nh)[0]
-    # neappeaks = tide_maxima.isel(time=neap_peak_idx)
-    # time_range_neaphigh = pd.to_datetime(neappeaks.time)
-
-    # # Neap highs: find the minimum between each consecutive pair of spring highs
-    # neap_high_times = []
-    # for i in range(len(time_range_springhigh) - 1):
-    #     window = tide_maxima.sel(
-    #         time=slice(time_range_springhigh[i], time_range_springhigh[i + 1])
-    #     )
-    #     if len(window.time) == 0:
-    #         continue
-    #     # The neap high is the lowest maximum between two spring highs
-    #     best_time = window.tide_height.idxmin(dim="time").values
-    #     neap_high_times.append(pd.Timestamp(best_time))
-    
-    # time_range_neaphigh = pd.DatetimeIndex(neap_high_times)
-    #-------------
-    # Final all low tide minima from full timeseries
-    tide_minima_idx = argrelmin(modelledtides_1d.values)[0]
-    tide_minima = modelledtides_1d.isel(time=tide_minima_idx).to_dataset()
-
-    # # Spring lows: smallest minima in the low tide envelope
-    # spring_low_idx = argrelmin(tide_minima.tide_height.values, order=order)[0]
-    # modelledtides_1d_peaks_low = tide_minima_idx[spring_low_idx]
-    # springpeaks_low = modelledtides_1d.isel(time=modelledtides_1d_peaks_low).to_dataset()
-    # time_range_springlow = pd.to_datetime(springpeaks_low.time) # rename var
-
-    # neap_low_idx = argrelmax(tide_minima.tide_height.values, order=order_nh)[0]
-    # neappeaks_low = tide_minima.isel(time=neap_low_idx)
-    # time_range_neap = pd.to_datetime(neappeaks_low.time)
-
     # Spring lows: smallest minima in the low tide envelope
     modelledtides_1d_peakslow = argrelmin(modelledtides_1d.values, order=order)[0]
     springpeakslow = modelledtides_1d.isel(time=modelledtides_1d_peakslow).to_dataset()
     time_range_springlow = pd.to_datetime(springpeakslow.time)
-
-
-    # Neap lows: largest minima in the low tide envelope
-    # order_nl = int(ceil((len(tide_minima.time) / (len(modelledtides_1d_peakslow)) / 2)))
-    # print(f'order_nl: {order_nl}')
-    # neap_peak_idxlow = argrelmax(tide_minima.tide_height.values, order=order_nl)[0]
-    # neappeakslow = tide_minima.isel(time=neap_peak_idxlow)
-    # time_range_neaplow = pd.to_datetime(neappeakslow.time)
-
-    # # Neap lows: find the minimum between each consecutive pair of spring lows
-    # neap_low_times = []
-    # for i in range(len(time_range_springlow) - 1):
-    #     window = tide_minima.sel(
-    #         time=slice(time_range_springlow[i], time_range_springlow[i + 1])
-    #     )
-    #     if len(window.time) == 0:
-    #         continue
-    #     # The neap low is the highest minimum between two spring lows
-    #     best_time = window.tide_height.idxmax(dim="time").values
-    #     neap_low_times.append(pd.Timestamp(best_time))
-    
-    # time_range_neaplow = pd.DatetimeIndex(neap_low_times)
-
-    # if x in ["spring_high"]:
-    #     return time_range_springhigh
-    # if x in ["neap_high"]:
-    #     return time_range_neaphigh
-    # if x in ["spring_low"]:
-    #     return time_range_springlow
-    # if x in ["neap_low"]:
-    #     return time_range_neaplow    
-    # ---- GAP FILLING (all four computed together for consistency) ----
-    # Fill spring_high first (no reference yet)
-
-    
-    # # Fill neap_high — search within HIGH TIDE envelope
-    # time_range_neaphigh_filled = fill_peak_gaps(
-    #     time_range_neaphigh,
-    #     modelledtides_1d,
-    #     search_da=tide_maxima.tide_height,   
-    #     reference_peaks=time_range_springhigh_filled,
-    #     expected_gap_days=14.75,
-    #     search_width=0,
-    #     use_min=False,
-    # )
-    # Fill spring_low (no reference needed — independent of highs)
-
-    # # Fill neap_low — search within LOW TIDE envelope
-    # time_range_neaplow_filled = fill_peak_gaps(
-    #     time_range_neaplow,
-    #     modelledtides_1d,
-    #     search_da=tide_minima.tide_height,   
-    #     reference_peaks=time_range_springlow_filled,
-    #     expected_gap_days=14.75,
-    #     search_width=0,
-    #     use_min=True,
-    # )
 
     time_range_springhigh = fill_peak_gaps(
             time_range_springhigh,
             modelledtides_1d,
             reference_peaks=None,
             expected_gap_days=14.75,
+            search_width=0.4,
             use_min=False,
             )
     time_range_springlow = fill_peak_gaps(
@@ -895,11 +798,18 @@ def spatial_filters(
             modelledtides_1d,
             reference_peaks=None,
             expected_gap_days=14.75,
+            search_width=0.4,
             use_min=True,
             )
-    # time_range_springlow = time_range_springlow.drop_duplicates()
-    # time_range_springhigh = time_range_springhigh.drop_duplicates()
-    
+    # Find all high tide maxima from full timeseries
+    tide_maxima_idx = argrelmax(modelledtides_1d.values)[0]
+    tide_maxima = modelledtides_1d.isel(time=tide_maxima_idx).to_dataset()
+
+    # Find all low tide minima from full timeseries
+    tide_minima_idx = argrelmin(modelledtides_1d.values)[0]
+    tide_minima = modelledtides_1d.isel(time=tide_minima_idx).to_dataset()
+
+    # Calculate neap peaks
     time_range_neaphigh = detect_neaps(time_range_springhigh, tide_maxima)
     time_range_neaplow = detect_neaps(time_range_springlow, tide_minima, calc_low=True)
     
@@ -914,9 +824,6 @@ def spatial_filters(
         
     if x == "neap_low":
         return time_range_neaplow
-    
-
-    # ---- END SHARED DETECTION ----
     
     if x in ["neaptide", "springtide"]:
     
