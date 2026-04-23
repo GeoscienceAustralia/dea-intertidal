@@ -624,7 +624,7 @@ def exposure(
                                             x,
                                             modelledtides_1d,
                                             modelledtides_lowres,
-                                            phases
+                                            phases=8
                                            )
     
     # Intersect the filters of interest to extract the common datetimes for
@@ -774,7 +774,8 @@ def spatial_filters(
     mod_timesteps = pd.Timedelta((29.5 / 2), "d") / pd.Timedelta(freq_time, freq_unit)
     # Calculate the 'order' window for spring tide calculation
     order = int(mod_timesteps / 2)
-
+   
+    #Spring detection
     # Spring highs: largest maxima in the high tide envelope
     modelledtides_1d_peaks = argrelmax(modelledtides_1d.values, order=order)[0]
     springpeaks = modelledtides_1d.isel(time=modelledtides_1d_peaks).to_dataset()
@@ -793,6 +794,8 @@ def spatial_filters(
             search_width=0.4,
             use_min=False,
             )
+    time_range_springhigh = time_range_springhigh.drop_duplicates()
+    
     time_range_springlow = fill_peak_gaps(
             time_range_springlow,
             modelledtides_1d,
@@ -801,6 +804,9 @@ def spatial_filters(
             search_width=0.4,
             use_min=True,
             )
+    time_range_springlow = time_range_springlow.drop_duplicates()
+    
+    # Neap detection
     # Find all high tide maxima from full timeseries
     tide_maxima_idx = argrelmax(modelledtides_1d.values)[0]
     tide_maxima = modelledtides_1d.isel(time=tide_maxima_idx).to_dataset()
@@ -812,75 +818,190 @@ def spatial_filters(
     # Calculate neap peaks
     time_range_neaphigh = detect_neaps(time_range_springhigh, tide_maxima)
     time_range_neaplow = detect_neaps(time_range_springlow, tide_minima, calc_low=True)
-    
+
     if x == "spring_high":
-        return time_range_springhigh.drop_duplicates()
-        
+        return time_range_springhigh
+
     if x == "neap_high":
         return time_range_neaphigh
-        
+
     if x == "spring_low":
-        return time_range_springlow.drop_duplicates()
-        
+        return time_range_springlow
+
     if x == "neap_low":
         return time_range_neaplow
     
-    if x in ["neaptide", "springtide"]:
+    if x == "springtide":
+        '''
+        Calculate the mean time for each spring high and low peak pair.
+        Take all modelled tides within a window of the mean as the spring tide period.
+        '''
+        # Align spring high and low peak-pairs by dropping the unpaired element 0 from either peak list
+        w = pd.DatetimeIndex([time_range_springlow[0], time_range_springhigh[0]]).diff()
+        x = pd.DatetimeIndex([time_range_springlow[0], time_range_springhigh[1]]).diff()
+        y = pd.DatetimeIndex([time_range_springlow[1], time_range_springhigh[0]]).diff()
+        z = pd.DatetimeIndex([time_range_springlow[1], time_range_springhigh[1]]).diff()
+        
+        w_mean = abs(w.mean())
+        x_mean = abs(x.mean())
+        y_mean = abs(y.mean())
+        z_mean = abs(z.mean())
+        
+        if w_mean < x_mean and w_mean < y_mean and w_mean < z_mean:
+            print ('no changes to spring peak lengths required')
+            low = time_range_springlow
+            high = time_range_springhigh
+        elif x_mean < w_mean and x_mean < y_mean and x_mean < z_mean:
+            print ('shorten spring high peak array')
+            high = time_range_springhigh[1:]
+            low = time_range_springlow
+        elif y_mean < w_mean and y_mean < x_mean and y_mean < z_mean:
+            low = time_range_springlow[1:]
+            high = time_range_springhigh
+            print ('shorten spring low peak array')
+        else: 
+            assert z_mean < w_mean and z_mean < x_mean and z_mean < y_mean, "unexpected peak alignment. Check element 0 in spring high and low peak arrays"
+                                                                                                            
+        # Concatenate the dates for the spring high and low peaks, taking the date difference of peak pairs 
+        # to use for spring range calculation
+        springs_mean = low.union(high)
+
+        #Test
+        if len(springs_mean) % 2 != 0:
+            springs_mean = springs_mean[:-1]
+        # Ensure an even number of pairs to calculate mean dates from. If not, drop the extra final element 
+        # from either peak list
+        assert len(springs_mean) % 2 == 0, "Expected an even number of points for pairing"
+        
+        # Detect alternating pairs (should be paired spring high and low peaks)
+        means = []
+        for i in range (0, len(springs_mean)-1, 2):
+            pair_mean = springs_mean[i] + (springs_mean[i+1]- springs_mean[i])/2
+            means.append(pair_mean)
+        
+        # Select 'spring' times as being 14.75/phases days either side of each 'means' value, from 'modelledtides_1d'
+        # Define the window size to select points from
+        window = pd.Timedelta(days=14.75/phases)
+        
+        # For each mean timestamp, select all points within the window
+        springs = xr.concat(
+            [modelledtides_1d.sel(time=slice(mean - window, mean + window)) for mean in means],
+            dim='time'
+        )
+        return pd.DatetimeIndex(springs.time.values)
     
-        expected_cycle = 14.75
-        tolerance = 0.4
-        lower = pd.Timedelta(expected_cycle * (1 - tolerance), "d")
-        upper = pd.Timedelta(expected_cycle * (1 + tolerance), "d")
-        half_window = pd.Timedelta(expected_cycle / 4, "d")
+    if x == "neaptide":
+        '''
+        Calculate the mean time for each neap high and low peak pair.
+        Take all modelled tides within a window of the mean as the neap tide period.
+        '''
+        
+        # Align neap high and low peak-pairs by dropping the unpaired element 0 from either peak list
+        w = pd.DatetimeIndex([time_range_neaplow[0], time_range_neaphigh[0]]).diff()
+        x = pd.DatetimeIndex([time_range_neaplow[0], time_range_neaphigh[1]]).diff()
+        y = pd.DatetimeIndex([time_range_neaplow[1], time_range_neaphigh[0]]).diff()
+        z = pd.DatetimeIndex([time_range_neaplow[1], time_range_neaphigh[1]]).diff()
+        
+        w_mean = abs(w.mean())
+        x_mean = abs(x.mean())
+        y_mean = abs(y.mean())
+        z_mean = abs(z.mean())
+        
+        if w_mean < x_mean and w_mean < y_mean and w_mean < z_mean:
+            print ('no changes to neap peak lengths required')
+            low = time_range_neaplow
+            high = time_range_neaphigh
+        elif x_mean < w_mean and x_mean < y_mean and x_mean < z_mean:
+            print ('shorten neap high peak array')
+            high = time_range_neaphigh[1:]
+            low = time_range_neaplow
+        elif y_mean < w_mean and y_mean < x_mean and y_mean < z_mean:
+            low = time_range_neaplow[1:]
+            high = time_range_neaphigh
+            print ('shorten neap low peak array')
+        else: 
+            assert z_mean < w_mean and z_mean < x_mean and z_mean < y_mean, "unexpected peak alignment. Check element 0 in neap high and low peak arrays"
+       
+        # Concatenate the dates for the neap high and low peaks, taking the date difference of peak pairs to use for neap range calculation
+        neaps_mean = low.union(high)
+        
+        # Ensure an even number of pairs to calculate mean dates from. If not, drop the extra final element 
+        # from either peak list
+        assert len(neaps_mean) % 2 == 0, "Expected an even number of points for pairing"
+        
+        # Detect alternating pairs (should be paired neap high and low peaks)
+        means = []
+        for i in range (0, len(neaps_mean)-1, 2):
+            pair_mean = neaps_mean[i] + (neaps_mean[i+1]- neaps_mean[i])/2
+            means.append(pair_mean)
+        
+        # Select 'neap' times as being 14.75/phases days either side of each 'means' value, from 'modelledtides_1d'
+        # Define the window size to select points from
+        window = pd.Timedelta(days=14.75/phases)
+        
+        # For each mean timestamp, select all points within the window
+        neaps = xr.concat(
+            [modelledtides_1d.sel(time=slice(mean - window, mean + window)) for mean in means],
+            dim='time'
+        )
+        return pd.DatetimeIndex(neaps.time.values)
     
-        spring_list = []
-        neap_list = []
+    # if x in ["neaptide", "springtide"]:
     
-        for i in range(len(time_range_neaphigh) - 1):
-            gap = time_range_neaphigh[i + 1] - time_range_neaphigh[i]
+    #     expected_cycle = 14.75
+    #     tolerance = 0.4
+    #     lower = pd.Timedelta(expected_cycle * (1 - tolerance), "d")
+    #     upper = pd.Timedelta(expected_cycle * (1 + tolerance), "d")
+    #     half_window = pd.Timedelta(expected_cycle / 4, "d")
     
-            if lower <= gap <= upper:
-                # Neap period: window around this neap peak
-                neap_window = modelledtides_1d.sel(
-                    time=slice(
-                        time_range_neaphigh[i] - half_window,
-                        time_range_neaphigh[i] + half_window
-                    )
-                )
-                if len(neap_window.time) > 0:
-                    neap_list.append(neap_window)
+    #     spring_list = []
+    #     neap_list = []
     
-                # Spring period: window around midpoint to next neap peak
-                midpoint = time_range_neaphigh[i] + gap / 2
-                spring_window = modelledtides_1d.sel(
-                    time=slice(midpoint - half_window, midpoint + half_window)
-                )
-                if len(spring_window.time) > 0:
-                    spring_list.append(spring_window)
-            else:
-                print(f"Skipping pair at {time_range_neaphigh[i].date()} → "
-                      f"{time_range_neaphigh[i+1].date()} — gap of {gap.days}d "
-                      f"outside expected range")
+    #     for i in range(len(time_range_neaphigh) - 1):
+    #         gap = time_range_neaphigh[i + 1] - time_range_neaphigh[i]
     
-        # Handle the last neap peak if it has a valid predecessor
-        if len(time_range_neaphigh) > 1:
-            last_gap = time_range_neaphigh[-1] - time_range_neaphigh[-2]
-            if lower <= last_gap <= upper:
-                neap_window = modelledtides_1d.sel(
-                    time=slice(
-                        time_range_neaphigh[-1] - half_window,
-                        time_range_neaphigh[-1] + half_window
-                    )
-                )
-                if len(neap_window.time) > 0:
-                    neap_list.append(neap_window)
+    #         if lower <= gap <= upper:
+    #             # Neap period: window around this neap peak
+    #             neap_window = modelledtides_1d.sel(
+    #                 time=slice(
+    #                     time_range_neaphigh[i] - half_window,
+    #                     time_range_neaphigh[i] + half_window
+    #                 )
+    #             )
+    #             if len(neap_window.time) > 0:
+    #                 neap_list.append(neap_window)
     
-        if x in ['springtide']:
-            springtide = xr.concat(spring_list, dim="time")
-            return pd.to_datetime(springtide.time)
-        if x in ['neaptide']:
-            neaptide = xr.concat(neap_list, dim="time")
-            return pd.to_datetime(neaptide.time)
+    #             # Spring period: window around midpoint to next neap peak
+    #             midpoint = time_range_neaphigh[i] + gap / 2
+    #             spring_window = modelledtides_1d.sel(
+    #                 time=slice(midpoint - half_window, midpoint + half_window)
+    #             )
+    #             if len(spring_window.time) > 0:
+    #                 spring_list.append(spring_window)
+    #         else:
+    #             print(f"Skipping pair at {time_range_neaphigh[i].date()} → "
+    #                   f"{time_range_neaphigh[i+1].date()} — gap of {gap.days}d "
+    #                   f"outside expected range")
+    
+    #     # Handle the last neap peak if it has a valid predecessor
+    #     if len(time_range_neaphigh) > 1:
+    #         last_gap = time_range_neaphigh[-1] - time_range_neaphigh[-2]
+    #         if lower <= last_gap <= upper:
+    #             neap_window = modelledtides_1d.sel(
+    #                 time=slice(
+    #                     time_range_neaphigh[-1] - half_window,
+    #                     time_range_neaphigh[-1] + half_window
+    #                 )
+    #             )
+    #             if len(neap_window.time) > 0:
+    #                 neap_list.append(neap_window)
+    
+    #     if x in ['springtide']:
+    #         springtide = xr.concat(spring_list, dim="time")
+    #         return pd.to_datetime(springtide.time)
+    #     if x in ['neaptide']:
+    #         neaptide = xr.concat(neap_list, dim="time")
+    #         return pd.to_datetime(neaptide.time)
 
     # ## Block 1: neaptide / springtide
     # if x in ["neaptide", "springtide"]:
