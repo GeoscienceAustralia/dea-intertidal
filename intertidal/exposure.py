@@ -847,7 +847,7 @@ def spatial_filters(
         y_mean = abs(y.mean())
         z_mean = abs(z.mean())
         
-        if w_mean < x_mean and w_mean < y_mean and w_mean < z_mean:
+        if w_mean < x_mean and w_mean < y_mean and w_mean <= z_mean:
             print ('no changes to spring peak lengths required')
             low = time_range_springlow
             high = time_range_springhigh
@@ -907,7 +907,7 @@ def spatial_filters(
         y_mean = abs(y.mean())
         z_mean = abs(z.mean())
         
-        if w_mean < x_mean and w_mean < y_mean and w_mean < z_mean:
+        if w_mean < x_mean and w_mean < y_mean and w_mean <= z_mean:
             print ('no changes to neap peak lengths required')
             low = time_range_neaplow
             high = time_range_neaphigh
