@@ -57,6 +57,7 @@ def test_intertidal_cli():
             "--tide_model",
             "FES2014",
         ],
+        catch_exceptions=False,
     )
     assert result.exit_code == 0
 
