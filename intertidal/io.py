@@ -1316,6 +1316,16 @@ def export_dataset_metadata(
                 dataset_assembler.names.dataset_path
                 / dataset_assembler.names.thumbnail_filename()
             )
+            
+            # Export tide graph figure if provided
+            if tide_graph_fig is not None:
+                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace(
+                    "thumbnail.jpg", "tide_graph.png"
+                )
+                tide_graph_fig.savefig(tide_graph_path, bbox_inches="tight")
+                dataset_assembler.note_accessory_file(
+                    "metadata:tide_graph", tide_graph_path
+                )
 
             # Complete the dataset
             dataset_id, metadata_path = dataset_assembler.done()
@@ -1334,16 +1344,7 @@ def export_dataset_metadata(
             # Generate final destination path
             destination_path = f"{output_location.rstrip('/')}/{dataset_assembler.names.dataset_folder}/"
 
-            # Export tide graph figure if provided
-            if tide_graph_fig is not None:
-                tide_graph_path = thumbnail_path.parent / thumbnail_path.name.replace(
-                    "thumbnail.jpg", "tide_graph.png"
-                )
-                tide_graph_fig.savefig(tide_graph_path, bbox_inches="tight")
-                dataset_assembler.note_accessory_file(
-                    "metadata:tide_graph", tide_graph_path
-                )
-
+            
             # Export STAC metadata using destination path to correctly
             # populate required metadata/dataset links. This step
             # also ensures all previous data was written out correctly.
