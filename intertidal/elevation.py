@@ -1402,10 +1402,15 @@ def intertidal_cli(
         client.close()
         log.info(f"{run_id}: Completed DEA Intertidal workflow")
 
+    # except Exception as e:
+    #     log.exception(f"{run_id}: Failed to run process with error {e}")
+    #     sys.exit(1)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         log.exception(f"{run_id}: Failed to run process with error {e}")
-        sys.exit(1)
-
+        raise
+        # sys.exit(1)
 
 if __name__ == "__main__":
     intertidal_cli()

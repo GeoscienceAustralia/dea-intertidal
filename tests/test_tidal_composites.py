@@ -32,6 +32,7 @@ def test_tidal_composites_cli():
             "--tide_model",
             "FES2014",
         ],
+        catch_exceptions=False,
     )
     assert result.exit_code == 0
 
