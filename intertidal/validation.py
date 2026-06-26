@@ -70,6 +70,7 @@ def preprocess_validation(
     validation_ds,
     modelled_ds,
     uncertainty_ds,
+    counts_ds,
     lat,
     hat,
     clean_slope=True,
@@ -96,5 +97,7 @@ def preprocess_validation(
     validation_z = validation_ds.values[valid_data]
     modelled_z = modelled_ds.values[valid_data]
     uncertainty_z = uncertainty_ds.values[valid_data]
+    counts_z = counts_ds.values[valid_data]
+    slope_z = validation_slope.values[valid_data]
 
-    return validation_z, modelled_z, uncertainty_z
+    return validation_z, modelled_z, uncertainty_z, counts_z, slope_z
