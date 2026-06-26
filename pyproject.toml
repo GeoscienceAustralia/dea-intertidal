@@ -139,6 +139,9 @@ lint.ignore = [
   "ANN",      # Allow missing type annotations (to revert)
   "COM812",   # Ignored as recommended by ruff
   "D203",     # Ignored as recommended by ruff
+  "RUF001",   # Allow en dash in strings
+  "PERF203",  # Don't warn about try except in a loop
+  "PD003",    # Don't warn about `.isnull()` (pandas confused for xarray)
 ]
 
 [tool.ruff.format]
