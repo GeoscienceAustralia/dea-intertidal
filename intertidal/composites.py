@@ -649,7 +649,8 @@ def tidal_composites_cli(
 
         except Exception as e:
             log.exception(f"{run_id}: Failed to run process with error {e}")
-            sys.exit(1)
+            raise
+            # sys.exit(1)
     else:
         log.info(f"{run_id}: Skipping as overwrite==False")
 
