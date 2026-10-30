@@ -59,8 +59,11 @@ def test_intertidal_cli():
         ],
         catch_exceptions=False,
     )
-    assert result.exit_code == 0
-
+    assert result.exit_code == 0, (
+        f"\nCLI exit code: {result.exit_code}"
+        f"\nException: {result.exception!r}"
+        f"\nOutput:\n{result.output}"
+        )
 
 @pytest.mark.dependency(depends=["test_intertidal_cli"])
 def test_dem_accuracy(
