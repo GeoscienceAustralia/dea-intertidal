@@ -1404,7 +1404,8 @@ def intertidal_cli(
 
     except Exception as e:
         log.exception(f"{run_id}: Failed to run process with error {e}")
-        sys.exit(1)
+        raise
+        # sys.exit(1)
 
 
 if __name__ == "__main__":

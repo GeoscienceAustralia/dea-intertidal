@@ -38,6 +38,7 @@ classifiers = [
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "Bottleneck>=1.4.2",
+    "certifi>=2026.10.19",
     "click>=8.1.7",
     "cmocean>=4.0.0",
     "dea-tools>=0.4.7",
