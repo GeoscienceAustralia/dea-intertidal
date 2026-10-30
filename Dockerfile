@@ -4,32 +4,52 @@
 # - GDAL 3.7.3, released 2023/10/30
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.7.3
 
-# curl and certificates are required to download uv,
-# build-essential, libpq-dev and python3-dev are needed for psycopg2,
-# git is needed for hatchling version control
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    build-essential \
-    libpq-dev \
-    python3-dev \
-    git && \
+ENV DEBIAN_FRONTEND=noninteractive \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8
+
+# Install system dependencies and remove the compromised
+# emSign ECC Root CA - G3 certificate from the system trust store.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      curl \
+      ca-certificates \
+      build-essential \
+      libpq-dev \
+      python3-dev \
+      git && \
+    if grep -q '^mozilla/emSign_ECC_Root_CA_-_G3.crt$' /etc/ca-certificates.conf; then \
+      sed -i \
+        's|^mozilla/emSign_ECC_Root_CA_-_G3.crt$|!mozilla/emSign_ECC_Root_CA_-_G3.crt|' \
+        /etc/ca-certificates.conf; \
+    fi && \
+    update-ca-certificates --fresh && \
+    ! grep -Ril "emSign ECC Root CA - G3" \
+      /etc/ssl/certs \
+      /usr/local/share/ca-certificates \
+      2>/dev/null && \
     rm -rf /var/lib/apt/lists/*
 
-# Download, run and remove uv installer, and ensure it is on path
-ADD https://astral.sh/uv/0.8.22/install.sh /uv-installer.sh
-RUN sh /uv-installer.sh && rm /uv-installer.sh
-ENV PATH="/root/.local/bin/:$PATH"
+# eMudhra/emSign CA compromise remediation.
+ARG UV_VERSION=0.13.4
 
-# Copy project files into image, and set as working directory
+# Download and install the approved uv version.
+ADD https://astral.sh/uv/${UV_VERSION}/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && \
+    rm /uv-installer.sh
+
+ENV PATH="/root/.local/bin:$PATH"
+
+# Copy project files into image.
 ADD . /app
 WORKDIR /app
 
-# Sync project into a new virtual environment based on uv.lock
+# Sync exactly from uv.lock.
 RUN uv sync --locked --extra datacube
 
-# Make uv virtual environment accessible
+# Make the uv virtual environment accessible.
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Verify installation
-RUN uv pip check && dea-intertidal --help
+# Verify installation.
+RUN uv pip check && \
+    dea-intertidal --help
