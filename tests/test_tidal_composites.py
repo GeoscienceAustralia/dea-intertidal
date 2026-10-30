@@ -39,7 +39,7 @@ def test_tidal_composites_cli():
         f"\nCLI exit code: {result.exit_code}"
         f"\nException: {result.exception!r}"
         f"\nOutput:\n{result.output}"
-
+    )
 
 @pytest.mark.dependency(depends=["test_tidal_composites_cli"])
 def test_validate_composites_metadata():
